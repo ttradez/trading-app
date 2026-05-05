@@ -47,29 +47,46 @@ This is the hard part. Drawings must stay glued to bar/price as the user pans/zo
 
 **Off-screen behavior:** if a drawing's anchors fall outside the visible range, clip rather than skip — a horizontal line must still render across the full visible width even when its defining bar is off-screen.
 
-## 3. Touch handling — STILL OPEN
+## 3. Touch handling
 
-State machine driven by `activeTool`. The creation/select/delete logic is locked, but gesture forwarding is undecided.
+State machine driven by `activeTool`. Single canvas captures all pointer events; chart pan/zoom is driven manually from pointer deltas when no draw/select interaction is in progress.
 
 **Tool active (creation):**
-- Horizontal line, text label: single tap → commit at tap point.
-- Trendline, rectangle, fib: first tap places anchor 1 (preview line follows finger), second tap commits anchor 2. Tap-and-drag also works — touchstart = anchor 1, touchmove previews, touchend = anchor 2. Long press cancels.
-- After commit, auto-revert to select mode (`activeTool = null`).
+
+* Horizontal line, text label: single tap → commit at tap point.
+* Trendline, rectangle, fib: first tap places anchor 1 (preview follows finger), second tap commits anchor 2. Tap-and-drag also works — `pointerdown` = anchor 1, `pointermove` previews, `pointerup` = anchor 2. Long press cancels and clears `inProgress`.
+* After commit, auto-revert to select mode (`activeTool = null`).
 
 **Select mode (no active tool):**
-- Hit-test on tap. Hit zones: line/trendline = within 8px of segment, rectangle = on edge or inside, fib = on any level line, text = bounding box.
-- Tap empty → deselect; chart pan/zoom resumes.
-- Tap drawing → select, render handles (endpoints + midpoint).
-- Drag handle → moves that anchor only. Drag body → translates all anchors equally.
-- Two-finger pinch on a selected drawing → ignored (forward to chart, don't scale drawings).
+
+* Hit-test on `pointerdown`. Hit zones: line/trendline = within 8px of segment, rectangle = on edge or inside, fib = on any level line, text = bounding box.
+* Tap empty → deselect, then the same gesture is interpreted as a chart pan (see "Gesture forwarding" below). No re-dispatch needed because the canvas owns the gesture from the start.
+* Tap drawing → select, render handles (endpoints + midpoint).
+* Drag handle → moves that anchor only. Drag body → translates all anchors equally.
+* Two-finger pinch on a selected drawing → ignored as a drawing transform; both pointers feed the chart zoom path (see below).
 
 **Delete:** floating delete button in toolbar slot when `selectedId !== null`; tap removes from `drawings`.
 
-**OPEN: gesture forwarding.** Lightweight Charts has no API to re-dispatch a swallowed touch back to itself. Two candidate approaches:
-- **A) Always-on canvas:** hit-test on `pointerdown`; on miss with no active tool, manually drive `chart.timeScale().scrollToPosition()` from `pointermove` deltas to fake the pan.
-- **B) Three-layer stack:** chart, drawing canvas (`pointer-events: none`), gesture-router div on top that decides re-dispatch destination.
+**Gesture forwarding — chosen approach: Option A (always-on canvas, manual pan/zoom).**
 
-Claude Code on the web is finalizing this and will rewrite section 3 concretely with the chosen approach.
+Lightweight Charts has no API to re-dispatch a touch the canvas swallowed. Option B (three-layer stack with a router div) was rejected: deciding pan-vs-draw requires the *first* hit-test result, which means the router must duplicate the canvas's hit-test logic and stay in sync with it; once `pointerdown` is consumed by either layer, the other can't pick the gesture up cleanly mid-stroke; and z-order edge cases (toolbar, modals) multiply. Option A keeps all gesture decisions in one place at the cost of reimplementing pan/zoom against the public chart API — which is small, well-defined work.
+
+The canvas sits above the chart with `pointer-events: auto` and owns every touch. On `pointerdown`:
+
+1. Capture the pointer with `target.setPointerCapture(e.pointerId)` so `pointermove`/`pointerup` are guaranteed to fire on the canvas even if the finger leaves it. Without capture, fast pans drop frames when the pointer crosses the toolbar or screen edge.
+1. Record `{pointerId, startX, startY, startBarIndex, startPrice, startLogicalRange}`. `startLogicalRange = chart.timeScale().getVisibleLogicalRange()`. If `activeTool` is set, branch into create-mode handlers and skip pan logic entirely. Otherwise run the hit-test.
+1. If the hit-test returns a drawing, branch into select/drag handlers (translate-anchor or translate-all), and the chart does not pan for this gesture.
+1. If the hit-test misses, this gesture is a chart pan. Stay on the canvas.
+
+On `pointermove` for a pan gesture: derive bar spacing dynamically — do **not** rely on `chart.timeScale().options().barSpacing`, since TradingChart.tsx calls `fitContent()` after `setData` and `scrollToRealTime()` on append, both of which can mutate effective spacing without updating the options object. Instead compute `barSpacingPx = chart.timeScale().logicalToCoordinate(L + 1) - chart.timeScale().logicalToCoordinate(L)` for any visible logical index `L` (e.g. the floor of `startLogicalRange.from`) at the start of each gesture, then `dxBars = (currentX - startX) / barSpacingPx`, then call `chart.timeScale().setVisibleLogicalRange({ from: startLogicalRange.from - dxBars, to: startLogicalRange.to - dxBars })`. Vertical drag is ignored — Lightweight Charts auto-fits the price scale, matching its native pan behavior.
+
+On `pointerup` / `pointercancel`: release capture, drop the pointer record. If exactly two pointers were active during the gesture, treat it as pinch-zoom: track the distance between the two pointers across moves, compute `scale = currentDistance / startDistance`, and apply via `setVisibleLogicalRange` by scaling `(to - from)` around the gesture midpoint's bar index. Use the same start-snapshot pattern (snapshot bar spacing and logical range at gesture start) so the math stays stable across a single pinch. Pinch on a selected drawing follows the same path — drawing scale-transforms are out of v1.
+
+Edge cases:
+
+* Toolbar taps: the toolbar is a sibling RN view, not part of the WebView, so its taps never reach the canvas. No conflict.
+* WebView scroll: TradingChart's WebView must have `scrollEnabled={false}` and the canvas must call `e.preventDefault()` in `pointerdown` to suppress browser scroll/zoom inside the WebView.
+* Momentum/inertia after pan release: not implemented in v1 — pan stops when the finger lifts. Matches the honest, no-fake-polish tone of the rest of the app.
 
 ## 4. UI — toolbar (in RN, not WebView)
 

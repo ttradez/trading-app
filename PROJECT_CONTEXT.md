@@ -73,7 +73,7 @@ Auto-popup on trade close. Auto-fills: symbol, direction, entry/exit, size, SL/T
 - fetch_kaggle_intraday.py wired correctly: KAGGLE_MAP only has clean_SPY.csv→ES, clean_QQQ.csv→NQ; resamples to 5m/15m/30m/1h/4h.
 
 ### IN FLIGHT
-- **Block 17 (drawing tools)** — spec written by Claude Code on the web. See `docs/BLOCK_17_DRAWING_TOOLS_SPEC.md`. 3/4 open questions locked (canvas not SVG, toolbar in RN, defer snap-to-OHLC). Section 3 gesture-forwarding (option A vs B) still being finalized by Claude Code on the web before implementation can begin.
+- **Block 17 (drawing tools)** — spec written by Claude Code on the web. See `docs/BLOCK_17_DRAWING_TOOLS_SPEC.md`. 3/4 open questions locked (canvas not SVG, toolbar in RN, defer snap-to-OHLC). Spec fully locked. Ready for implementation.
 - **Firebase setup** — bundle ID `com.pockettrade.app` (iOS + Android), Expo managed workflow, pure-JS firebase v12.12.1 (NOT @react-native-firebase). Six EXPO_PUBLIC_FIREBASE_* env vars in `.env` still empty awaiting console values. Walkthrough being conducted in Claude Remote with screenshots.
 
 ### NOT YET BUILT
@@ -118,12 +118,12 @@ Auto-popup on trade close. Auto-fills: symbol, direction, entry/exit, size, SL/T
 - Toolbar in React Native (not WebView)
 - No snap-to-OHLC in v1
 - Pure client-side, no backend changes
-- Section 3 gesture-forwarding: pending final decision by Claude Code on the web
+- Gesture forwarding: Option A (always-on canvas, manual pan via setVisibleLogicalRange, two-pointer pinch math, setPointerCapture on pointerdown). Option B (three-layer router) rejected — duplicates hit-test logic, can't reassign gesture mid-stroke.
 
 ## NEXT STEPS
 
 1. Finish Firebase walkthrough in Claude Remote → paste 6 config values into `.env`
-2. Lock Block 17 section 3 (gesture forwarding) → implement Block 17
+2. Implement Block 17 (spec locked).
 3. Deploy backend to Railway → paste URL into `.env`
 4. Get Kaggle API token → run `python backend/data_pipeline/data_ingest.py` to load CSVs into SQLite
 5. End-to-end test: signup → start session → trade → journal → leaderboard
