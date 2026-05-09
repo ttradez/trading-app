@@ -106,6 +106,17 @@ def upsert_user(req: UpsertUserRequest):
     return dict(row)
 
 
+@app.get("/users/{uid}")
+def get_user(uid: str):
+    """Get user info (username, email) — called on login to restore display name."""
+    conn = get_conn()
+    row = conn.execute("SELECT uid, username, email FROM users WHERE uid = ?", (uid,)).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+    return dict(row)
+
+
 @app.get("/users/{uid}/account")
 def get_account(uid: str):
     conn = get_conn()
@@ -119,6 +130,15 @@ def get_account(uid: str):
 # ─── Session helpers ─────────────────────────────────────────────────────────
 
 def _pick_random_start(conn, symbol: str, timeframe: str) -> int:
+    """
+    Pick a random hidden start with bias toward recent data.
+
+    Why bias: prices in 2010-2015 are very different from today (e.g. NQ at
+    $2,000 vs $18,000+). Even though those are real periods, traders find them
+    disorienting because the price levels look unfamiliar. We weight the
+    distribution so ~70% of sessions land in the last 3 years and only ~10%
+    pick anything older than 8 years.
+    """
     cutoff = int((datetime.now(timezone.utc) - timedelta(days=30)).timestamp())
     row = conn.execute(
         """
@@ -144,10 +164,46 @@ def _pick_random_start(conn, symbol: str, timeframe: str) -> int:
     if offset_row:
         min_t = max(min_t, offset_row[0])
 
-    return random.randint(min_t, max_t)
+    # Exponential weighting toward recent: pick uniform in [0, 1), apply
+    # power < 1 to bias toward 1.0 (recent). Then map to [min_t, max_t].
+    # power=0.3 → ~70% of picks fall in the most recent 30% of the timeline.
+    u = random.random()
+    weighted = 1.0 - (u ** 3)  # cubed inverse — strong recency bias
+    return int(min_t + weighted * (max_t - min_t))
+
+
+TF_SECONDS = {
+    "1m":   60,
+    "5m":  300,
+    "15m": 900,
+    "30m": 1800,
+    "1h":  3600,
+    "4h":  14400,
+    "1D":  86400,
+    "1W":  604800,
+}
+
+
+@app.get("/news")
+def get_news(symbol: str = "", before: int = 0, limit: int = 50):
+    """Historical news up to (and including) `before` unix-seconds. Plug a real
+    provider in here later — for now returns an empty list so the UI can
+    render the "no news" state without breaking. Keeps the contract stable so
+    the frontend can ship before a provider is chosen."""
+    return []
 
 
 def _get_candles_up_to(conn, symbol: str, timeframe: str, up_to: int, limit: int):
+    """Return up to `limit` most recent FULLY REVEALED candles in `timeframe`.
+    A candle is fully revealed when its entire period ends at or before
+    `up_to` (the session's current_time).
+
+    The cutoff is precomputed (`up_to - s`) and used as `time <= ?` so SQLite
+    can seek the (symbol, timeframe, time) index — putting `time + ?` in the
+    WHERE forces a scan, which crushes 1m where the table is huge.
+    """
+    s = TF_SECONDS.get(timeframe, 86400)
+    cutoff = up_to - s
     rows = conn.execute(
         """
         SELECT time, open, high, low, close, volume
@@ -155,7 +211,7 @@ def _get_candles_up_to(conn, symbol: str, timeframe: str, up_to: int, limit: int
         WHERE symbol = ? AND timeframe = ? AND time <= ?
         ORDER BY time DESC LIMIT ?
         """,
-        (symbol, timeframe, up_to, limit),
+        (symbol, timeframe, cutoff, limit),
     ).fetchall()
     return list(reversed(rows))
 
@@ -168,6 +224,9 @@ class StartSessionRequest(BaseModel):
     symbol: str
     timeframe: str
     account_size: float
+    # Optional override — if provided, the session's hidden_start is the bar
+    # whose period contains this unix timestamp instead of a random pick.
+    start_time: int | None = None
 
 
 class AdvanceRequest(BaseModel):
@@ -181,6 +240,18 @@ class TradeRequest(BaseModel):
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None
     position_id: Optional[str] = None
+    # Entry price the user saw on screen at the moment they hit CONFIRM.
+    # Used to lock the recorded entry to the visual entry, avoiding any
+    # last-bar/close-tick drift between what was shown and what gets stored.
+    entry_price: Optional[float] = None
+
+
+class TimeframeChangeRequest(BaseModel):
+    timeframe: str
+
+
+class SeekRequest(BaseModel):
+    target_time: int   # unix seconds — backend snaps to the nearest valid bar
 
 
 @app.get("/sessions/{session_id}")
@@ -196,6 +267,20 @@ def get_session(session_id: str):
 
     # Reconstruct the bar-indexed candle history from hidden_start up to current_time
     rows = _get_candles_up_to(conn, sess["symbol"], sess["timeframe"], sess["current_time"], 500)
+    # Self-heal: pre-existing sessions stored current_time as bar.start under
+    # the old convention. The new convention treats current_time as bar.end,
+    # so the query returns nothing. Shift forward by tf_seconds and migrate.
+    if not rows:
+        s_heal = TF_SECONDS.get(sess["timeframe"], 86400)
+        new_t = sess["current_time"] + s_heal
+        rows = _get_candles_up_to(conn, sess["symbol"], sess["timeframe"], new_t, 500)
+        if rows:
+            conn.execute(
+                "UPDATE trading_sessions SET current_time = ? WHERE session_id = ?",
+                (new_t, session_id),
+            )
+            conn.commit()
+            sess = dict(sess); sess["current_time"] = new_t  # reflect for the rest of this request
 
     bars_at_start = conn.execute(
         "SELECT COUNT(*) FROM candles WHERE symbol=? AND timeframe=? AND time<=?",
@@ -212,7 +297,7 @@ def get_session(session_id: str):
     first_bar = 199 - (len(rows) - 1 - bar_offset) if len(rows) > bar_offset else 0
 
     candles = [
-        {"bar": first_bar + i,
+        {"bar": first_bar + i, "time": r["time"],
          "open": r["open"], "high": r["high"],
          "low": r["low"], "close": r["close"], "volume": r["volume"]}
         for i, r in enumerate(rows)
@@ -231,14 +316,133 @@ def get_session(session_id: str):
     }
 
 
+@app.post("/sessions/{session_id}/seek")
+def seek_session(session_id: str, req: SeekRequest):
+    """
+    Jump current_time to the most recent bar at-or-before target_time.
+    Used by the session-jump UI (Asia / London / NY / Custom). Same TF, same
+    symbol, just teleports the replay cursor.
+
+    Note: any positions opened "after" the new current_time will technically
+    sit in the future — the user is responsible for not seeking backward
+    while holding open trades.
+    """
+    conn = get_conn()
+    sess = conn.execute(
+        "SELECT * FROM trading_sessions WHERE session_id = ?", (session_id,)
+    ).fetchone()
+    if not sess:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    s = TF_SECONDS.get(sess["timeframe"], 86400)
+    # Snap to the latest bar whose period ends ≤ target_time (same convention
+    # as _get_candles_up_to). target_time may be in the past relative to
+    # current_time — that's fine, we just pick the appropriate bar.
+    rows = _get_candles_up_to(conn, sess["symbol"], sess["timeframe"], req.target_time, 200)
+    if not rows:
+        conn.close()
+        raise HTTPException(status_code=404, detail="No data near target time")
+    new_current = rows[-1]["time"] + s
+    conn.execute(
+        "UPDATE trading_sessions SET current_time = ? WHERE session_id = ?",
+        (new_current, session_id),
+    )
+    conn.commit()
+    conn.close()
+    candles = [
+        {"bar": i, "time": r["time"], "open": r["open"], "high": r["high"],
+         "low": r["low"], "close": r["close"], "volume": r["volume"]}
+        for i, r in enumerate(rows)
+    ]
+    return {
+        "session_id": session_id,
+        "symbol": sess["symbol"],
+        "timeframe": sess["timeframe"],
+        "candles": candles,
+        "current_bar": len(candles) - 1,
+    }
+
+
+@app.post("/sessions/{session_id}/timeframe")
+def change_session_timeframe(session_id: str, req: TimeframeChangeRequest):
+    """
+    Switch a session's timeframe WITHOUT picking a new random period.
+    Re-fetches candles around the same hidden_start timestamp.
+    """
+    conn = get_conn()
+    sess = conn.execute(
+        "SELECT * FROM trading_sessions WHERE session_id = ?", (session_id,)
+    ).fetchone()
+    if not sess:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Use the session's CURRENT_TIME (not hidden_start) so all the bars the
+    # user has already revealed on other timeframes are reflected on this one.
+    # And keep current_time as-is — don't floor to the new TF's grid; otherwise
+    # advancing on a higher TF and switching to a lower one would lose progress.
+    rows = _get_candles_up_to(conn, sess["symbol"], req.timeframe, sess["current_time"], 200)
+    # Self-heal stored current_time → end-of-bar convention if needed.
+    if not rows:
+        s_heal_old = TF_SECONDS.get(sess["timeframe"], 86400)
+        new_t = sess["current_time"] + s_heal_old
+        rows = _get_candles_up_to(conn, sess["symbol"], req.timeframe, new_t, 200)
+        if rows:
+            conn.execute(
+                "UPDATE trading_sessions SET current_time = ? WHERE session_id = ?",
+                (new_t, session_id),
+            )
+            sess = dict(sess); sess["current_time"] = new_t
+    if not rows:
+        conn.close()
+        raise HTTPException(status_code=404, detail="No data for this symbol/timeframe")
+
+    conn.execute(
+        "UPDATE trading_sessions SET timeframe = ? WHERE session_id = ?",
+        (req.timeframe, session_id),
+    )
+    conn.commit()
+    conn.close()
+
+    candles = [
+        {"bar": i, "time": r["time"], "open": r["open"], "high": r["high"],
+         "low": r["low"], "close": r["close"], "volume": r["volume"]}
+        for i, r in enumerate(rows)
+    ]
+    return {
+        "session_id": session_id,
+        "symbol": sess["symbol"],
+        "timeframe": req.timeframe,
+        "candles": candles,
+        "current_bar": len(candles) - 1,
+    }
+
+
 @app.post("/sessions/start")
 def start_session(req: StartSessionRequest):
     conn = get_conn()
-    hidden_start = _pick_random_start(conn, req.symbol, req.timeframe)
-    rows = _get_candles_up_to(conn, req.symbol, req.timeframe, hidden_start, 200)
+    s_init = TF_SECONDS.get(req.timeframe, 86400)
+    if req.start_time is not None:
+        # Snap to the latest bar whose start time is <= start_time on this TF.
+        snap = conn.execute(
+            "SELECT MAX(time) FROM candles WHERE symbol=? AND timeframe=? AND time<=?",
+            (req.symbol, req.timeframe, req.start_time),
+        ).fetchone()
+        hidden_start = snap[0] if snap and snap[0] is not None else _pick_random_start(conn, req.symbol, req.timeframe)
+    else:
+        hidden_start = _pick_random_start(conn, req.symbol, req.timeframe)
+    rows = _get_candles_up_to(conn, req.symbol, req.timeframe, hidden_start + s_init, 200)
     if not rows:
         conn.close()
         raise HTTPException(status_code=404, detail="No candle data found")
+
+    # current_time = the END of the last revealed bar's period. With this
+    # convention a bar is "fully revealed" iff time + tf_seconds <= current_time,
+    # which lets every timeframe stay in sync no matter which one the user
+    # advances on.
+    s = TF_SECONDS.get(req.timeframe, 86400)
+    initial_current_time = hidden_start + s
 
     session_id = str(uuid.uuid4())
     conn.execute(
@@ -248,14 +452,14 @@ def start_session(req: StartSessionRequest):
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (session_id, req.uid, req.symbol, req.timeframe,
-         req.account_size, req.account_size, hidden_start, hidden_start),
+         req.account_size, req.account_size, hidden_start, initial_current_time),
     )
     conn.commit()
     conn.close()
 
     # Strip real timestamps — send bar index only
     candles = [
-        {"bar": i, "open": r["open"], "high": r["high"],
+        {"bar": i, "time": r["time"], "open": r["open"], "high": r["high"],
          "low": r["low"], "close": r["close"], "volume": r["volume"]}
         for i, r in enumerate(rows)
     ]
@@ -283,6 +487,13 @@ def advance_session(session_id: str, req: AdvanceRequest):
         conn.close()
         raise HTTPException(status_code=400, detail="Session ended")
 
+    s = TF_SECONDS.get(sess["timeframe"], 86400)
+    # Find the next `count` bars whose period END is past current_time.
+    # When current_time falls inside a bar's period (because the user just
+    # advanced on a finer TF), this picks up that straddling bar first so
+    # advancing on a coarser TF reveals the rest of that period.
+    # Cutoff precomputed (current_time - s) so the index can be used.
+    cutoff_lo = sess["current_time"] - s
     rows = conn.execute(
         """
         SELECT time, open, high, low, close, volume
@@ -290,24 +501,26 @@ def advance_session(session_id: str, req: AdvanceRequest):
         WHERE symbol = ? AND timeframe = ? AND time > ?
         ORDER BY time ASC LIMIT ?
         """,
-        (sess["symbol"], sess["timeframe"], sess["current_time"], req.count),
+        (sess["symbol"], sess["timeframe"], cutoff_lo, req.count),
     ).fetchall()
 
     if not rows:
         conn.close()
         return {"candles": [], "done": True}
 
-    new_current = rows[-1]["time"]
+    # Set current_time to the END of the last newly-revealed bar's period,
+    # so all timeframes can compute consistent visibility from this single value.
+    new_current = rows[-1]["time"] + s
 
-    # Count bars revealed so far (from hidden_start through new_current)
-    # to compute bar_index without leaking real timestamps to the client
+    # Count bars revealed so far. With the end-of-period convention, a bar at
+    # time t is revealed iff t + s <= current_time, i.e. t <= current_time - s.
     bars_at_start = conn.execute(
         "SELECT COUNT(*) FROM candles WHERE symbol=? AND timeframe=? AND time<=?",
         (sess["symbol"], sess["timeframe"], sess["hidden_start"]),
     ).fetchone()[0]
     bars_at_new_current = conn.execute(
         "SELECT COUNT(*) FROM candles WHERE symbol=? AND timeframe=? AND time<=?",
-        (sess["symbol"], sess["timeframe"], new_current),
+        (sess["symbol"], sess["timeframe"], new_current - s),
     ).fetchone()[0]
 
     conn.execute(
@@ -317,6 +530,9 @@ def advance_session(session_id: str, req: AdvanceRequest):
 
     # Check SL/TP hits for all open positions on each new bar
     positions = json.loads(sess["open_positions"])
+    closed_trades = json.loads(sess["closed_trades"])
+    balance = sess["balance"]
+    spec = CONTRACT_SPECS.get(sess["symbol"], {"pip": 1, "contractSize": 1})
     closed_now = []
     for pos in positions[:]:
         for r in rows:
@@ -333,17 +549,65 @@ def advance_session(session_id: str, req: AdvanceRequest):
                     hit_tp = True
             if hit_sl or hit_tp:
                 exit_price = pos["stop_loss"] if hit_sl else pos["take_profit"]
-                pos["exit_price"] = exit_price
-                pos["closed_at"] = r["time"]
-                pos["hit"] = "sl" if hit_sl else "tp"
-                closed_now.append(pos)
+                direction = 1 if pos["side"] == "buy" else -1
+                pips = (exit_price - pos["entry_price"]) / spec["pip"] * direction
+                pnl = pips * spec["pip"] * spec["contractSize"] * pos["lots"]
+                r_multiple = None
+                if pos.get("stop_loss"):
+                    risk_pips = abs(pos["entry_price"] - pos["stop_loss"]) / spec["pip"]
+                    if risk_pips > 0:
+                        r_multiple = round(pips / risk_pips, 2)
+
+                trade = {
+                    "id": str(uuid.uuid4()),
+                    "position_id": pos["id"],
+                    "session_id": session_id,
+                    "uid": sess["uid"],
+                    "symbol": sess["symbol"],
+                    "side": pos["side"],
+                    "lots": pos["lots"],
+                    "entry_price": pos["entry_price"],
+                    "exit_price": exit_price,
+                    "stop_loss": pos.get("stop_loss"),
+                    "take_profit": pos.get("take_profit"),
+                    "opened_at": pos["opened_at"],
+                    "closed_at": r["time"],
+                    "pnl": round(pnl, 2),
+                    "pips": round(pips, 1),
+                    "r_multiple": r_multiple,
+                    "hit": "sl" if hit_sl else "tp",
+                    "news_snapshot": "[]",
+                }
+                balance += pnl
+                closed_trades.append(trade)
+                closed_now.append(trade)
                 positions.remove(pos)
+
+                conn.execute(
+                    """
+                    INSERT INTO trades
+                      (id, uid, session_id, symbol, side, lots, entry_price, exit_price,
+                       stop_loss, take_profit, opened_at, closed_at, pnl, pips, r_multiple, news_snapshot)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (trade["id"], sess["uid"], session_id, trade["symbol"], trade["side"],
+                     trade["lots"], trade["entry_price"], trade["exit_price"],
+                     trade.get("stop_loss"), trade.get("take_profit"),
+                     trade["opened_at"], trade["closed_at"],
+                     trade["pnl"], trade["pips"], trade.get("r_multiple"), "[]"),
+                )
                 break
 
     conn.execute(
-        "UPDATE trading_sessions SET open_positions = ? WHERE session_id = ?",
-        (json.dumps(positions), session_id),
+        """
+        UPDATE trading_sessions
+        SET open_positions = ?, closed_trades = ?, balance = ?
+        WHERE session_id = ?
+        """,
+        (json.dumps(positions), json.dumps(closed_trades), balance, session_id),
     )
+    if closed_now:
+        _update_account_stats(conn, sess["uid"])
     conn.commit()
     conn.close()
 
@@ -353,7 +617,7 @@ def advance_session(session_id: str, req: AdvanceRequest):
     base_bar = (bars_at_new_current - bars_at_start) + 199 - (len(rows) - 1)
 
     candles = [
-        {"bar": base_bar + i,
+        {"bar": base_bar + i, "time": r["time"],
          "open": r["open"], "high": r["high"],
          "low": r["low"], "close": r["close"], "volume": r["volume"]}
         for i, r in enumerate(rows)
@@ -397,11 +661,14 @@ def place_trade(session_id: str, req: TradeRequest):
         if not req.side or not req.lots:
             conn.close()
             raise HTTPException(status_code=400, detail="side and lots required")
+        # Prefer the price the user confirmed on the chart. Fall back to
+        # current_price only if the client didn't send one.
+        recorded_entry = req.entry_price if req.entry_price is not None else current_price
         pos = {
             "id": str(uuid.uuid4()),
             "side": req.side,
             "lots": req.lots,
-            "entry_price": current_price,
+            "entry_price": recorded_entry,
             "stop_loss": req.stop_loss,
             "take_profit": req.take_profit,
             "opened_at": sess["current_time"],
@@ -861,7 +1128,7 @@ def enter_tournament(tournament_id: int, payload: dict):
     conn.close()
 
     candles = [
-        {"bar": i, "open": r["open"], "high": r["high"],
+        {"bar": i, "time": r["time"], "open": r["open"], "high": r["high"],
          "low": r["low"], "close": r["close"], "volume": r["volume"]}
         for i, r in enumerate(rows)
     ]

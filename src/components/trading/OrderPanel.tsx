@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator,
+  View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Modal, Pressable,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { openTrade, closeTrade } from '../../services/api';
 import { useSessionStore } from '../../store/sessionStore';
+import { colors, radius, spacing, fontSize, fontWeight, labelStyle } from '../../theme';
 
 interface Props {
   currentPrice: number;
@@ -12,27 +14,22 @@ interface Props {
 }
 
 export default function OrderPanel({ currentPrice, pip, contractSize }: Props) {
-  const [lots, setLots] = useState('0.10');
+  const [orderModalSide, setOrderModalSide] = useState<'buy' | 'sell' | null>(null);
+  const [lots, setLots] = useState('1');
   const [sl, setSl] = useState('');
   const [tp, setTp] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const { sessionId, positions, balance, addPosition, removePosition, addClosedTrade, setBalance } =
-    useSessionStore();
+  const { sessionId, positions, addPosition, removePosition, addClosedTrade, setBalance } = useSessionStore();
 
-  const placeOrder = async (side: 'buy' | 'sell') => {
-    if (!sessionId) return;
+  const placeOrder = async () => {
+    if (!sessionId || !orderModalSide) return;
     const lotsNum = parseFloat(lots);
-    if (isNaN(lotsNum) || lotsNum <= 0) {
-      Alert.alert('Invalid lot size');
-      return;
-    }
+    if (isNaN(lotsNum) || lotsNum <= 0) { Alert.alert('Invalid lot size'); return; }
     setLoading(true);
     try {
       const res = await openTrade(
-        sessionId,
-        side,
-        lotsNum,
+        sessionId, orderModalSide, lotsNum,
         sl ? parseFloat(sl) : undefined,
         tp ? parseFloat(tp) : undefined,
       );
@@ -45,6 +42,9 @@ export default function OrderPanel({ currentPrice, pip, contractSize }: Props) {
         take_profit: res.position.take_profit,
         opened_at: res.position.opened_at,
       });
+      setOrderModalSide(null);
+      setSl('');
+      setTp('');
     } catch (e: any) {
       Alert.alert('Order failed', e.message);
     } finally {
@@ -67,135 +67,275 @@ export default function OrderPanel({ currentPrice, pip, contractSize }: Props) {
     }
   };
 
-  const lotsNum = parseFloat(lots) || 0;
-  const margin = lotsNum * contractSize * currentPrice * 0.01;
+  const fmt = (n: number) => n.toFixed(pip < 0.01 ? 5 : 2);
+  const buyPrice  = currentPrice + pip / 2;
+  const sellPrice = currentPrice - pip / 2;
 
   return (
     <View style={styles.container}>
-      <View style={styles.row}>
-        <Text style={styles.label}>Balance</Text>
-        <Text style={styles.balance}>${balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</Text>
-      </View>
 
-      <Text style={styles.price}>{currentPrice.toFixed(pip < 0.01 ? 5 : 2)}</Text>
-
-      <Text style={styles.label}>Lots</Text>
-      <TextInput
-        style={styles.input}
-        value={lots}
-        onChangeText={setLots}
-        keyboardType="decimal-pad"
-        placeholder="0.10"
-        placeholderTextColor="#555"
-      />
-
-      <View style={styles.sltp}>
-        <View style={{ flex: 1, marginRight: 6 }}>
-          <Text style={styles.label}>Stop Loss</Text>
-          <TextInput
-            style={styles.input}
-            value={sl}
-            onChangeText={setSl}
-            keyboardType="decimal-pad"
-            placeholder="Optional"
-            placeholderTextColor="#555"
-          />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.label}>Take Profit</Text>
-          <TextInput
-            style={styles.input}
-            value={tp}
-            onChangeText={setTp}
-            keyboardType="decimal-pad"
-            placeholder="Optional"
-            placeholderTextColor="#555"
-          />
-        </View>
-      </View>
-
-      <Text style={styles.margin}>Est. Margin: ${margin.toFixed(2)}</Text>
-
-      <View style={styles.buttons}>
-        <TouchableOpacity
-          style={[styles.buyBtn, loading && styles.disabled]}
-          onPress={() => placeOrder('buy')}
-          disabled={loading}
-        >
-          <Text style={styles.btnText}>BUY</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.sellBtn, loading && styles.disabled]}
-          onPress={() => placeOrder('sell')}
-          disabled={loading}
-        >
-          <Text style={styles.btnText}>SELL</Text>
-        </TouchableOpacity>
-      </View>
-
-      {loading && <ActivityIndicator color="#58a6ff" style={{ marginTop: 8 }} />}
-
-      {/* Open Positions */}
+      {/* Open Position card — only shown when there are open positions */}
       {positions.length > 0 && (
-        <View style={styles.positionsSection}>
-          <Text style={styles.sectionTitle}>Open Positions</Text>
+        <View style={styles.posCard}>
+          <View style={styles.posHeader}>
+            <Text style={styles.posTitle}>OPEN POSITION</Text>
+            {positions.map((p) => (
+              <View key={p.id} style={[styles.posBadge, p.side === 'buy' ? styles.posBadgeBuy : styles.posBadgeSell]}>
+                <Text style={styles.posBadgeText}>{p.side === 'buy' ? 'LONG' : 'SHORT'} {p.lots}</Text>
+              </View>
+            ))}
+          </View>
+
           {positions.map((pos) => {
             const dir = pos.side === 'buy' ? 1 : -1;
             const pips = ((currentPrice - pos.entry_price) / pip) * dir;
             const pnl = pips * pip * contractSize * pos.lots;
             return (
-              <View key={pos.id} style={styles.posCard}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.posSide, pos.side === 'buy' ? styles.green : styles.red]}>
-                    {pos.side.toUpperCase()} {pos.lots} lots @ {pos.entry_price.toFixed(pip < 0.01 ? 5 : 2)}
-                  </Text>
-                  {pos.stop_loss ? <Text style={styles.slLabel}>SL: {pos.stop_loss}</Text> : null}
-                  {pos.take_profit ? <Text style={styles.tpLabel}>TP: {pos.take_profit}</Text> : null}
-                  <Text style={[styles.posPnl, pnl >= 0 ? styles.green : styles.red]}>
-                    P&L: ${pnl.toFixed(2)} ({pips.toFixed(1)} pips)
-                  </Text>
+              <View key={pos.id} style={styles.posBody}>
+                <View style={styles.posStats}>
+                  <View style={styles.posStat}>
+                    <Text style={styles.posStatLabel}>Entry</Text>
+                    <Text style={styles.posStatValue}>{fmt(pos.entry_price)}</Text>
+                  </View>
+                  <View style={styles.posStat}>
+                    <Text style={styles.posStatLabel}>Size</Text>
+                    <Text style={styles.posStatValue}>{pos.lots}</Text>
+                  </View>
+                  <View style={styles.posStat}>
+                    <Text style={styles.posStatLabel}>P&amp;L</Text>
+                    <Text style={[styles.posStatValue, pnl >= 0 ? styles.green : styles.red]}>
+                      {pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}
+                    </Text>
+                  </View>
                 </View>
+
+                {(pos.stop_loss || pos.take_profit) && (
+                  <View style={styles.sltpRow}>
+                    {pos.stop_loss != null && (
+                      <View style={styles.sltpItem}>
+                        <Text style={styles.sltpLabel}>Stop Loss</Text>
+                        <View style={styles.sltpValueRow}>
+                          <Text style={styles.sltpValue}>{fmt(pos.stop_loss)}</Text>
+                          <Ionicons name="pencil" size={12} color={colors.textTertiary} style={{ marginLeft: 6 }} />
+                        </View>
+                      </View>
+                    )}
+                    {pos.take_profit != null && (
+                      <View style={styles.sltpItem}>
+                        <Text style={styles.sltpLabel}>Take Profit</Text>
+                        <View style={styles.sltpValueRow}>
+                          <Text style={styles.sltpValue}>{fmt(pos.take_profit)}</Text>
+                          <Ionicons name="pencil" size={12} color={colors.textTertiary} style={{ marginLeft: 6 }} />
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                )}
+
                 <TouchableOpacity style={styles.closeBtn} onPress={() => handleClose(pos.id)}>
-                  <Text style={styles.closeBtnText}>Close</Text>
+                  <Text style={styles.closeBtnText}>CLOSE POSITION</Text>
                 </TouchableOpacity>
               </View>
             );
           })}
         </View>
       )}
+
+      {/* BUY / SELL buttons */}
+      <View style={styles.tradeRow}>
+        <TouchableOpacity
+          style={styles.buyBtn}
+          onPress={() => { setOrderModalSide('buy'); }}
+          activeOpacity={0.85}
+        >
+          <View style={styles.tradeBtnTop}>
+            <Text style={styles.tradeBtnLabel}>BUY</Text>
+            <Ionicons name="chevron-up" size={14} color="#fff" />
+          </View>
+          <Text style={styles.tradeBtnPrice}>{fmt(buyPrice)}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.sellBtn}
+          onPress={() => { setOrderModalSide('sell'); }}
+          activeOpacity={0.85}
+        >
+          <View style={styles.tradeBtnTop}>
+            <Text style={styles.tradeBtnLabel}>SELL</Text>
+            <Ionicons name="chevron-down" size={14} color="#fff" />
+          </View>
+          <Text style={styles.tradeBtnPrice}>{fmt(sellPrice)}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Bottom toolbar */}
+      <View style={styles.toolbar}>
+        <TouchableOpacity style={styles.toolbarBtn}>
+          <Ionicons name="pencil-outline" size={20} color={colors.textSecondary} />
+          <Text style={styles.toolbarLabel}>DRAW</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.toolbarBtn}>
+          <Ionicons name="analytics-outline" size={20} color={colors.textSecondary} />
+          <Text style={styles.toolbarLabel}>INDICATORS</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.toolbarBtn}>
+          <Ionicons name="receipt-outline" size={20} color={colors.textSecondary} />
+          <Text style={styles.toolbarLabel}>ORDERS</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.toolbarBtn}>
+          <Ionicons name="briefcase-outline" size={20} color={colors.textSecondary} />
+          <Text style={styles.toolbarLabel}>POSITIONS</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Order entry modal (shown when BUY or SELL is tapped) */}
+      <Modal visible={orderModalSide !== null} animationType="slide" transparent>
+        <Pressable style={styles.modalBackdrop} onPress={() => setOrderModalSide(null)}>
+          <Pressable style={styles.modalSheet} onPress={() => {}}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>
+              {orderModalSide === 'buy' ? 'BUY' : 'SELL'}  ·  {fmt(orderModalSide === 'buy' ? buyPrice : sellPrice)}
+            </Text>
+
+            <Text style={styles.modalLabel}>SIZE (LOTS)</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={lots}
+              onChangeText={setLots}
+              keyboardType="decimal-pad"
+              placeholder="1"
+              placeholderTextColor={colors.textTertiary}
+            />
+
+            <View style={styles.modalRow}>
+              <View style={{ flex: 1, marginRight: spacing.sm }}>
+                <Text style={styles.modalLabel}>STOP LOSS</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={sl}
+                  onChangeText={setSl}
+                  keyboardType="decimal-pad"
+                  placeholder="Optional"
+                  placeholderTextColor={colors.textTertiary}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalLabel}>TAKE PROFIT</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={tp}
+                  onChangeText={setTp}
+                  keyboardType="decimal-pad"
+                  placeholder="Optional"
+                  placeholderTextColor={colors.textTertiary}
+                />
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.confirmBtn,
+                orderModalSide === 'buy' ? { backgroundColor: colors.green } : { backgroundColor: colors.red },
+                loading && { opacity: 0.5 },
+              ]}
+              onPress={placeOrder}
+              disabled={loading}
+              activeOpacity={0.85}
+            >
+              {loading
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={styles.confirmBtnText}>CONFIRM {orderModalSide?.toUpperCase()}</Text>}
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { backgroundColor: '#161b22', padding: 16, borderRadius: 12, marginBottom: 12 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  balance: { color: '#e6edf3', fontWeight: '700', fontSize: 14 },
-  price: { color: '#58a6ff', fontSize: 24, fontWeight: '800', marginBottom: 12 },
-  label: { color: '#8b949e', fontSize: 12, marginBottom: 4 },
-  input: {
-    backgroundColor: '#0d1117', color: '#e6edf3', borderRadius: 8,
-    padding: 10, marginBottom: 12, borderWidth: 1, borderColor: '#30363d',
-  },
-  sltp: { flexDirection: 'row' },
-  margin: { color: '#8b949e', fontSize: 12, marginBottom: 12 },
-  buttons: { flexDirection: 'row', gap: 8 },
-  buyBtn: { flex: 1, backgroundColor: '#238636', padding: 14, borderRadius: 8, alignItems: 'center' },
-  sellBtn: { flex: 1, backgroundColor: '#da3633', padding: 14, borderRadius: 8, alignItems: 'center' },
-  btnText: { color: '#fff', fontWeight: '800', fontSize: 16 },
-  disabled: { opacity: 0.5 },
-  positionsSection: { marginTop: 16 },
-  sectionTitle: { color: '#e6edf3', fontWeight: '700', fontSize: 14, marginBottom: 8 },
+  container: { padding: spacing.lg, gap: spacing.md },
+
+  // Open position card
   posCard: {
-    backgroundColor: '#0d1117', borderRadius: 10, padding: 12, marginBottom: 8,
-    flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#30363d',
+    backgroundColor: colors.card, borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md,
   },
-  posSide: { fontSize: 13, fontWeight: '600' },
-  posPnl: { fontSize: 13, fontWeight: '700', marginTop: 4 },
-  slLabel: { color: '#f85149', fontSize: 11, marginTop: 2 },
-  tpLabel: { color: '#3fb950', fontSize: 11, marginTop: 2 },
-  green: { color: '#3fb950' },
-  red: { color: '#f85149' },
-  closeBtn: { backgroundColor: '#21262d', padding: 10, borderRadius: 6, marginLeft: 8 },
-  closeBtnText: { color: '#e6edf3', fontWeight: '600', fontSize: 13 },
+  posHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm, gap: spacing.sm },
+  posTitle: { ...labelStyle, color: colors.textPrimary, flex: 1 },
+  posBadge: { paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radius.sm },
+  posBadgeBuy:  { backgroundColor: colors.greenDim },
+  posBadgeSell: { backgroundColor: colors.redDim },
+  posBadgeText: { color: '#fff', fontSize: fontSize.xs, fontWeight: fontWeight.bold, letterSpacing: 1 },
+
+  posBody: { gap: spacing.sm },
+  posStats: { flexDirection: 'row', justifyContent: 'space-between' },
+  posStat: { flex: 1 },
+  posStatLabel: { color: colors.textSecondary, fontSize: fontSize.xs, marginBottom: 2 },
+  posStatValue: {
+    color: colors.textPrimary, fontSize: fontSize.lg, fontWeight: fontWeight.bold,
+    fontVariant: ['tabular-nums'],
+  },
+
+  sltpRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border },
+  sltpItem: { flex: 1 },
+  sltpLabel: { color: colors.textSecondary, fontSize: fontSize.xs, marginBottom: 2 },
+  sltpValueRow: { flexDirection: 'row', alignItems: 'center' },
+  sltpValue: { color: colors.textPrimary, fontWeight: fontWeight.semibold, fontVariant: ['tabular-nums'] },
+
+  closeBtn: {
+    backgroundColor: colors.cardAlt, borderRadius: radius.sm,
+    paddingVertical: spacing.sm, alignItems: 'center', marginTop: spacing.sm,
+  },
+  closeBtnText: { color: colors.textPrimary, fontWeight: fontWeight.bold, fontSize: fontSize.xs, letterSpacing: 1.5 },
+
+  // BUY / SELL row
+  tradeRow: { flexDirection: 'row', gap: spacing.sm },
+  buyBtn: {
+    flex: 1, backgroundColor: colors.green, borderRadius: radius.md,
+    paddingVertical: spacing.md, paddingHorizontal: spacing.md,
+    alignItems: 'center',
+  },
+  sellBtn: {
+    flex: 1, backgroundColor: colors.red, borderRadius: radius.md,
+    paddingVertical: spacing.md, paddingHorizontal: spacing.md,
+    alignItems: 'center',
+  },
+  tradeBtnTop: { flexDirection: 'row', alignItems: 'center' },
+  tradeBtnLabel: { color: '#fff', fontWeight: fontWeight.black, fontSize: fontSize.md, letterSpacing: 1 },
+  tradeBtnPrice: { color: '#fff', fontSize: fontSize.lg, fontWeight: fontWeight.bold, marginTop: 2, fontVariant: ['tabular-nums'] },
+
+  // Toolbar
+  toolbar: {
+    flexDirection: 'row', justifyContent: 'space-around',
+    paddingTop: spacing.md, marginTop: spacing.sm,
+    borderTopWidth: 1, borderTopColor: colors.border,
+  },
+  toolbarBtn: { alignItems: 'center', gap: 4 },
+  toolbarLabel: { color: colors.textSecondary, fontSize: 9, fontWeight: fontWeight.bold, letterSpacing: 1 },
+
+  // Modal
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  modalSheet: {
+    backgroundColor: colors.card, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl,
+    paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxl,
+  },
+  modalHandle: { alignSelf: 'center', width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2, marginBottom: spacing.md },
+  modalTitle: { color: colors.textPrimary, fontSize: fontSize.lg, fontWeight: fontWeight.bold, marginBottom: spacing.lg, letterSpacing: 1 },
+  modalLabel: { ...labelStyle, marginBottom: 6 },
+  modalInput: {
+    backgroundColor: colors.bg, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: spacing.md, paddingVertical: 14,
+    color: colors.textPrimary, fontSize: fontSize.md,
+    marginBottom: spacing.md, fontVariant: ['tabular-nums'],
+  },
+  modalRow: { flexDirection: 'row' },
+
+  confirmBtn: { borderRadius: radius.md, paddingVertical: 16, alignItems: 'center', marginTop: spacing.md },
+  confirmBtnText: { color: '#fff', fontWeight: fontWeight.black, fontSize: fontSize.md, letterSpacing: 2 },
+
+  green: { color: colors.green },
+  red:   { color: colors.red },
 });

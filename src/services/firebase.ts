@@ -1,17 +1,34 @@
+import { Platform } from 'react-native';
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, initializeAuth, type Auth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Replace with your Firebase project config
 const firebaseConfig = {
-  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY ?? '',
-  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN ?? '',
-  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID ?? '',
-  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET ?? '',
+  apiKey:            process.env.EXPO_PUBLIC_FIREBASE_API_KEY ?? '',
+  authDomain:        process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN ?? '',
+  projectId:         process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID ?? '',
+  storageBucket:     process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET ?? '',
   messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ?? '',
-  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID ?? '',
+  appId:             process.env.EXPO_PUBLIC_FIREBASE_APP_ID ?? '',
 };
 
 const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-export const db = getFirestore(app);
+
+let _auth: Auth;
+if (Platform.OS === 'web') {
+  // Browser: localStorage persistence is automatic
+  _auth = getAuth(app);
+} else {
+  // Native: persist auth tokens via AsyncStorage so the user stays signed in
+  // across app restarts. getReactNativePersistence isn't in the public TS types
+  // (it's exported from firebase/auth's RN entry only), so we require() to
+  // bypass the type-only check.
+  const { getReactNativePersistence } = require('firebase/auth');
+  _auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(AsyncStorage),
+  });
+}
+
+export const auth = _auth;
+export const db   = getFirestore(app);

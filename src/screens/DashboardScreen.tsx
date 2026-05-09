@@ -1,14 +1,27 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import { View, Text, ScrollView, StyleSheet, RefreshControl, TouchableOpacity } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { getAccount, getTrades } from '../services/api';
 import { useAuthStore } from '../store/authStore';
+import { colors, radius, spacing, fontSize, fontWeight, labelStyle } from '../theme';
+import { EquityCurve, WinLossBar, DailyPnlSpark, StreakTracker } from '../components/DashboardCharts';
+import { computeRank } from '../utils/ranks';
 
 const RANK_COLORS: Record<string, string> = {
-  'Gambler':       '#8b949e',
-  'Paper Hands':   '#f0883e',
-  'Sniper':        '#58a6ff',
-  'Inside Trader': '#d2a8ff',
-  'Market Maker':  '#ffd700',
+  'Gambler':       colors.rankGambler,
+  'Paper Hands':   colors.rankPaperHands,
+  'Sniper':        colors.rankSniper,
+  'Inside Trader': colors.rankInsideTrader,
+  'Market Maker':  colors.rankMarketMaker,
+};
+
+const RANK_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
+  'Gambler':       'dice-outline',
+  'Paper Hands':   'hand-left-outline',
+  'Sniper':        'locate-outline',
+  'Inside Trader': 'eye-outline',
+  'Market Maker':  'diamond-outline',
 };
 
 export default function DashboardScreen({ navigation }: any) {
@@ -17,136 +30,273 @@ export default function DashboardScreen({ navigation }: any) {
   const [trades, setTrades] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!uid) return;
     try {
       const [acc, trs] = await Promise.all([getAccount(uid), getTrades(uid, 50)]);
       setAccount(acc);
       setTrades(trs);
     } catch {}
-  };
+  }, [uid]);
 
-  useEffect(() => { load(); }, [uid]);
+  useEffect(() => { load(); }, [load]);
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  };
+  const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
-  if (!account) {
-    return (
-      <View style={styles.empty}>
-        <Text style={styles.emptyText}>Loading…</Text>
-      </View>
-    );
-  }
-
-  const wins   = trades.filter((t) => t.pnl > 0).length;
-  const losses = trades.filter((t) => t.pnl <= 0).length;
-  const avgWin  = wins   > 0 ? trades.filter((t) => t.pnl > 0).reduce((s, t) => s + t.pnl, 0) / wins   : 0;
-  const avgLoss = losses > 0 ? Math.abs(trades.filter((t) => t.pnl <= 0).reduce((s, t) => s + t.pnl, 0) / losses) : 0;
-  const rr = avgLoss > 0 ? (avgWin / avgLoss).toFixed(2) : '—';
-
-  const rankColor = RANK_COLORS[account.rank] ?? '#e6edf3';
-
-  const stat = (label: string, value: string, color = '#e6edf3') => (
-    <View style={styles.statCard}>
-      <Text style={styles.statLabel}>{label}</Text>
-      <Text style={[styles.statValue, { color }]}>{value}</Text>
-    </View>
+  if (!account) return (
+    <SafeAreaView edges={['top']} style={styles.empty}>
+      <Text style={styles.emptyText}>Loading…</Text>
+    </SafeAreaView>
   );
 
+  const wins   = trades.filter((t) => t.pnl > 0);
+  const losses = trades.filter((t) => t.pnl <= 0);
+  const avgWin  = wins.length   ? wins.reduce((s, t) => s + t.pnl, 0) / wins.length : 0;
+  const avgLoss = losses.length ? Math.abs(losses.reduce((s, t) => s + t.pnl, 0)) / losses.length : 0;
+  const profitFactor = avgLoss > 0 ? avgWin / avgLoss * (wins.length / Math.max(losses.length, 1)) : 0;
+  const expectancy = trades.length ? trades.reduce((s, t) => s + t.pnl, 0) / trades.length : 0;
+
+  const rank = account.rank || 'Gambler';
+  const rankColor = RANK_COLORS[rank];
+  const rankIcon = RANK_ICONS[rank];
+
+  const rankInfo = computeRank({
+    totalTrades: account.total_trades ?? 0,
+    winRate: account.win_rate ?? 0,
+    totalPnl: account.total_pnl ?? 0,
+    startingBalance: account.starting_balance ?? 10000,
+  });
+
   return (
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.bg }}>
     <ScrollView
-      style={styles.container}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#58a6ff" />}
+      style={styles.scroll}
+      contentContainerStyle={styles.container}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.gold} />}
     >
       {/* Header */}
-      <View style={styles.profileRow}>
+      <View style={styles.header}>
         <View>
           <Text style={styles.username}>@{username}</Text>
-          <Text style={[styles.rank, { color: rankColor }]}>{account.rank}</Text>
+          <Text style={styles.subtitle}>Your trading dashboard</Text>
         </View>
-        <TouchableOpacity style={styles.newSessionBtn} onPress={() => navigation.navigate('Markets')}>
-          <Text style={styles.newSessionText}>+ New Session</Text>
+        <TouchableOpacity style={styles.headerIconBtn} onPress={() => navigation.navigate('Chart')}>
+          <Ionicons name="add" size={22} color={colors.bg} />
         </TouchableOpacity>
       </View>
 
-      {/* Account */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Account</Text>
-        <View style={styles.row}>
-          {stat('Total P&L', `${account.total_pnl >= 0 ? '+' : ''}$${account.total_pnl.toFixed(2)}`, account.total_pnl >= 0 ? '#3fb950' : '#f85149')}
-          {stat('Win Rate', `${(account.win_rate * 100).toFixed(1)}%`, '#3fb950')}
+      {/* Rank Badge — driven by XP from total trades / win rate / return */}
+      <View style={[styles.rankBadge, { borderColor: rankInfo.current.color }]}>
+        <View style={[styles.rankIconWrap, {
+          backgroundColor: rankInfo.current.color + '22',
+          borderColor: rankInfo.current.color,
+        }]}>
+          <Ionicons name={rankInfo.current.icon as any} size={32} color={rankInfo.current.color} />
         </View>
-        <View style={styles.row}>
-          {stat('Total Trades', `${account.total_trades}`)}
-          {stat('Risk:Reward', `1:${rr}`)}
+        <View style={{ flex: 1 }}>
+          <Text style={styles.rankLabel}>CURRENT RANK</Text>
+          <Text style={[styles.rankName, { color: rankInfo.current.color }]}>
+            {rankInfo.current.label.toUpperCase()}
+          </Text>
+          <View style={styles.xpRow}>
+            <Text style={styles.xpText}>{rankInfo.xp} XP</Text>
+            {rankInfo.next && (
+              <Text style={styles.xpNext}>{rankInfo.next.minXp - rankInfo.xp} TO {rankInfo.next.label.toUpperCase()}</Text>
+            )}
+          </View>
+          <View style={styles.xpBarTrack}>
+            <View style={[styles.xpBarFill, {
+              width: `${Math.round(rankInfo.progressPct * 100)}%`,
+              backgroundColor: rankInfo.current.color,
+            }]} />
+          </View>
         </View>
       </View>
 
-      {/* Recent Trades journal */}
-      {trades.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Trade Journal</Text>
-          {trades.slice(0, 20).map((t) => (
-            <View key={t.id} style={styles.tradeCard}>
-              <View style={styles.tradeTop}>
-                <Text style={styles.tradeSymbol}>{t.symbol}</Text>
-                <Text style={[styles.tradeSide, t.side === 'buy' ? styles.green : styles.red]}>
-                  {t.side.toUpperCase()}
-                </Text>
-                <Text style={[styles.tradePnl, t.pnl >= 0 ? styles.green : styles.red]}>
-                  {t.pnl >= 0 ? '+' : ''}${t.pnl.toFixed(2)}
-                </Text>
-              </View>
-              <View style={styles.tradeBottom}>
-                <Text style={styles.tradeMeta}>
-                  {t.lots} lots  ·  {t.pips.toFixed(1)} pips
-                  {t.r_multiple != null ? `  ·  ${t.r_multiple > 0 ? '+' : ''}${t.r_multiple}R` : ''}
-                </Text>
-                {t.news_snapshot && JSON.parse(t.news_snapshot).length > 0 && (
-                  <Text style={styles.newsHeadline} numberOfLines={1}>
-                    "{JSON.parse(t.news_snapshot)[0]}"
-                  </Text>
-                )}
-              </View>
-            </View>
-          ))}
+      {/* Top stats row */}
+      <View style={styles.statsRow}>
+        <StatCard
+          label="TOTAL P&L"
+          value={`${account.total_pnl >= 0 ? '+' : ''}$${account.total_pnl.toFixed(2)}`}
+          color={account.total_pnl >= 0 ? colors.green : colors.red}
+        />
+        <StatCard
+          label="WIN RATE"
+          value={`${(account.win_rate * 100).toFixed(1)}%`}
+          color={colors.green}
+        />
+      </View>
+
+      {/* Detailed stats */}
+      <View style={styles.statsRow}>
+        <StatCard
+          label="TOTAL TRADES"
+          value={`${account.total_trades}`}
+        />
+        <StatCard
+          label="PROFIT FACTOR"
+          value={isFinite(profitFactor) && profitFactor > 0 ? profitFactor.toFixed(2) : '—'}
+        />
+      </View>
+
+      <View style={styles.statsRow}>
+        <StatCard
+          label="AVG WIN"
+          value={`$${avgWin.toFixed(2)}`}
+          color={colors.green}
+        />
+        <StatCard
+          label="AVG LOSS"
+          value={`-$${avgLoss.toFixed(2)}`}
+          color={colors.red}
+        />
+      </View>
+
+      <View style={styles.statsRow}>
+        <StatCard
+          label="EXPECTANCY"
+          value={`$${expectancy.toFixed(2)}`}
+          color={expectancy >= 0 ? colors.green : colors.red}
+        />
+        <StatCard
+          label="EQUITY"
+          value={`$${(10000 + account.total_pnl).toFixed(0)}`}
+        />
+      </View>
+
+      {/* Charts */}
+      <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
+        <EquityCurve trades={trades} startBalance={(account.starting_balance ?? 10000)} />
+        <WinLossBar trades={trades} />
+        <DailyPnlSpark trades={trades} />
+        <StreakTracker trades={trades} />
+      </View>
+
+      {/* Recent trades */}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>RECENT TRADES</Text>
+      </View>
+
+      {trades.length === 0 ? (
+        <View style={styles.emptyTradesBox}>
+          <Ionicons name="document-text-outline" size={40} color={colors.textTertiary} />
+          <Text style={styles.emptyTradesText}>No trades yet</Text>
+          <TouchableOpacity style={styles.startCta} onPress={() => navigation.navigate('Chart')}>
+            <Text style={styles.startCtaText}>START TRADING</Text>
+          </TouchableOpacity>
         </View>
+      ) : (
+        trades.slice(0, 20).map((t) => (
+          <View key={t.id} style={styles.tradeCard}>
+            <View style={styles.tradeRow1}>
+              <View style={styles.tradeLeft}>
+                <Text style={styles.tradeSymbol}>{t.symbol}</Text>
+                <View style={[styles.tradeSideBadge, t.side === 'buy' ? styles.badgeLong : styles.badgeShort]}>
+                  <Text style={styles.tradeSideText}>{t.side === 'buy' ? 'LONG' : 'SHORT'}</Text>
+                </View>
+              </View>
+              <Text style={[styles.tradePnl, t.pnl >= 0 ? styles.green : styles.red]}>
+                {t.pnl >= 0 ? '+' : ''}${t.pnl.toFixed(2)}
+              </Text>
+            </View>
+            <Text style={styles.tradeMeta}>
+              {t.lots} lots · {t.pips.toFixed(1)} pips
+              {t.r_multiple != null ? `  ·  ${t.r_multiple > 0 ? '+' : ''}${t.r_multiple}R` : ''}
+            </Text>
+          </View>
+        ))
       )}
     </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+function StatCard({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <View style={styles.statCard}>
+      <Text style={styles.statLabel}>{label}</Text>
+      <Text style={[styles.statValue, color && { color }]}>{value}</Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0d1117', padding: 16 },
-  empty: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0d1117' },
-  emptyText: { color: '#8b949e' },
+  scroll: { flex: 1, backgroundColor: colors.bg },
+  container: { padding: spacing.lg, paddingBottom: spacing.xxxl },
 
-  profileRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, marginTop: 8 },
-  username: { color: '#e6edf3', fontSize: 22, fontWeight: '900' },
-  rank: { fontSize: 13, fontWeight: '700', marginTop: 2 },
-  newSessionBtn: { backgroundColor: '#1f6feb', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
-  newSessionText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  empty: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' },
+  emptyText: { color: colors.textSecondary },
 
-  section: { marginBottom: 24 },
-  sectionTitle: { color: '#8b949e', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },
-  row: { flexDirection: 'row', gap: 8, marginBottom: 8 },
-  statCard: { flex: 1, backgroundColor: '#161b22', borderRadius: 10, padding: 14 },
-  statLabel: { color: '#8b949e', fontSize: 11, marginBottom: 4 },
-  statValue: { fontSize: 18, fontWeight: '800' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
+  username: { color: colors.textPrimary, fontSize: fontSize.xxl, fontWeight: fontWeight.black },
+  subtitle: { color: colors.textSecondary, fontSize: fontSize.sm, marginTop: 2 },
+  headerIconBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: colors.gold, alignItems: 'center', justifyContent: 'center',
+  },
 
-  tradeCard: { backgroundColor: '#161b22', borderRadius: 10, padding: 12, marginBottom: 8 },
-  tradeTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  tradeSymbol: { color: '#e6edf3', fontWeight: '700', flex: 1 },
-  tradeSide: { fontWeight: '600', marginRight: 12 },
-  tradePnl: { fontWeight: '800', fontSize: 15 },
-  tradeBottom: {},
-  tradeMeta: { color: '#8b949e', fontSize: 11 },
-  newsHeadline: { color: '#6e7681', fontSize: 11, fontStyle: 'italic', marginTop: 4 },
+  rankBadge: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.card, borderRadius: radius.lg,
+    borderWidth: 1, padding: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  rankIconWrap: {
+    width: 64, height: 64, borderRadius: 32,
+    borderWidth: 1.5,
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  rankLabel: { ...labelStyle, marginBottom: 4 },
+  rankName: { fontSize: fontSize.xl, fontWeight: fontWeight.black, letterSpacing: 1.5 },
+  xpRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 6 },
+  xpText: { color: colors.textPrimary, fontSize: fontSize.xs, fontWeight: fontWeight.bold, fontVariant: ['tabular-nums'] },
+  xpNext: { color: colors.textTertiary, fontSize: 9, fontWeight: fontWeight.semibold, letterSpacing: 0.5 },
+  xpBarTrack: {
+    height: 4, borderRadius: 2, backgroundColor: colors.cardAlt, marginTop: 4, overflow: 'hidden',
+  },
+  xpBarFill: { height: '100%', borderRadius: 2 },
 
-  green: { color: '#3fb950' },
-  red: { color: '#f85149' },
+  statsRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
+  statCard: {
+    flex: 1, backgroundColor: colors.card, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md,
+  },
+  statLabel: { ...labelStyle, fontSize: 9, marginBottom: 4 },
+  statValue: { color: colors.textPrimary, fontSize: fontSize.lg, fontWeight: fontWeight.bold, fontVariant: ['tabular-nums'] },
+
+  sectionHeader: { marginTop: spacing.xl, marginBottom: spacing.sm },
+  sectionTitle: { ...labelStyle, color: colors.textPrimary },
+
+  emptyTradesBox: {
+    backgroundColor: colors.card, borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.border,
+    padding: spacing.xxl, alignItems: 'center', gap: spacing.md,
+  },
+  emptyTradesText: { color: colors.textSecondary, fontSize: fontSize.md },
+  startCta: {
+    backgroundColor: colors.gold, borderRadius: radius.md,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  startCtaText: { color: colors.bg, fontWeight: fontWeight.bold, letterSpacing: 1.5, fontSize: fontSize.sm },
+
+  tradeCard: {
+    backgroundColor: colors.card, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md, marginBottom: spacing.sm,
+  },
+  tradeRow1: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  tradeLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  tradeSymbol: { color: colors.textPrimary, fontWeight: fontWeight.bold, fontSize: fontSize.md },
+  tradeSideBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.sm },
+  badgeLong:  { backgroundColor: colors.greenDim },
+  badgeShort: { backgroundColor: colors.redDim },
+  tradeSideText: { color: '#fff', fontSize: 10, fontWeight: fontWeight.bold, letterSpacing: 1 },
+  tradePnl: { fontSize: fontSize.lg, fontWeight: fontWeight.bold, fontVariant: ['tabular-nums'] },
+  tradeMeta: { color: colors.textSecondary, fontSize: fontSize.xs },
+
+  green: { color: colors.green },
+  red:   { color: colors.red },
 });

@@ -3,25 +3,34 @@ import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   ActivityIndicator, TextInput, Alert, RefreshControl,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { fetchLeaderboard, getFeed, createGroup, joinGroup, getGroupLeaderboard } from '../services/api';
 import { useAuthStore } from '../store/authStore';
+import { colors, radius, spacing, fontSize, fontWeight, labelStyle } from '../theme';
 
-type Tab = 'global' | 'feed' | 'groups';
+type Tab = 'leaderboard' | 'feed' | 'friends';
 type Period = 'weekly' | 'monthly' | 'alltime';
 
 const PERIODS: Period[] = ['weekly', 'monthly', 'alltime'];
-const MEDALS = ['🥇', '🥈', '🥉'];
+
+const RANK_COLORS: Record<string, string> = {
+  'Gambler':       colors.rankGambler,
+  'Paper Hands':   colors.rankPaperHands,
+  'Sniper':        colors.rankSniper,
+  'Inside Trader': colors.rankInsideTrader,
+  'Market Maker':  colors.rankMarketMaker,
+};
 
 export default function LeaderboardScreen() {
   const { uid } = useAuthStore();
-  const [tab, setTab]     = useState<Tab>('global');
+  const [tab, setTab] = useState<Tab>('leaderboard');
   const [period, setPeriod] = useState<Period>('weekly');
-  const [data, setData]   = useState<any[]>([]);
-  const [feed, setFeed]   = useState<any[]>([]);
+  const [data, setData] = useState<any[]>([]);
+  const [feed, setFeed] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Groups state
   const [groupName, setGroupName] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [groupLb, setGroupLb] = useState<any[]>([]);
@@ -29,30 +38,26 @@ export default function LeaderboardScreen() {
 
   const loadGlobal = useCallback(async () => {
     setLoading(true);
-    try {
-      setData(await fetchLeaderboard(period));
-    } catch {}
+    try { setData(await fetchLeaderboard(period)); } catch {}
     setLoading(false);
   }, [period]);
 
   const loadFeed = useCallback(async () => {
     setLoading(true);
-    try {
-      setFeed(await getFeed(50));
-    } catch {}
+    try { setFeed(await getFeed(50)); } catch {}
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    if (tab === 'global') loadGlobal();
-    if (tab === 'feed')   loadFeed();
+    if (tab === 'leaderboard') loadGlobal();
+    if (tab === 'feed') loadFeed();
   }, [tab, period]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    if (tab === 'global') await loadGlobal();
-    if (tab === 'feed')   await loadFeed();
-    if (tab === 'groups' && myGroupId) {
+    if (tab === 'leaderboard') await loadGlobal();
+    if (tab === 'feed') await loadFeed();
+    if (tab === 'friends' && myGroupId) {
       setGroupLb(await getGroupLeaderboard(myGroupId).catch(() => []));
     }
     setRefreshing(false);
@@ -66,9 +71,7 @@ export default function LeaderboardScreen() {
       setGroupLb(await getGroupLeaderboard(res.group_id));
       Alert.alert('Group created!', `Invite code: ${res.invite_code}`);
       setGroupName('');
-    } catch (e: any) {
-      Alert.alert('Error', e.message);
-    }
+    } catch (e: any) { Alert.alert('Error', e.message); }
   };
 
   const handleJoinGroup = async () => {
@@ -78,201 +81,278 @@ export default function LeaderboardScreen() {
       setMyGroupId(res.group_id);
       setGroupLb(await getGroupLeaderboard(res.group_id));
       setInviteCode('');
-    } catch (e: any) {
-      Alert.alert('Invalid code', e.message);
-    }
+    } catch (e: any) { Alert.alert('Invalid code', e.message); }
   };
 
-  const renderGlobalRow = ({ item, index }: any) => (
-    <View style={styles.row}>
-      <Text style={styles.rankNum}>{index < 3 ? MEDALS[index] : `#${index + 1}`}</Text>
-      <View style={styles.info}>
-        <Text style={styles.username}>@{item.username}</Text>
-        <Text style={styles.sub}>
-          {item.symbol} · {item.total_trades} trades · {(item.win_rate * 100).toFixed(1)}% WR
+  const renderLeaderboardRow = ({ item, index }: any) => {
+    const isFirst = index === 0;
+    const rankColor = RANK_COLORS[item.rank] || colors.textSecondary;
+    return (
+      <View style={[styles.lbRow, isFirst && styles.lbRowFirst]}>
+        <Text style={[styles.lbRank, isFirst && styles.lbRankFirst]}>{index + 1}</Text>
+        <View style={styles.lbTraderCol}>
+          <Text style={[styles.lbTraderName, isFirst && styles.lbTraderNameFirst]}>{item.username}</Text>
+          <Text style={[styles.lbTraderRank, { color: rankColor }]}>{item.rank || 'Gambler'}</Text>
+        </View>
+        <Text style={[styles.lbEquity, isFirst && styles.lbEquityFirst]}>
+          ${(item.account_size + (item.account_size * item.return_pct / 100)).toLocaleString('en-US', { maximumFractionDigits: 2 })}
+        </Text>
+        <Text style={[styles.lbScore, isFirst && styles.lbScoreFirst]}>
+          {item.return_pct.toFixed(2)}
         </Text>
       </View>
-      <Text style={[styles.returnPct, item.return_pct >= 0 ? styles.green : styles.red]}>
-        {item.return_pct >= 0 ? '+' : ''}{item.return_pct.toFixed(2)}%
-      </Text>
-    </View>
-  );
+    );
+  };
 
   const renderFeedRow = ({ item }: any) => (
     <View style={styles.feedCard}>
       <View style={styles.feedTop}>
         <Text style={styles.feedUser}>@{item.username}</Text>
-        <Text style={[styles.feedSide, item.side === 'buy' ? styles.green : styles.red]}>
-          {item.side.toUpperCase()} {item.symbol}
-        </Text>
+        <View style={[styles.feedSideBadge, item.side === 'buy' ? styles.feedBadgeLong : styles.feedBadgeShort]}>
+          <Text style={styles.feedSideText}>{item.side === 'buy' ? 'LONG' : 'SHORT'} {item.symbol}</Text>
+        </View>
         <Text style={[styles.feedPnl, item.pnl >= 0 ? styles.green : styles.red]}>
           {item.pnl >= 0 ? '+' : ''}${item.pnl.toFixed(2)}
         </Text>
       </View>
-      <Text style={styles.feedSub}>
-        {item.pips.toFixed(1)} pips{item.r_multiple != null ? `  ·  ${item.r_multiple > 0 ? '+' : ''}${item.r_multiple}R` : ''}
+      <Text style={styles.feedMeta}>
+        {item.pips.toFixed(1)} pips
+        {item.r_multiple != null ? `  ·  ${item.r_multiple > 0 ? '+' : ''}${item.r_multiple}R` : ''}
       </Text>
     </View>
   );
 
-  const renderGroupRow = ({ item, index }: any) => (
-    <View style={styles.row}>
-      <Text style={styles.rankNum}>{index < 3 ? MEDALS[index] : `#${index + 1}`}</Text>
-      <View style={styles.info}>
-        <Text style={styles.username}>@{item.username}</Text>
-        <Text style={styles.sub}>{item.total_trades} trades · {(item.win_rate * 100).toFixed(1)}% WR · {item.rank}</Text>
+  const renderHeader = () => (
+    <>
+      {/* Trophy header */}
+      <View style={styles.trophyHeader}>
+        <Ionicons name="trophy" size={32} color={colors.gold} />
       </View>
-      <Text style={[styles.returnPct, item.total_pnl >= 0 ? styles.green : styles.red]}>
-        {item.total_pnl >= 0 ? '+' : ''}${item.total_pnl.toFixed(0)}
-      </Text>
-    </View>
-  );
 
-  return (
-    <View style={styles.container}>
-      <Text style={styles.header}>Leaderboard</Text>
-
-      {/* Main tab bar */}
+      {/* Top tab bar */}
       <View style={styles.tabBar}>
-        {(['global', 'feed', 'groups'] as Tab[]).map((t) => (
+        {(['leaderboard', 'feed', 'friends'] as Tab[]).map((t) => (
           <TouchableOpacity
             key={t}
-            style={[styles.tab, tab === t && styles.tabActive]}
+            style={[styles.tabBtn, tab === t && styles.tabBtnActive]}
             onPress={() => setTab(t)}
           >
             <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
-              {t === 'global' ? 'Global' : t === 'feed' ? 'Feed' : 'Groups'}
+              {t === 'leaderboard' ? 'LEADERBOARD' : t === 'feed' ? 'TRADE FEED' : 'FRIENDS'}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {/* Period tabs (global only) */}
-      {tab === 'global' && (
-        <View style={styles.periodBar}>
+      {/* Period sub-tabs (only on leaderboard tab) */}
+      {tab === 'leaderboard' && (
+        <View style={styles.periodRow}>
           {PERIODS.map((p) => (
             <TouchableOpacity
               key={p}
-              style={[styles.periodBtn, period === p && styles.periodActive]}
+              style={[styles.periodBtn, period === p && styles.periodBtnActive]}
               onPress={() => setPeriod(p)}
             >
               <Text style={[styles.periodText, period === p && styles.periodTextActive]}>
-                {p.charAt(0).toUpperCase() + p.slice(1)}
+                {p === 'weekly' ? 'WEEKLY' : p === 'monthly' ? 'MONTHLY' : 'ALL TIME'}
               </Text>
             </TouchableOpacity>
           ))}
         </View>
       )}
 
-      {loading ? (
-        <ActivityIndicator color="#58a6ff" style={{ marginTop: 40 }} />
-      ) : tab === 'global' ? (
-        <FlatList
-          data={data}
-          keyExtractor={(_, i) => `${i}`}
-          renderItem={renderGlobalRow}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#58a6ff" />}
-          ListEmptyComponent={<Text style={styles.emptyText}>No results yet — start trading!</Text>}
-        />
-      ) : tab === 'feed' ? (
-        <FlatList
-          data={feed}
-          keyExtractor={(_, i) => `${i}`}
-          renderItem={renderFeedRow}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#58a6ff" />}
-          ListEmptyComponent={<Text style={styles.emptyText}>No public trades yet.</Text>}
-        />
-      ) : (
-        // Groups tab
-        <FlatList
-          data={groupLb}
-          keyExtractor={(_, i) => `${i}`}
-          renderItem={renderGroupRow}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#58a6ff" />}
-          ListHeaderComponent={
-            <View style={styles.groupActions}>
-              <Text style={styles.groupLabel}>Create a group</Text>
-              <View style={styles.groupRow}>
-                <TextInput
-                  style={[styles.groupInput, { flex: 1 }]}
-                  value={groupName}
-                  onChangeText={setGroupName}
-                  placeholder="Group name"
-                  placeholderTextColor="#555"
-                />
-                <TouchableOpacity style={styles.groupBtn} onPress={handleCreateGroup}>
-                  <Text style={styles.groupBtnText}>Create</Text>
-                </TouchableOpacity>
-              </View>
-              <Text style={[styles.groupLabel, { marginTop: 12 }]}>Join with code</Text>
-              <View style={styles.groupRow}>
-                <TextInput
-                  style={[styles.groupInput, { flex: 1 }]}
-                  value={inviteCode}
-                  onChangeText={setInviteCode}
-                  placeholder="XXXXXXXX"
-                  placeholderTextColor="#555"
-                  autoCapitalize="characters"
-                />
-                <TouchableOpacity style={styles.groupBtn} onPress={handleJoinGroup}>
-                  <Text style={styles.groupBtnText}>Join</Text>
-                </TouchableOpacity>
-              </View>
-              {groupLb.length > 0 && <Text style={[styles.groupLabel, { marginTop: 16 }]}>Group Rankings</Text>}
+      {/* Tournament card (only on leaderboard tab) */}
+      {tab === 'leaderboard' && (
+        <View style={styles.tourneyCard}>
+          <View style={styles.tourneyHeader}>
+            <Ionicons name="trophy" size={20} color={colors.gold} />
+            <Text style={styles.tourneyTitle}>MAY TOURNAMENT</Text>
+            <View style={styles.liveBadge}>
+              <View style={styles.liveDot} />
+              <Text style={styles.liveText}>LIVE</Text>
             </View>
-          }
-          ListEmptyComponent={!myGroupId ? <Text style={styles.emptyText}>Create or join a group above.</Text> : null}
-        />
+          </View>
+          <View style={styles.tourneyStats}>
+            <View style={styles.tourneyStat}>
+              <Text style={styles.tourneyStatLabel}>ENDS IN</Text>
+              <Text style={styles.tourneyStatValue}>12D 18H 47M</Text>
+            </View>
+            <View style={[styles.tourneyStat, { alignItems: 'flex-end' }]}>
+              <Text style={styles.tourneyStatLabel}>PRIZE POOL</Text>
+              <Text style={[styles.tourneyStatValue, { color: colors.gold }]}>$2,500 USD</Text>
+            </View>
+          </View>
+        </View>
       )}
-    </View>
+
+      {/* Leaderboard column headers */}
+      {tab === 'leaderboard' && data.length > 0 && (
+        <View style={styles.lbHeader}>
+          <Text style={[styles.lbHeaderText, { width: 32 }]}>RANK</Text>
+          <Text style={[styles.lbHeaderText, { flex: 1, marginLeft: spacing.sm }]}>TRADER</Text>
+          <Text style={[styles.lbHeaderText, { width: 80, textAlign: 'right' }]}>EQUITY</Text>
+          <Text style={[styles.lbHeaderText, { width: 60, textAlign: 'right' }]}>SCORE</Text>
+        </View>
+      )}
+
+      {/* Friends tab inputs */}
+      {tab === 'friends' && (
+        <View style={styles.friendsBox}>
+          <Text style={styles.fieldLabel}>CREATE A GROUP</Text>
+          <View style={styles.friendsInputRow}>
+            <TextInput
+              style={[styles.friendsInput, { flex: 1 }]}
+              value={groupName}
+              onChangeText={setGroupName}
+              placeholder="Group name"
+              placeholderTextColor={colors.textTertiary}
+            />
+            <TouchableOpacity style={styles.friendsBtn} onPress={handleCreateGroup}>
+              <Text style={styles.friendsBtnText}>CREATE</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={[styles.fieldLabel, { marginTop: spacing.lg }]}>JOIN WITH CODE</Text>
+          <View style={styles.friendsInputRow}>
+            <TextInput
+              style={[styles.friendsInput, { flex: 1 }]}
+              value={inviteCode}
+              onChangeText={setInviteCode}
+              placeholder="XXXXXXXX"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="characters"
+            />
+            <TouchableOpacity style={styles.friendsBtn} onPress={handleJoinGroup}>
+              <Text style={styles.friendsBtnText}>JOIN</Text>
+            </TouchableOpacity>
+          </View>
+
+          {groupLb.length > 0 && (
+            <Text style={[styles.fieldLabel, { marginTop: spacing.xl }]}>GROUP RANKINGS</Text>
+          )}
+        </View>
+      )}
+    </>
+  );
+
+  if (loading && data.length === 0 && feed.length === 0) {
+    return (
+      <SafeAreaView edges={['top']} style={styles.container}>
+        {renderHeader()}
+        <ActivityIndicator color={colors.gold} style={{ marginTop: 40 }} />
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView edges={['top']} style={styles.container}>
+    <FlatList
+      style={styles.container}
+      contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.xxxl }}
+      data={tab === 'leaderboard' ? data : tab === 'feed' ? feed : groupLb}
+      keyExtractor={(_, i) => `${i}`}
+      renderItem={tab === 'feed' ? renderFeedRow : renderLeaderboardRow}
+      ListHeaderComponent={renderHeader}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.gold} />}
+      ListEmptyComponent={
+        !loading ? (
+          <View style={styles.emptyBox}>
+            <Text style={styles.emptyText}>
+              {tab === 'leaderboard' ? 'No results yet — start trading!' :
+               tab === 'feed' ? 'No public trades yet.' :
+               !myGroupId ? 'Create or join a group above.' : ''}
+            </Text>
+          </View>
+        ) : null
+      }
+    />
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0d1117', paddingHorizontal: 16, paddingTop: 16 },
-  header: { color: '#e6edf3', fontSize: 26, fontWeight: '900', marginBottom: 16, marginTop: 8 },
+  container: { flex: 1, backgroundColor: colors.bg },
 
-  tabBar: { flexDirection: 'row', backgroundColor: '#161b22', borderRadius: 10, padding: 4, marginBottom: 12 },
-  tab: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8 },
-  tabActive: { backgroundColor: '#1f6feb' },
-  tabText: { color: '#8b949e', fontWeight: '600' },
-  tabTextActive: { color: '#fff', fontWeight: '700' },
+  trophyHeader: { alignItems: 'center', paddingTop: spacing.xl, paddingBottom: spacing.md },
 
-  periodBar: { flexDirection: 'row', gap: 6, marginBottom: 12 },
-  periodBtn: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 6, backgroundColor: '#161b22' },
-  periodActive: { backgroundColor: '#21262d' },
-  periodText: { color: '#8b949e', fontWeight: '600', fontSize: 13 },
-  periodTextActive: { color: '#e6edf3' },
+  tabBar: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border, marginBottom: spacing.md },
+  tabBtn: { flex: 1, paddingVertical: spacing.md, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  tabBtnActive: { borderBottomColor: colors.gold },
+  tabText: { color: colors.textSecondary, fontSize: fontSize.xs, fontWeight: fontWeight.bold, letterSpacing: 1.2 },
+  tabTextActive: { color: colors.gold },
 
-  row: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#161b22',
-    borderRadius: 10, padding: 14, marginBottom: 8,
+  periodRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+  periodBtn: {
+    paddingHorizontal: spacing.md, paddingVertical: 6,
+    borderRadius: radius.sm, backgroundColor: colors.card,
+    borderWidth: 1, borderColor: colors.border,
   },
-  rankNum: { fontSize: 18, width: 38 },
-  info: { flex: 1 },
-  username: { color: '#e6edf3', fontWeight: '700', fontSize: 15 },
-  sub: { color: '#8b949e', fontSize: 12, marginTop: 2 },
-  returnPct: { fontSize: 17, fontWeight: '900' },
+  periodBtnActive: { backgroundColor: colors.cardAlt, borderColor: colors.gold },
+  periodText: { color: colors.textSecondary, fontSize: fontSize.xs, fontWeight: fontWeight.bold, letterSpacing: 1 },
+  periodTextActive: { color: colors.gold },
 
-  feedCard: { backgroundColor: '#161b22', borderRadius: 10, padding: 12, marginBottom: 8 },
-  feedTop: { flexDirection: 'row', alignItems: 'center' },
-  feedUser: { color: '#e6edf3', fontWeight: '700', flex: 1 },
-  feedSide: { fontWeight: '600', marginRight: 10 },
-  feedPnl: { fontWeight: '800', fontSize: 15 },
-  feedSub: { color: '#8b949e', fontSize: 11, marginTop: 4 },
-
-  groupActions: { paddingBottom: 8 },
-  groupLabel: { color: '#8b949e', fontSize: 12, fontWeight: '600', marginBottom: 6 },
-  groupRow: { flexDirection: 'row', gap: 8 },
-  groupInput: {
-    backgroundColor: '#161b22', color: '#e6edf3', borderRadius: 8,
-    padding: 10, borderWidth: 1, borderColor: '#30363d',
+  tourneyCard: {
+    backgroundColor: colors.card, borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.gold,
+    padding: spacing.md, marginBottom: spacing.lg,
   },
-  groupBtn: { backgroundColor: '#1f6feb', paddingHorizontal: 14, borderRadius: 8, justifyContent: 'center' },
-  groupBtnText: { color: '#fff', fontWeight: '700' },
+  tourneyHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md },
+  tourneyTitle: { color: colors.textPrimary, fontWeight: fontWeight.black, letterSpacing: 1.5, fontSize: fontSize.md, marginLeft: spacing.sm, flex: 1 },
+  liveBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.redDim, paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: radius.sm },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.red, marginRight: 4 },
+  liveText: { color: '#fff', fontSize: 9, fontWeight: fontWeight.bold, letterSpacing: 1 },
+  tourneyStats: { flexDirection: 'row', justifyContent: 'space-between' },
+  tourneyStat: { flex: 1 },
+  tourneyStatLabel: { color: colors.textSecondary, fontSize: 9, fontWeight: fontWeight.bold, letterSpacing: 1.2, marginBottom: 2 },
+  tourneyStatValue: { color: colors.textPrimary, fontSize: fontSize.md, fontWeight: fontWeight.bold, fontVariant: ['tabular-nums'] },
 
-  emptyText: { color: '#8b949e', textAlign: 'center', marginTop: 40, fontSize: 15 },
+  lbHeader: { flexDirection: 'row', paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border, marginBottom: spacing.sm },
+  lbHeaderText: { color: colors.textSecondary, fontSize: 10, fontWeight: fontWeight.bold, letterSpacing: 1.2 },
 
-  green: { color: '#3fb950' },
-  red: { color: '#f85149' },
+  lbRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
+  lbRowFirst: { backgroundColor: colors.cardAlt, borderRadius: radius.md, paddingHorizontal: spacing.sm, borderColor: colors.gold, borderWidth: 1, marginBottom: spacing.sm },
+  lbRank: { color: colors.textSecondary, width: 32, fontSize: fontSize.md, fontWeight: fontWeight.bold, fontVariant: ['tabular-nums'] },
+  lbRankFirst: { color: colors.gold },
+  lbTraderCol: { flex: 1, marginLeft: spacing.sm },
+  lbTraderName: { color: colors.textPrimary, fontSize: fontSize.md, fontWeight: fontWeight.semibold },
+  lbTraderNameFirst: { fontWeight: fontWeight.bold, color: colors.gold },
+  lbTraderRank: { fontSize: fontSize.xs, marginTop: 2, fontWeight: fontWeight.semibold },
+  lbEquity: { color: colors.textPrimary, width: 80, textAlign: 'right', fontSize: fontSize.sm, fontWeight: fontWeight.semibold, fontVariant: ['tabular-nums'] },
+  lbEquityFirst: { color: colors.gold },
+  lbScore: { color: colors.textPrimary, width: 60, textAlign: 'right', fontSize: fontSize.sm, fontWeight: fontWeight.bold, fontVariant: ['tabular-nums'] },
+  lbScoreFirst: { color: colors.gold },
+
+  feedCard: {
+    backgroundColor: colors.card, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md, marginBottom: spacing.sm,
+  },
+  feedTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 4, gap: spacing.sm },
+  feedUser: { color: colors.textPrimary, fontSize: fontSize.sm, fontWeight: fontWeight.bold },
+  feedSideBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.sm },
+  feedBadgeLong: { backgroundColor: colors.greenDim },
+  feedBadgeShort: { backgroundColor: colors.redDim },
+  feedSideText: { color: '#fff', fontSize: 10, fontWeight: fontWeight.bold, letterSpacing: 1 },
+  feedPnl: { fontSize: fontSize.md, fontWeight: fontWeight.bold, marginLeft: 'auto', fontVariant: ['tabular-nums'] },
+  feedMeta: { color: colors.textSecondary, fontSize: fontSize.xs },
+
+  friendsBox: { paddingBottom: spacing.md },
+  fieldLabel: { ...labelStyle, marginBottom: spacing.sm },
+  friendsInputRow: { flexDirection: 'row', gap: spacing.sm },
+  friendsInput: {
+    backgroundColor: colors.card, color: colors.textPrimary,
+    borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: 12,
+    borderWidth: 1, borderColor: colors.border, fontSize: fontSize.md,
+  },
+  friendsBtn: {
+    backgroundColor: colors.gold, paddingHorizontal: spacing.lg,
+    borderRadius: radius.md, justifyContent: 'center',
+  },
+  friendsBtnText: { color: colors.bg, fontWeight: fontWeight.bold, letterSpacing: 1.5, fontSize: fontSize.xs },
+
+  emptyBox: { alignItems: 'center', paddingVertical: spacing.xxl },
+  emptyText: { color: colors.textSecondary, fontSize: fontSize.sm },
+
+  green: { color: colors.green },
+  red:   { color: colors.red },
 });

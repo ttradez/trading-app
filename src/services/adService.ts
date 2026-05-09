@@ -1,55 +1,17 @@
 /**
- * Interstitial ad fires every 6 minutes of active session time.
- * Uses react-native-google-mobile-ads.
- * Replace AD_UNIT_ID with your real AdMob unit before publishing.
+ * Interstitial ad — STUBBED for development.
+ *
+ * Real ads require react-native-google-mobile-ads which can't load in Expo Go
+ * (no native module) or in web (no native bindings). To enable ads:
+ *   1. Build a custom dev client: `eas build --profile development --platform ios|android`
+ *   2. Restore the real implementation from git history (see commit 07680c3)
+ *   3. Set up real AdMob unit IDs
+ *
+ * For now this is a no-op so the rest of the app can run in Expo Go and web.
  */
-import { useEffect, useRef } from 'react';
-import {
-  InterstitialAd,
-  AdEventType,
-  TestIds,
-} from 'react-native-google-mobile-ads';
-
-const AD_UNIT_ID = __DEV__
-  ? TestIds.INTERSTITIAL
-  : 'ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX'; // replace before publish
-
-const AD_INTERVAL_MS = 6 * 60 * 1000;
 
 export function useInterstitialAd() {
-  const adRef = useRef<InterstitialAd | null>(null);
-  const loadedRef = useRef(false);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const loadAd = () => {
-    const ad = InterstitialAd.createForAdRequest(AD_UNIT_ID, {
-      requestNonPersonalizedAdsOnly: true,
-    });
-    ad.addAdEventListener(AdEventType.LOADED, () => {
-      loadedRef.current = true;
-    });
-    ad.addAdEventListener(AdEventType.CLOSED, () => {
-      loadedRef.current = false;
-      loadAd(); // preload next
-    });
-    ad.load();
-    adRef.current = ad;
-  };
-
-  const showAd = () => {
-    if (loadedRef.current && adRef.current) {
-      adRef.current.show();
-    }
-  };
-
-  const startAdTimer = () => {
-    loadAd();
-    timerRef.current = setInterval(showAd, AD_INTERVAL_MS);
-  };
-
-  const stopAdTimer = () => {
-    if (timerRef.current) clearInterval(timerRef.current);
-  };
-
+  const startAdTimer = () => {};
+  const stopAdTimer = () => {};
   return { startAdTimer, stopAdTimer };
 }

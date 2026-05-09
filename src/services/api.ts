@@ -2,16 +2,47 @@ import { Candle, Timeframe } from '../types';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
 
-async function req<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
-    throw new Error(text || `HTTP ${res.status}`);
+async function req<T>(path: string, options?: RequestInit & { timeoutMs?: number }): Promise<T> {
+  // Fail fast if backend is unreachable — no infinite hangs.
+  // 30s instead of 10s — session start does a lot of SQLite work and was
+  // sometimes finishing right after the old 10s timeout fired.
+  const timeoutMs = options?.timeoutMs ?? 30_000;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${BASE_URL}${path}`, {
+      headers: { 'Content-Type': 'application/json' },
+      ...options,
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.statusText);
+      throw new Error(text || `HTTP ${res.status}`);
+    }
+    return res.json();
+  } catch (e: any) {
+    if (e.name === 'AbortError') {
+      throw new Error('Request timed out — backend unreachable. Check your phone is on the same WiFi as your laptop and the backend is running.');
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return res.json();
+}
+
+// ── News ──────────────────────────────────────────────────────────────────────
+
+export interface NewsItem {
+  id: string;
+  headline: string;
+  source: string;
+  ts: number;          // unix seconds
+  impact: 'low' | 'medium' | 'high';
+  symbol?: string;
+}
+
+export function fetchNews(symbol: string, before: number, limit = 50): Promise<NewsItem[]> {
+  return req<NewsItem[]>(`/news?symbol=${encodeURIComponent(symbol)}&before=${before}&limit=${limit}`);
 }
 
 // ── Markets ───────────────────────────────────────────────────────────────────
@@ -33,6 +64,10 @@ export function upsertUser(uid: string, username: string, email: string) {
     method: 'POST',
     body: JSON.stringify({ uid, username, email }),
   });
+}
+
+export function getUser(uid: string) {
+  return req<{ uid: string; username: string; email: string }>(`/users/${uid}`);
 }
 
 export function getAccount(uid: string) {
@@ -59,21 +94,29 @@ export function getSession(session_id: string): Promise<any> {
   return req(`/sessions/${session_id}`);
 }
 
+export function changeSessionTimeframe(session_id: string, timeframe: string): Promise<any> {
+  return req(`/sessions/${session_id}/timeframe`, {
+    method: 'POST',
+    body: JSON.stringify({ timeframe }),
+  });
+}
+
 export function startSession(
   uid: string,
   username: string,
   symbol: string,
   timeframe: string,
   account_size: number,
+  start_time?: number,   // optional unix-seconds override; backend snaps to nearest bar
 ): Promise<SessionStartResponse> {
   return req('/sessions/start', {
     method: 'POST',
-    body: JSON.stringify({ uid, username, symbol, timeframe, account_size }),
+    body: JSON.stringify({ uid, username, symbol, timeframe, account_size, start_time }),
   });
 }
 
 export interface AdvanceResponse {
-  candles: Array<{ open: number; high: number; low: number; close: number; volume: number }>;
+  candles: Array<{ bar: number; open: number; high: number; low: number; close: number; volume: number }>;
   done: boolean;
   auto_closed?: any[];
 }
@@ -91,10 +134,18 @@ export function openTrade(
   lots: number,
   stop_loss?: number,
   take_profit?: number,
+  entry_price?: number,
 ) {
   return req<any>(`/sessions/${session_id}/trade`, {
     method: 'POST',
-    body: JSON.stringify({ action: 'open', side, lots, stop_loss, take_profit }),
+    body: JSON.stringify({ action: 'open', side, lots, stop_loss, take_profit, entry_price }),
+  });
+}
+
+export function seekSession(session_id: string, target_time: number) {
+  return req<any>(`/sessions/${session_id}/seek`, {
+    method: 'POST',
+    body: JSON.stringify({ target_time }),
   });
 }
 

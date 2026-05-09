@@ -31,7 +31,7 @@ CONTRACT_SPECS = {
     "FTSE": {"pip": 0.5,     "contractSize": 10},
     "N225": {"pip": 5.0,     "contractSize": 1000},
     "ES":   {"pip": 0.25,    "contractSize": 50},
-    "NQ":   {"pip": 0.25,    "contractSize": 20},
+    "NQ":   {"pip": 0.25,    "contractSize": 1},
     "YM":   {"pip": 1.0,     "contractSize": 5},
     "CL":   {"pip": 0.01,    "contractSize": 1000},
     "GC":   {"pip": 0.1,     "contractSize": 100},

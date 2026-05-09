@@ -5,6 +5,7 @@ const STORAGE_KEY = '@pocket_trade_session_id';
 
 export interface SessionCandle {
   bar: number;
+  time?: number;   // unix seconds — set by the backend, used for the chart's date axis
   open: number;
   high: number;
   low: number;
