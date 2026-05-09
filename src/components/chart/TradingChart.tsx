@@ -250,6 +250,11 @@ function buildHTML(t: ChartTheme): string {
   let magnetMode = 'off';
   let pendingPosition = null;       // { side, entry, tp, sl }
   let pendingDragKind = null;       // 'tp' | 'sl' while user is dragging
+  // Timestamp of the last drawable-tool activation. Floating UI pills (the
+  // favorites bar sits ON the chart) can leak a phantom chart tap right
+  // after the pill press, which would land as the first placement point at
+  // the pill's x/y. We swallow chart taps for ~200ms after activation.
+  let toolActivatedAt = 0;
 
   const overlay        = document.getElementById('overlay');
   const hitBg          = document.getElementById('hitBg');
@@ -273,19 +278,20 @@ function buildHTML(t: ChartTheme): string {
     if (children) for (const c of children) el.appendChild(c);
     return el;
   }
-  /** Invisible 16px-wide hit target — sits under the visible drawing element so
-   *  fingers don't have to land exactly on a 2px line to select / drag it. */
+  /** Invisible 24px-wide hit target — sits under the visible drawing element so
+   *  fingers don't have to land exactly on a 2px line to select / drag it.
+   *  Larger than the visible stroke so taps near the line still register. */
   function hitLine(x1, y1, x2, y2, id) {
     return svg('line', {
       x1, y1, x2, y2,
-      stroke: 'transparent', 'stroke-width': 16,
+      stroke: 'transparent', 'stroke-width': 24,
       'data-id': id, 'pointer-events': 'stroke',
     });
   }
   function hitRect(x, y, w, h, id) {
     return svg('rect', {
-      x: x - 8, y: y - 8, width: w + 16, height: h + 16,
-      fill: 'transparent', stroke: 'transparent', 'stroke-width': 16,
+      x: x - 12, y: y - 12, width: w + 24, height: h + 24,
+      fill: 'transparent', stroke: 'transparent', 'stroke-width': 24,
       'data-id': id, 'pointer-events': 'all',
     });
   }
@@ -694,33 +700,36 @@ function buildHTML(t: ChartTheme): string {
         elements.push(svg('circle', { cx: a.x, cy: a.y, r: 3, fill: stroke }));
       }
 
+      // Wrap every drawing's elements in a g identified by drawing id.
+      // The body-drag uses this group transform to translate the whole
+      // shape during a drag (no SVG rebuild — touch target never detaches).
+      const group = svg('g', { 'data-drawing-id': d.id });
       elements.forEach((el) => {
-        // Only set data-id where it's still missing (most renderers set it
-        // already on the hit-target element). NEVER override pointer-events.
         if (!el.getAttribute('data-id')) el.setAttribute('data-id', d.id);
         if (isSel) el.setAttribute('opacity', '1');
-        drawingsLayer.appendChild(el);
+        group.appendChild(el);
       });
 
       // Drag handles when selected — extra-large hit area so finger drags work.
       if (isSel) {
         pts.forEach((p, idx) => {
           if (!p) return;
-          // Invisible 22px hit target
-          drawingsLayer.appendChild(svg('circle', {
+          // Invisible 24px hit target
+          group.appendChild(svg('circle', {
             cx: p.x, cy: p.y, r: 14,
             fill: 'transparent',
             'data-handle': idx, 'data-id': d.id,
             'pointer-events': 'all',
           }));
           // Visible 5px dot
-          drawingsLayer.appendChild(svg('circle', {
+          group.appendChild(svg('circle', {
             cx: p.x, cy: p.y, r: 5,
             fill: '#000', stroke: '#FFF', 'stroke-width': 2,
             'pointer-events': 'none',
           }));
         });
       }
+      drawingsLayer.appendChild(group);
     });
 
     // Pending points for an in-progress placement
@@ -997,6 +1006,31 @@ function buildHTML(t: ChartTheme): string {
   }
 
   function setDrawings(list, tool, selId, pending, magnet) {
+    // Note when a drawable tool was just activated — used by handleTap to
+    // ignore phantom chart taps that follow a tap on the on-chart favorites
+    // bar (the touch can leak through to the WebView at the pill's coords).
+    const incomingTool = tool || 'cursor_cross';
+    const isDrawable = !!incomingTool && incomingTool.indexOf('cursor_') !== 0
+                       && incomingTool !== 'demonstration' && incomingTool !== 'eraser';
+    if (isDrawable && incomingTool !== drawingActiveTool) {
+      toolActivatedAt = Date.now();
+    }
+    // While a body-drag is in flight, the WebView is the source of truth
+    // for the dragged drawing's points — preserve our locally-mutated copy.
+    // The incoming list still gets adopted for non-dragged drawings (and for
+    // type/style changes on the dragged one).
+    if (drawingBodyDrag && Array.isArray(list)) {
+      const dragged = drawingsList.find(function (x) { return x.id === drawingBodyDrag.id; });
+      if (dragged) {
+        const merged = list.map(function (incoming) {
+          return incoming.id === drawingBodyDrag.id
+            ? Object.assign({}, incoming, { points: dragged.points })
+            : incoming;
+        });
+        list = merged;
+      }
+    }
+
     drawingsList = list;
     drawingActiveTool = tool || 'cursor_cross';
     drawingSelectedId = selId || null;
@@ -1012,7 +1046,9 @@ function buildHTML(t: ChartTheme): string {
     // own taps (works in all modern WebKit/Chromium WebViews).
     overlay.style.pointerEvents = 'none';
     hitBg.setAttribute('pointer-events', isPlacing ? 'all' : 'none');
-    renderDrawings();
+    // Skip the full SVG rebuild during a body-drag — local mutation in the
+    // drag handler is already keeping the drawing visually in sync.
+    if (!drawingBodyDrag) renderDrawings();
   }
 
   // Re-render when chart pans/zooms — coalesce to one paint per frame so
@@ -1028,6 +1064,34 @@ function buildHTML(t: ChartTheme): string {
   }
   chart.timeScale().subscribeVisibleLogicalRangeChange(scheduleRender);
   series.subscribeDataChanged && series.subscribeDataChanged(scheduleRender);
+
+  // ── Price-axis change detector ──────────────────────────────────────────────
+  // lightweight-charts only fires range-change events for the TIME axis. When
+  // the user pans VERTICALLY the price→pixel projection shifts silently, so
+  // SVG-rendered drawings keep their old screen Y while candles slide. Poll a
+  // sentinel price each frame; if its projected y moved, re-render. Cheap —
+  // one priceToCoordinate call per frame, render only when something changed.
+  let priceProjectionRAF = null;
+  let lastSentinelY = null;
+  function priceProjectionTick() {
+    // Skip while ANY touch interaction is in flight — re-rendering the SVG
+    // would detach the element under the finger and kill the gesture.
+    const dragInFlight = drawingBodyDrag || drawingDragState || pendingDragKind || placementDrag;
+    if (!dragInFlight) {
+      const data = series.data();
+      const last = data && data.length ? data[data.length - 1] : null;
+      if (last) {
+        const y = series.priceToCoordinate(last.close);
+        if (y != null && y !== lastSentinelY) {
+          lastSentinelY = y;
+          renderDrawings();
+          repositionPending();
+        }
+      }
+    }
+    priceProjectionRAF = requestAnimationFrame(priceProjectionTick);
+  }
+  priceProjectionRAF = requestAnimationFrame(priceProjectionTick);
 
   // Tap → if a drawable tool is active, sample chart coordinates and
   // forward to React Native to add/extend the drawing.
@@ -1074,6 +1138,24 @@ function buildHTML(t: ChartTheme): string {
   // move). Tracks the last (time, price) so we send delta-translates to RN
   // and translate every anchor uniformly server-side.
   let drawingBodyDrag = null;
+  // "Drag-to-draw" placement state for 2-point tools (trendline, ray, fib,
+  // rectangle, etc.). When the user touches the chart in placement mode AND
+  // pendingPoints is empty AND the tool needs >= 2 points, we arm this with
+  // their starting coord. If the finger moves > 8px before release, we
+  // commit BOTH point A (start) and point B (end) on touchend in one go.
+  // If they just tap (no drag), it falls back to tap-tap mode (only A is
+  // placed; next tap places B).
+  let placementDrag = null;
+  // Tools that take exactly 2 anchors. Drag-to-draw placement is enabled for
+  // these — touchstart sets A, drag updates a live preview, touchend commits B.
+  // Anything not listed here uses tap-tap placement only.
+  const TWO_POINT_TOOLS = {
+    trendline: true, ray: true, info_line: true, extended_line: true,
+    trend_angle: true, rectangle: true, circle: true, arrow: true,
+    fib_retracement: true,
+    price_range: true, date_range: true, date_price_range: true,
+  };
+  const PLACEMENT_PREVIEW_ID = '__placement_preview__';
   // Long-press detection — fires drawing_longpress to RN after 500ms of
   // no movement on a drawing tap. RN shows a quick action sheet
   // (Delete / Duplicate / Lock).
@@ -1120,6 +1202,13 @@ function buildHTML(t: ChartTheme): string {
       const dHit = drawingsList.find(function (x) { return x.id === hitId; });
       if (dHit && dHit.locked) return;
 
+      // Single-tap UX: select the drawing immediately so handles appear and
+      // the user can drag right away. Settings stay closed; double-tap on
+      // the same drawing toggles the settings sheet open.
+      if (hitId !== drawingSelectedId) {
+        postBack({ type: 'drawing_select', id: hitId });
+      }
+
       // Arm long-press: 500ms of stillness on this drawing → quick action
       // sheet. Cleared on movement or touchend.
       longPressFired = false;
@@ -1129,20 +1218,20 @@ function buildHTML(t: ChartTheme): string {
         postBack({ type: 'drawing_longpress', id: hitId });
       }, 500);
 
-      // If THIS drawing is already selected, taps-with-movement should drag
-      // the whole drawing (not pan the chart). Convert touch to data-space
-      // so we can send delta translates as the finger moves.
-      if (hitId === drawingSelectedId) {
-        const coord = chartCoordsAt(clientX, clientY);
-        if (coord) {
-          drawingBodyDrag = { id: hitId, lastTime: coord.time, lastPrice: coord.price, moved: false };
-          e && e.preventDefault && e.preventDefault();
-          return;
-        }
+      // Arm body-drag with the touch's start position. The translate-on-move
+      // logic in touchmove only fires once the finger has moved more than
+      // 8px from the start, so a stationary tap does NOT shift the drawing.
+      const coord = chartCoordsAt(clientX, clientY);
+      if (coord) {
+        drawingBodyDrag = {
+          id: hitId,
+          startX: clientX, startY: clientY,
+          lastTime: coord.time, lastPrice: coord.price,
+          moved: false,
+        };
       }
 
-      // Otherwise: drag-pans-the-chart-while-keeping-double-tap-detection
-      // (this is the original behavior for unselected drawings).
+      // Track this tap for double-tap-to-open-settings detection on touchend.
       const range = chart.timeScale().getVisibleLogicalRange();
       drawingPan = {
         startX: clientX,
@@ -1155,15 +1244,39 @@ function buildHTML(t: ChartTheme): string {
       return;
     }
 
-    // Cursor mode + tap on empty: let it fall through to chart pan/zoom.
-    if (!isPlacing) return;
+    // Cursor mode + tap on empty space: deselect any currently-selected
+    // drawing (closes its handles, hides settings) and let the touch fall
+    // through to chart pan/zoom.
+    if (!isPlacing) {
+      if (drawingSelectedId) postBack({ type: 'drawing_deselect' });
+      return;
+    }
 
     // Placement mode: convert and ship the new point.
-    const coord = chartCoordsAt(clientX, clientY);
-    if (coord) {
-      postBack({ type: 'drawing_point', tool: drawingActiveTool, time: coord.time, price: coord.price });
+    // Suppress the very first tap that lands within 200ms of a tool
+    // activation — that's almost certainly the phantom touch that leaked
+    // through from a tap on the on-chart favorites bar.
+    if (Date.now() - toolActivatedAt < 200) {
       e && e.preventDefault && e.preventDefault();
+      return;
     }
+    const coord = chartCoordsAt(clientX, clientY);
+    if (!coord) return;
+    // For 2-point tools, the very first tap on an empty chart arms drag-to-draw.
+    // touchmove drives a live preview; touchend either commits both A and B
+    // (drag) or just A (pure tap, falls back to classic tap-tap).
+    if (TWO_POINT_TOOLS[drawingActiveTool] && drawingPendingPoints.length === 0) {
+      placementDrag = {
+        startX: clientX, startY: clientY,
+        startCoord: coord,
+        endCoord: coord,
+        moved: false,
+      };
+      e && e.preventDefault && e.preventDefault();
+      return;
+    }
+    postBack({ type: 'drawing_point', tool: drawingActiveTool, time: coord.time, price: coord.price });
+    e && e.preventDefault && e.preventDefault();
   }
 
   // Three different event paths — different React Native WebView versions
@@ -1226,6 +1339,41 @@ function buildHTML(t: ChartTheme): string {
       return;
     }
 
+    // Placement drag — drives a live preview of the in-progress 2-point
+    // drawing while the user holds + moves their finger. Mutates a local
+    // sentinel drawing in drawingsList; never round-trips through React
+    // until touchend commit.
+    if (placementDrag) {
+      const ddx = tc.clientX - placementDrag.startX;
+      const ddy = tc.clientY - placementDrag.startY;
+      const moveThresholdPx2 = 8 * 8;
+      const movedEnough = placementDrag.moved || (ddx * ddx + ddy * ddy) >= moveThresholdPx2;
+      if (!movedEnough) {
+        e.preventDefault();
+        return;
+      }
+      const endCoord = chartCoordsAt(tc.clientX, tc.clientY);
+      if (!endCoord) return;
+      placementDrag.moved = true;
+      placementDrag.endCoord = endCoord;
+      const previewPoints = [placementDrag.startCoord, endCoord];
+      let preview = drawingsList.find(function (x) { return x.id === PLACEMENT_PREVIEW_ID; });
+      if (!preview) {
+        preview = {
+          id: PLACEMENT_PREVIEW_ID,
+          type: drawingActiveTool,
+          points: previewPoints,
+          style: { color: '#FFD700', lineWidth: 2, lineStyle: 'dashed' },
+        };
+        drawingsList.push(preview);
+      } else {
+        preview.points = previewPoints;
+      }
+      renderDrawings();
+      e.preventDefault();
+      return;
+    }
+
     // Anchor drag (selected drawing's handle).
     if (drawingDragState) {
       clearLongPress();
@@ -1236,21 +1384,29 @@ function buildHTML(t: ChartTheme): string {
       return;
     }
 
-    // Body drag — translate every anchor by the (time, price) delta since
-    // last move. Sends a single drawing_translate to RN per touchmove tick;
-    // RN updates store + persists.
+    // Body drag — TRANSFORM-ONLY. Apply translate() to the drawing's <g>
+    // group during the drag. No SVG rebuild, no innerHTML reset, no React
+    // roundtrip. The touch target stays attached throughout. On touchend
+    // we convert the pixel delta into a time/price delta and commit once.
     if (drawingBodyDrag) {
-      clearLongPress();
-      const coord = chartCoordsAt(tc.clientX, tc.clientY);
-      if (!coord) return;
-      const dt = coord.time  - drawingBodyDrag.lastTime;
-      const dp = coord.price - drawingBodyDrag.lastPrice;
-      // Suppress sub-pixel jitter — only ship deltas the user can actually feel.
-      if (Math.abs(dt) > 1e-6 || Math.abs(dp) > 1e-6) {
-        postBack({ type: 'drawing_translate', id: drawingBodyDrag.id, dt, dp });
-        drawingBodyDrag.lastTime = coord.time;
-        drawingBodyDrag.lastPrice = coord.price;
+      const ddx = tc.clientX - drawingBodyDrag.startX;
+      const ddy = tc.clientY - drawingBodyDrag.startY;
+      const moveThresholdPx2 = 8 * 8;
+      const movedEnough = drawingBodyDrag.moved || (ddx * ddx + ddy * ddy) >= moveThresholdPx2;
+      if (!movedEnough) {
+        // Still a candidate tap — preventDefault so the chart doesn't pan
+        // out from under the finger before we know the user's intent.
+        e.preventDefault();
+        return;
+      }
+      if (!drawingBodyDrag.moved) {
+        clearLongPress();
+        drawingPan = null;
         drawingBodyDrag.moved = true;
+      }
+      const group = drawingsLayer.querySelector('g[data-drawing-id="' + drawingBodyDrag.id + '"]');
+      if (group) {
+        group.setAttribute('transform', 'translate(' + ddx + ',' + ddy + ')');
       }
       e.preventDefault();
       return;
@@ -1282,15 +1438,66 @@ function buildHTML(t: ChartTheme): string {
 
   overlay.addEventListener('touchend', () => {
     drawingDragState = null;
-    // Body-drag end: nothing to commit (each move already pushed). Just clear
-    // and swallow the trailing tap so it doesn't double-tap-open settings.
+    // Placement drag end — if the user dragged > 8px, ship BOTH points (A
+    // and B) in one go; the drawing materializes immediately on release.
+    // If they didn't move enough, fall back to tap-tap and only ship A.
+    if (placementDrag) {
+      const moved = placementDrag.moved;
+      const startC = placementDrag.startCoord;
+      const endC = placementDrag.endCoord;
+      const tool = drawingActiveTool;
+      placementDrag = null;
+      // Strip the local preview from drawingsList; the next setDrawings push
+      // from RN (after we postBack the points) will be the clean version.
+      drawingsList = drawingsList.filter(function (x) { return x.id !== PLACEMENT_PREVIEW_ID; });
+      renderDrawings();
+      if (moved && startC && endC) {
+        postBack({ type: 'drawing_point', tool, time: startC.time, price: startC.price });
+        postBack({ type: 'drawing_point', tool, time: endC.time,   price: endC.price   });
+      } else if (startC) {
+        postBack({ type: 'drawing_point', tool, time: startC.time, price: startC.price });
+      }
+      return;
+    }
+    // Body-drag end: read the pixel translate the drag accumulated, convert
+    // to a (time, price) delta against the current chart projection, apply
+    // to the drawing's anchors locally, then send the final points to RN.
     if (drawingBodyDrag) {
       const wasMove = drawingBodyDrag.moved;
+      const dragId  = drawingBodyDrag.id;
+      const startX  = drawingBodyDrag.startX;
+      const startY  = drawingBodyDrag.startY;
       drawingBodyDrag = null;
       clearLongPress();
       if (wasMove) {
-        // Treat this as "consumed" — don't fall through to drawingPan
-        // double-tap detection below.
+        const group = drawingsLayer.querySelector('g[data-drawing-id="' + dragId + '"]');
+        let dx = 0, dy = 0;
+        if (group) {
+          const t = group.getAttribute('transform') || '';
+          const m = t.match(/translate\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/);
+          if (m) { dx = parseFloat(m[1]); dy = parseFloat(m[2]); }
+        }
+        if (dx !== 0 || dy !== 0) {
+          // Convert pixel delta to time/price delta by sampling the chart
+          // projection at the start position vs the end position.
+          const startCoord = chartCoordsAt(startX, startY);
+          const endCoord   = chartCoordsAt(startX + dx, startY + dy);
+          if (startCoord && endCoord) {
+            const dt = endCoord.time  - startCoord.time;
+            const dp = endCoord.price - startCoord.price;
+            const d = drawingsList.find(function (x) { return x.id === dragId; });
+            if (d) {
+              d.points = d.points.map(function (p) {
+                return { time: p.time + dt, price: p.price + dp };
+              });
+              postBack({ type: 'drawing_translate_final', id: d.id, points: d.points });
+            }
+          }
+        }
+        // Clear the transform and rebuild SVG with anchors at their new
+        // positions. Safe now — the user's finger is up.
+        if (group) group.removeAttribute('transform');
+        renderDrawings();
         drawingPan = null;
         return;
       }
@@ -1317,14 +1524,14 @@ function buildHTML(t: ChartTheme): string {
     }
     pendingDragKind = null;
 
-    // If the touch ended on a drawing without significant movement, it was a
-    // tap. A second tap on the same drawing within 350ms = double-tap → open
-    // settings. Otherwise just record this tap as a candidate.
+    // If the touch ended on a drawing with no movement, it was a tap.
+    //   First such tap → already triggered drawing_select on touchstart.
+    //   Second tap on the same drawing within 350ms → drawing_open_settings.
     if (drawingPan) {
       if (!drawingPan.moved) {
         const now = Date.now();
         if (drawingPan.drawingId === lastDrawingTapId && (now - lastDrawingTapTime) < 350) {
-          postBack({ type: 'drawing_select', id: drawingPan.drawingId });
+          postBack({ type: 'drawing_open_settings', id: drawingPan.drawingId });
           lastDrawingTapId = null;
           lastDrawingTapTime = 0;
         } else {
@@ -1341,6 +1548,11 @@ function buildHTML(t: ChartTheme): string {
     drawingPan = null;
     drawingBodyDrag = null;
     pendingDragKind = null;
+    if (placementDrag) {
+      placementDrag = null;
+      drawingsList = drawingsList.filter(function (x) { return x.id !== PLACEMENT_PREVIEW_ID; });
+      renderDrawings();
+    }
     clearLongPress();
     longPressFired = false;
   });
@@ -1508,7 +1720,7 @@ export default function TradingChart({ candles, positions, theme = DEFAULT_CHART
   const {
     drawings, activeTool, selectedId, pendingPoints, magnet,
     addDrawing, updateDrawing, removeDrawing, duplicateDrawing,
-    setSelected, setActiveTool,
+    setSelected, setSettingsOpen, setActiveTool,
     appendPendingPoint, resetPending,
   } = useDrawingsStore();
 
@@ -1586,10 +1798,20 @@ export default function TradingChart({ candles, positions, theme = DEFAULT_CHART
       if (msg.type === 'drawing_point') {
         handleDrawingPoint(msg.tool as DrawingType, msg.time, msg.price);
       }
+      // First tap on a drawing — show handles, enable body-drag.
+      // Does NOT open the settings sheet (that's drawing_open_settings).
       if (msg.type === 'drawing_select') {
         setSelected(msg.id);
-        // Switching to cursor mode while editing so taps don't keep placing.
         if (activeTool !== 'cursor_cross') setActiveTool('cursor_cross');
+      }
+      // Second tap within 350ms on the same already-selected drawing.
+      if (msg.type === 'drawing_open_settings') {
+        if (selectedId !== msg.id) setSelected(msg.id);
+        setSettingsOpen(true);
+      }
+      // Tap on empty chart area while a drawing is selected.
+      if (msg.type === 'drawing_deselect') {
+        setSelected(null);   // also clears settingsOpen via the store
       }
       if (msg.type === 'drawing_drag') {
         const d = drawings.find((x) => x.id === msg.id);
@@ -1599,15 +1821,15 @@ export default function TradingChart({ candles, positions, theme = DEFAULT_CHART
         );
         updateDrawing(d.id, { points: newPoints } as Partial<Drawing>);
       }
-      // Body-drag delta — translate every anchor by (dt, dp).
-      if (msg.type === 'drawing_translate') {
+      // Body-drag committed on touchend — one-shot snapshot of the final
+      // anchor positions. The drag itself was rendered locally in the
+      // WebView; this is purely the persistence sync.
+      if (msg.type === 'drawing_translate_final') {
         const d = drawings.find((x) => x.id === msg.id);
         if (!d || d.locked) return;
-        const newPoints = d.points.map((p) => ({
-          time:  p.time  + (msg.dt || 0),
-          price: p.price + (msg.dp || 0),
-        }));
-        updateDrawing(d.id, { points: newPoints } as Partial<Drawing>);
+        if (Array.isArray(msg.points)) {
+          updateDrawing(d.id, { points: msg.points } as Partial<Drawing>);
+        }
       }
       // Long-press → quick action sheet (Delete / Duplicate / Lock / Cancel).
       if (msg.type === 'drawing_longpress') {

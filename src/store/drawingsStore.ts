@@ -14,6 +14,11 @@ interface DrawingsState {
   activeTool: DrawingType;
   favorites: Set<DrawingType>;
   selectedId: string | null;
+  /** Whether the bottom-sheet settings panel for the selected drawing is open.
+   *  Decoupled from selectedId: single-tap on a drawing selects it (shows
+   *  handles + enables body-drag) without opening settings; second tap on
+   *  the same drawing within 350ms toggles this to true. */
+  settingsOpen: boolean;
   pendingPoints: { time: number; price: number }[];
   /** Snap-to-OHLC magnet mode. */
   magnet: MagnetMode;
@@ -27,6 +32,7 @@ interface DrawingsState {
   removeDrawing: (id: string) => void;
   clearAll: () => void;
   setSelected: (id: string | null) => void;
+  setSettingsOpen: (open: boolean) => void;
   toggleFavorite: (tool: DrawingType) => void;
   appendPendingPoint: (p: { time: number; price: number }) => void;
   resetPending: () => void;
@@ -49,18 +55,20 @@ export const useDrawingsStore = create<DrawingsState>((set, get) => ({
   activeTool: 'cursor_cross',
   favorites: new Set(['trendline', 'hline', 'fib_retracement', 'rectangle', 'arrow']),
   selectedId: null,
+  settingsOpen: false,
   pendingPoints: [],
   magnet: 'off' as MagnetMode,
   stickyMode: false,
 
-  setActiveTool: (tool) => set({ activeTool: tool, pendingPoints: [], selectedId: null }),
+  setActiveTool: (tool) =>
+    set({ activeTool: tool, pendingPoints: [], selectedId: null, settingsOpen: false }),
 
   addDrawing: (d) => {
     // Don't auto-select after creation — user has to tap the drawing to open
     // its settings (TradingView default).
     const next = [...get().drawings, d];
     persistDrawings(next);
-    set({ drawings: next, selectedId: null, pendingPoints: [] });
+    set({ drawings: next, selectedId: null, settingsOpen: false, pendingPoints: [] });
   },
 
   updateDrawing: (id, patch) => {
@@ -72,15 +80,25 @@ export const useDrawingsStore = create<DrawingsState>((set, get) => ({
   removeDrawing: (id) => {
     const next = get().drawings.filter((d) => d.id !== id);
     persistDrawings(next);
-    set({ drawings: next, selectedId: get().selectedId === id ? null : get().selectedId });
+    const wasSel = get().selectedId === id;
+    set({
+      drawings: next,
+      selectedId: wasSel ? null : get().selectedId,
+      settingsOpen: wasSel ? false : get().settingsOpen,
+    });
   },
 
   clearAll: () => {
     persistDrawings([]);
-    set({ drawings: [], selectedId: null, pendingPoints: [] });
+    set({ drawings: [], selectedId: null, settingsOpen: false, pendingPoints: [] });
   },
 
-  setSelected: (id) => set({ selectedId: id }),
+  // Switching selection (or deselecting) always closes any open settings —
+  // the modal targets a specific drawing, so a stale settingsOpen would refer
+  // to nothing useful.
+  setSelected: (id) =>
+    set({ selectedId: id, settingsOpen: id == null ? false : get().settingsOpen }),
+  setSettingsOpen: (open) => set({ settingsOpen: open }),
 
   toggleFavorite: (tool) => {
     const favs = new Set(get().favorites);

@@ -35,10 +35,16 @@ const LINE_WIDTHS = [1, 2, 3, 4, 5, 6];
  * Changes apply live via updateDrawing().
  */
 export default function DrawingSettingsModal() {
-  const { drawings, selectedId, updateDrawing, removeDrawing, setSelected, duplicateDrawing } = useDrawingsStore();
+  const {
+    drawings, selectedId, settingsOpen,
+    updateDrawing, removeDrawing, setSettingsOpen, duplicateDrawing,
+  } = useDrawingsStore();
 
   const drawing = useMemo(() => drawings.find((d) => d.id === selectedId) ?? null, [drawings, selectedId]);
-  if (!drawing) return null;
+  // Modal renders only when explicitly opened — single-tap selects (handles
+  // visible) but does NOT pop this sheet. Double-tap is what flips
+  // settingsOpen to true.
+  if (!drawing || !settingsOpen) return null;
 
   const def  = TOOL_BY_ID[drawing.type];
   const isTextual = drawing.type === 'text' || drawing.type === 'note' || drawing.type === 'price_note';
@@ -85,8 +91,8 @@ export default function DrawingSettingsModal() {
   };
 
   return (
-    <Modal visible transparent animationType="none" onRequestClose={() => setSelected(null)}>
-      <Pressable style={styles.backdrop} onPress={() => setSelected(null)}>
+    <Modal visible transparent animationType="none" onRequestClose={() => setSettingsOpen(false)}>
+      <Pressable style={styles.backdrop} onPress={() => setSettingsOpen(false)}>
         <Pressable style={styles.sheet} onPress={() => {}}>
           <View style={styles.header}>
             <Text style={styles.headerTitle}>{def?.label ?? 'Drawing'}</Text>
@@ -103,7 +109,7 @@ export default function DrawingSettingsModal() {
             <TouchableOpacity onPress={() => { removeDrawing(drawing.id); }} style={styles.headerBtn}>
               <Ionicons name="trash-outline" size={18} color={colors.red} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setSelected(null)} style={styles.headerBtn}>
+            <TouchableOpacity onPress={() => setSettingsOpen(false)} style={styles.headerBtn}>
               <Ionicons name="close" size={20} color={colors.textPrimary} />
             </TouchableOpacity>
           </View>
