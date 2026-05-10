@@ -5,6 +5,30 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-09 — Phase 2A smoke-test fix 1: revert tap behavior
+
+**Status:** Code complete on `master`. Type-check clean.
+
+User changed mind on tap semantics post-smoke-test. **Reverses Phase 2A.1**.
+Final tap behavior:
+- **Single tap** on drawing → select + show all handles + allow drag
+  (settings sheet stays closed)
+- **Double tap** on drawing → open settings sheet
+
+### What changed
+- `drawingsStore.setSelected(id)`: back to "deselect closes, re-select
+  preserves settingsOpen" (was: id != null forces settingsOpen=true).
+- WebView `handleTap` + touchend: `lastDrawingTapId` / `lastDrawingTapTime`
+  detection restored. Posts `drawing_open_settings` only on the second
+  tap within 350ms.
+- React-side `drawing_open_settings` handler restored.
+
+### Files touched
+- `src/store/drawingsStore.ts`
+- `src/components/chart/TradingChart.tsx`
+
+---
+
 ## 2026-05-09 — Phase 2A.3: fib retracement honors user-set lineWidth (audit B2)
 
 **Status:** Code complete on `master`. Type-check clean.
