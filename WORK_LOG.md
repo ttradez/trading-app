@@ -5,6 +5,43 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-10 — Smoke-test fix 6: gesture arbitration (tap-place + drag-to-pan)
+
+**Status:** Code complete on `master`. Type-check clean.
+
+Drag-to-draw was disabled. In placement mode the WebView now treats a
+single-finger gesture as either:
+- **Stationary tap** (< 8px movement before release) → places one point.
+  2-point tools (rectangle, fib_retracement) use classic tap-tap.
+- **Drag** (≥ 8px movement before release) → drives a chart pan via the
+  existing `drawingPan` mechanism. No drawing is placed.
+
+### Implementation
+- Touchstart in placement mode arms BOTH `placementTap` (candidate tap) and
+  `drawingPan` (candidate pan).
+- Touchmove kills `placementTap` once the finger moves > 8px. The
+  `drawingPan` handler then drives `chart.timeScale().setVisibleLogicalRange`
+  to shift the visible window as the finger moves.
+- Touchend posts `drawing_point` only if `placementTap` survived the move.
+
+### Removed
+- `placementDrag` state variable + its touchmove preview + its touchend
+  commit (deleted the entire drag-to-draw code path).
+- `TWO_POINT_TOOLS` lookup table and `PLACEMENT_PREVIEW_ID` sentinel.
+- `drawing_place` React-side handler (atomic 2-point message no longer
+  needed — drag-to-draw was its only sender; tap-tap doesn't have the
+  stale-closure problem because each tap is a separate user event with a
+  React render in between).
+
+### Files touched
+- `src/components/chart/TradingChart.tsx`
+
+### Known limitation
+- Multi-touch pinch in placement mode is NOT yet routed to chart zoom. The
+  overlay still captures the touches. Revisit if user reports it.
+
+---
+
 ## 2026-05-10 — Smoke-test fixes 4+5: rectangle + fib placement (atomic 2-point message)
 
 **Status:** Code complete on `master`. Type-check clean.

@@ -871,7 +871,7 @@ function buildHTML(t: ChartTheme): string {
   function priceProjectionTick() {
     // Skip while ANY touch interaction is in flight — re-rendering the SVG
     // would detach the element under the finger and kill the gesture.
-    const dragInFlight = drawingBodyDrag || drawingDragState || pendingDragKind || placementDrag;
+    const dragInFlight = drawingBodyDrag || drawingDragState || pendingDragKind || placementTap;
     if (!dragInFlight) {
       const data = series.data();
       const last = data && data.length ? data[data.length - 1] : null;
@@ -933,24 +933,12 @@ function buildHTML(t: ChartTheme): string {
   // move). Tracks the last (time, price) so we send delta-translates to RN
   // and translate every anchor uniformly server-side.
   let drawingBodyDrag = null;
-  // "Drag-to-draw" placement state for 2-point tools (trendline, ray, fib,
-  // rectangle, etc.). When the user touches the chart in placement mode AND
-  // pendingPoints is empty AND the tool needs >= 2 points, we arm this with
-  // their starting coord. If the finger moves > 8px before release, we
-  // commit BOTH point A (start) and point B (end) on touchend in one go.
-  // If they just tap (no drag), it falls back to tap-tap mode (only A is
-  // placed; next tap places B).
-  let placementDrag = null;
-  // Tools that take exactly 2 anchors. Drag-to-draw placement is enabled for
-  // these — touchstart sets A, drag updates a live preview, touchend commits B.
-  // Anything not listed here uses tap-tap placement only.
-  const TWO_POINT_TOOLS = {
-    trendline: true, ray: true, info_line: true, extended_line: true,
-    trend_angle: true, rectangle: true, circle: true, arrow: true,
-    fib_retracement: true,
-    price_range: true, date_range: true, date_price_range: true,
-  };
-  const PLACEMENT_PREVIEW_ID = '__placement_preview__';
+  // Candidate placement tap. Set on touchstart in placement mode. If the
+  // finger moves > 8px before release, the tap is cancelled and the existing
+  // drawingPan path drives a chart pan instead. If the finger stays put,
+  // touchend posts a drawing_point. Drag-to-draw was removed — every point
+  // is placed by an individual stationary tap (tap-tap for 2-point tools).
+  let placementTap = null;
   // Long-press timer machinery is retained for safe no-op clearing from
   // existing drag paths, but never armed — Lock/Duplicate/Delete moved
   // into the settings sheet as buttons (DrawingSettingsModal footer).
@@ -1060,7 +1048,11 @@ function buildHTML(t: ChartTheme): string {
       return;
     }
 
-    // Placement mode: convert and ship the new point.
+    // Placement mode: tap-tap placement only. Drag-to-draw was disabled —
+    // a finger that moves while in placement mode now drives a chart pan
+    // (via the existing drawingPan path) instead of a drag-to-draw preview.
+    // The point only commits if the finger stays put until release.
+    //
     // Suppress the very first tap that lands within 200ms of a tool
     // activation — that's almost certainly the phantom touch that leaked
     // through from a tap on the on-chart favorites bar.
@@ -1070,20 +1062,18 @@ function buildHTML(t: ChartTheme): string {
     }
     const coord = chartCoordsAt(clientX, clientY);
     if (!coord) return;
-    // For 2-point tools, the very first tap on an empty chart arms drag-to-draw.
-    // touchmove drives a live preview; touchend either commits both A and B
-    // (drag) or just A (pure tap, falls back to classic tap-tap).
-    if (TWO_POINT_TOOLS[drawingActiveTool] && drawingPendingPoints.length === 0) {
-      placementDrag = {
-        startX: clientX, startY: clientY,
-        startCoord: coord,
-        endCoord: coord,
-        moved: false,
-      };
-      e && e.preventDefault && e.preventDefault();
-      return;
-    }
-    postBack({ type: 'drawing_point', tool: drawingActiveTool, time: coord.time, price: coord.price });
+    // Arm BOTH a candidate placement-tap AND a chart pan. touchmove resolves
+    // the ambiguity: > 8px of movement kills placementTap; touchend with
+    // !drawingPan.moved commits the placement.
+    placementTap = { coord, startX: clientX, startY: clientY };
+    const range = chart.timeScale().getVisibleLogicalRange();
+    drawingPan = {
+      startX: clientX,
+      lastX: clientX,
+      drawingId: null,
+      moved: false,
+      startRange: range,
+    };
     e && e.preventDefault && e.preventDefault();
   }
 
@@ -1147,39 +1137,15 @@ function buildHTML(t: ChartTheme): string {
       return;
     }
 
-    // Placement drag — drives a live preview of the in-progress 2-point
-    // drawing while the user holds + moves their finger. Mutates a local
-    // sentinel drawing in drawingsList; never round-trips through React
-    // until touchend commit.
-    if (placementDrag) {
-      const ddx = tc.clientX - placementDrag.startX;
-      const ddy = tc.clientY - placementDrag.startY;
-      const moveThresholdPx2 = 8 * 8;
-      const movedEnough = placementDrag.moved || (ddx * ddx + ddy * ddy) >= moveThresholdPx2;
-      if (!movedEnough) {
-        e.preventDefault();
-        return;
+    // Candidate-tap → pan transition. If a placement-mode finger moves more
+    // than 8px from where it started, kill the placementTap so the rest of
+    // the gesture becomes a chart pan via drawingPan (handled below).
+    if (placementTap) {
+      const ddx = tc.clientX - placementTap.startX;
+      const ddy = tc.clientY - placementTap.startY;
+      if (ddx * ddx + ddy * ddy >= 8 * 8) {
+        placementTap = null;
       }
-      const endCoord = chartCoordsAt(tc.clientX, tc.clientY);
-      if (!endCoord) return;
-      placementDrag.moved = true;
-      placementDrag.endCoord = endCoord;
-      const previewPoints = [placementDrag.startCoord, endCoord];
-      let preview = drawingsList.find(function (x) { return x.id === PLACEMENT_PREVIEW_ID; });
-      if (!preview) {
-        preview = {
-          id: PLACEMENT_PREVIEW_ID,
-          type: drawingActiveTool,
-          points: previewPoints,
-          style: { color: '#FFD700', lineWidth: 2, lineStyle: 'dashed' },
-        };
-        drawingsList.push(preview);
-      } else {
-        preview.points = previewPoints;
-      }
-      renderDrawings();
-      e.preventDefault();
-      return;
     }
 
     // Anchor drag (selected drawing's handle).
@@ -1308,30 +1274,16 @@ function buildHTML(t: ChartTheme): string {
       renderDrawings();
       return;
     }
-    // Placement drag end — if the user dragged > 8px, ship BOTH points (A
-    // and B) in one go; the drawing materializes immediately on release.
-    // If they didn't move enough, fall back to tap-tap and only ship A.
-    if (placementDrag) {
-      const moved = placementDrag.moved;
-      const startC = placementDrag.startCoord;
-      const endC = placementDrag.endCoord;
-      const tool = drawingActiveTool;
-      placementDrag = null;
-      // Strip the local preview from drawingsList; the next setDrawings push
-      // from RN (after we postBack the points) will be the clean version.
-      drawingsList = drawingsList.filter(function (x) { return x.id !== PLACEMENT_PREVIEW_ID; });
-      renderDrawings();
-      if (moved && startC && endC) {
-        // Atomic 2-point placement — sent as a single message because two
-        // back-to-back drawing_point messages would both see a stale
-        // pendingPoints closure on the React side and never commit.
-        postBack({ type: 'drawing_place', tool,
-                   points: [{ time: startC.time, price: startC.price },
-                            { time: endC.time,   price: endC.price   }] });
-      } else if (startC) {
-        postBack({ type: 'drawing_point', tool, time: startC.time, price: startC.price });
-      }
-      return;
+    // Placement tap commit — only fires if the finger never moved enough to
+    // cancel the candidate tap. If the user dragged, placementTap was nulled
+    // by touchmove and the gesture became a chart pan instead.
+    if (placementTap) {
+      const tap = placementTap;
+      placementTap = null;
+      // If the pan path also fired (movement happened then), bail — but
+      // touchmove would already have nulled placementTap in that case.
+      postBack({ type: 'drawing_point', tool: drawingActiveTool,
+                 time: tap.coord.time, price: tap.coord.price });
     }
     // Body-drag end: read the pixel translate the drag accumulated, convert
     // to a (time, price) delta against the current chart projection, apply
@@ -1418,10 +1370,7 @@ function buildHTML(t: ChartTheme): string {
     drawingPan = null;
     drawingBodyDrag = null;
     pendingDragKind = null;
-    if (placementDrag) {
-      placementDrag = null;
-      drawingsList = drawingsList.filter(function (x) { return x.id !== PLACEMENT_PREVIEW_ID; });
-    }
+    placementTap = null;
     renderDrawings();
     clearLongPress();
   });
@@ -1663,20 +1612,6 @@ export default function TradingChart({ candles, positions, theme = DEFAULT_CHART
       }
       if (msg.type === 'log') {
         console.log('[CHART]', msg.msg);
-      }
-      // Atomic 2-point placement (drag-to-draw). Bypasses pendingPoints
-      // entirely so the stale-closure problem can't bite us.
-      if (msg.type === 'drawing_place' && Array.isArray(msg.points)) {
-        const def = TOOL_BY_ID[msg.tool as DrawingType];
-        if (!def || !def.drawable) return;
-        const id = `dr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-        addDrawing({
-          id, type: msg.tool as DrawingType, points: msg.points,
-          style: { ...DEFAULT_STYLE, ...(msg.tool === 'text' ? { text: 'Text' } : {}) },
-        });
-        resetPending();
-        setActiveTool('cursor_cross');
-        return;
       }
       if (msg.type === 'drawing_point') {
         handleDrawingPoint(msg.tool as DrawingType, msg.time, msg.price);
