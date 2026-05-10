@@ -5,6 +5,26 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-09 — Phase 2A.3: fib retracement honors user-set lineWidth (audit B2)
+
+**Status:** Code complete on `master`. Type-check clean.
+
+Audit Issue B2: the fib retracement renderer hard-coded
+`'stroke-width': 1` for every level line, ignoring the user's
+`style.lineWidth` (which the settings panel exposes 1-6).
+
+### What changed
+- `TradingChart.tsx` fib_retracement render branch: `'stroke-width': 1`
+  → `'stroke-width': sw` (the per-drawing computed line width that all
+  other tools already use).
+
+One-line change. Audit-issue B2 closed.
+
+### Files touched
+- `src/components/chart/TradingChart.tsx`
+
+---
+
 ## 2026-05-09 — Phase 2A.2: rectangle 4-corner handles + reshape
 
 **Status:** Code complete on `master`. Type-check clean.

@@ -431,7 +431,9 @@ function buildHTML(t: ChartTheme): string {
           if (yL == null) return;
           elements.push(svg('line', {
             x1, y1: yL, x2, y2: yL,
-            stroke: eff.color, 'stroke-width': 1, 'stroke-dasharray': dash || '',
+            // Audit B2 fix: honor user's lineWidth setting instead of
+            // hard-coding 1. Settings panel exposes 1-6.
+            stroke: eff.color, 'stroke-width': sw, 'stroke-dasharray': dash || '',
             'stroke-opacity': strokeOp, 'pointer-events': 'none',
           }));
           elements.push(svg('text', {
