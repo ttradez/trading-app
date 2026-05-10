@@ -5,6 +5,48 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-10 — Smoke-test fix 3: smooth handle drag (detach + local mutation)
+
+**Status:** Code complete on `master`. Type-check clean.
+
+Handle drag was laggy + occasionally dropped touch capture. Two root causes:
+1. Every `touchmove` posted to React → `setState` → re-render → `setDrawings`
+   → `renderDrawings()` → `drawingsLayer.innerHTML = ''` → the touched handle
+   element was destroyed mid-drag, breaking touch capture.
+2. The bridge round-trip per frame added perceptible lag.
+
+### Fix (same architectural pattern as body-drag's transform trick)
+- **touchstart** (handle/corner branch): detach the touched circle from
+  `drawingsLayer` and re-parent it to `overlay` (which is the parent SVG).
+  Both share the same SVG coord system. The element survives every subsequent
+  `drawingsLayer.innerHTML = ''` because it's no longer a child of it.
+- **touchmove**: mutate `drawingsList[i].points` LOCALLY (no React round-trip
+  per frame). For rectangle corners, ported the bbox reshape + re-normalize
+  math from React. Call `renderDrawings()` to redraw geometry. Update the
+  floating handle's `cx`/`cy` to mirror the finger.
+- **touchend**: post one `drawing_drag_final` with the final points array.
+  Remove the floating handle from `overlay`. Re-render so the canonical
+  handle (at the new anchor position) takes over. `touchcancel` does the
+  same cleanup.
+- **React side**: removed `drawing_drag` and `drawing_drag_corner` handlers,
+  replaced with unified `drawing_drag_final` that calls `updateDrawing` once.
+
+### Files touched
+- `src/components/chart/TradingChart.tsx` (touchstart already had the
+  detach; this commit completes touchmove + touchend + React handler)
+
+### Behavior contract
+- Handle drag is now buttery smooth (no React round-trip per frame).
+- Rectangle corner drag still keeps the diagonal fixed (math ported, not changed).
+- Drawing position is committed once on touchend → AsyncStorage write happens once per drag.
+
+### Still pending in this fix batch
+- Issue 4: rectangle placement broken
+- Issue 5: fib placement broken
+- Issue 6: gesture arbitration (tap-place, single-drag = chart pan, multi-touch through)
+
+---
+
 ## 2026-05-09 — Smoke-test fix 2: kill Drawing Actions popup, footer buttons in settings sheet
 
 **Status:** Code complete on `master`. Type-check clean.

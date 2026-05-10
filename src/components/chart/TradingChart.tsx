@@ -976,17 +976,25 @@ function buildHTML(t: ChartTheme): string {
     // Two flavors:
     //   data-handle=<idx>     anchor index, used by every tool except rectangle
     //   data-corner=TL|TR|BR|BL  rectangle's 4 visual corners (2 derived)
+    //
+    // We DETACH the touched handle from drawingsLayer and re-parent it to
+    // overlay. drawingsLayer.innerHTML='' during touchmove rebuilds the
+    // geometry but doesn't kill our floating handle, so the touch capture
+    // survives the drag. On touchend the handle is removed and a fresh
+    // render reattaches the canonical handle inside drawingsLayer.
     const handleIdx = target && target.getAttribute && target.getAttribute('data-handle');
     if (handleIdx != null) {
       const id = target.getAttribute('data-id');
-      drawingDragState = { id: id, idx: parseInt(handleIdx, 10) };
+      drawingDragState = { id: id, idx: parseInt(handleIdx, 10), handleEl: target };
+      overlay.appendChild(target);
       e && e.preventDefault && e.preventDefault();
       return;
     }
     const cornerCode = target && target.getAttribute && target.getAttribute('data-corner');
     if (cornerCode) {
       const id = target.getAttribute('data-id');
-      drawingDragState = { id: id, corner: cornerCode };
+      drawingDragState = { id: id, corner: cornerCode, handleEl: target };
+      overlay.appendChild(target);
       e && e.preventDefault && e.preventDefault();
       return;
     }
@@ -1176,19 +1184,55 @@ function buildHTML(t: ChartTheme): string {
 
     // Anchor drag (selected drawing's handle).
     // Two flavors based on what landed in drawingDragState during touchstart:
-    //   { id, idx }    → standard anchor drag, single point updated
-    //   { id, corner } → rectangle corner drag (TL/TR/BR/BL), both anchors
-    //                    recomputed on the React side so the diagonal stays fixed
+    //   { id, idx, handleEl }    → standard anchor drag, single point updated
+    //   { id, corner, handleEl } → rectangle corner drag (TL/TR/BR/BL), both
+    //                              anchors recomputed so the diagonal stays fixed
+    //
+    // Mutates drawingsList LOCALLY each frame (no React round-trip per move) and
+    // re-renders the drawing's geometry. The handle element was detached to
+    // overlay during touchstart, so renderDrawings()'s innerHTML clear doesn't
+    // kill our touch capture. Floating handle's cx/cy is updated to mirror the
+    // finger. Final points are posted once on touchend.
     if (drawingDragState) {
       clearLongPress();
       const coord = chartCoordsAt(tc.clientX, tc.clientY);
       if (!coord) return;
+      const dIdx = drawingsList.findIndex(function (x) { return x.id === drawingDragState.id; });
+      if (dIdx < 0) { e.preventDefault(); return; }
+      const d = drawingsList[dIdx];
       if (drawingDragState.corner) {
-        postBack({ type: 'drawing_drag_corner', id: drawingDragState.id,
-                   corner: drawingDragState.corner, time: coord.time, price: coord.price });
+        // Rectangle corner reshape — diagonal stays fixed.
+        if (d.points.length >= 2) {
+          const a = d.points[0], b = d.points[1];
+          const tMin = Math.min(a.time, b.time),  tMax = Math.max(a.time, b.time);
+          const pMin = Math.min(a.price, b.price), pMax = Math.max(a.price, b.price);
+          let newTMin = tMin, newTMax = tMax, newPMin = pMin, newPMax = pMax;
+          switch (drawingDragState.corner) {
+            case 'TL': newTMin = coord.time; newPMax = coord.price; break;
+            case 'TR': newTMax = coord.time; newPMax = coord.price; break;
+            case 'BL': newTMin = coord.time; newPMin = coord.price; break;
+            case 'BR': newTMax = coord.time; newPMin = coord.price; break;
+          }
+          const t0 = Math.min(newTMin, newTMax), t1 = Math.max(newTMin, newTMax);
+          const p0 = Math.max(newPMin, newPMax), p1 = Math.min(newPMin, newPMax);
+          d.points = [{ time: t0, price: p0 }, { time: t1, price: p1 }];
+        }
       } else {
-        postBack({ type: 'drawing_drag', id: drawingDragState.id,
-                   idx: drawingDragState.idx, time: coord.time, price: coord.price });
+        // Standard anchor drag — single point.
+        d.points = d.points.map(function (p, i) {
+          return i === drawingDragState.idx ? { time: coord.time, price: coord.price } : p;
+        });
+      }
+      renderDrawings();
+      // Move the floating handle to mirror the finger so the user sees the
+      // drag knob track their touch (the canonical handle inside drawingsLayer
+      // has been re-rendered at the new anchor position; the floating one is
+      // purely visual feedback for the active drag).
+      const px = chart.timeScale().timeToCoordinate(coord.time);
+      const py = series.priceToCoordinate(coord.price);
+      if (px != null && py != null && drawingDragState.handleEl) {
+        drawingDragState.handleEl.setAttribute('cx', String(px));
+        drawingDragState.handleEl.setAttribute('cy', String(py));
       }
       e.preventDefault();
       return;
@@ -1247,7 +1291,23 @@ function buildHTML(t: ChartTheme): string {
   }, { passive: false });
 
   overlay.addEventListener('touchend', () => {
-    drawingDragState = null;
+    // Anchor/corner drag end — drawingsList was mutated locally during the
+    // move. Ship the final points to React in one shot; remove the floating
+    // handle so the canonical (re-rendered) handle is the only one shown.
+    if (drawingDragState) {
+      const dragId = drawingDragState.id;
+      const handleEl = drawingDragState.handleEl;
+      drawingDragState = null;
+      const d = drawingsList.find(function (x) { return x.id === dragId; });
+      if (d) {
+        postBack({ type: 'drawing_drag_final', id: dragId, points: d.points });
+      }
+      if (handleEl && handleEl.parentNode === overlay) {
+        overlay.removeChild(handleEl);
+      }
+      renderDrawings();
+      return;
+    }
     // Placement drag end — if the user dragged > 8px, ship BOTH points (A
     // and B) in one go; the drawing materializes immediately on release.
     // If they didn't move enough, fall back to tap-tap and only ship A.
@@ -1346,6 +1406,10 @@ function buildHTML(t: ChartTheme): string {
   });
 
   overlay.addEventListener('touchcancel', () => {
+    if (drawingDragState && drawingDragState.handleEl &&
+        drawingDragState.handleEl.parentNode === overlay) {
+      overlay.removeChild(drawingDragState.handleEl);
+    }
     drawingDragState = null;
     drawingPan = null;
     drawingBodyDrag = null;
@@ -1353,8 +1417,8 @@ function buildHTML(t: ChartTheme): string {
     if (placementDrag) {
       placementDrag = null;
       drawingsList = drawingsList.filter(function (x) { return x.id !== PLACEMENT_PREVIEW_ID; });
-      renderDrawings();
     }
+    renderDrawings();
     clearLongPress();
   });
 
@@ -1613,42 +1677,16 @@ export default function TradingChart({ candles, positions, theme = DEFAULT_CHART
       if (msg.type === 'drawing_deselect') {
         setSelected(null);
       }
-      if (msg.type === 'drawing_drag') {
+      // Unified anchor/corner drag commit. The WebView mutates points
+      // locally during touchmove (no per-frame React round-trip) and posts
+      // the final points array once on touchend. For rectangles, the WebView
+      // already ran the bbox-reshape math and re-normalized to [TL, BR].
+      if (msg.type === 'drawing_drag_final') {
         const d = drawings.find((x) => x.id === msg.id);
         if (!d || d.locked) return;
-        const newPoints = d.points.map((p, i) =>
-          i === msg.idx ? { time: msg.time, price: msg.price } : p
-        );
-        updateDrawing(d.id, { points: newPoints } as Partial<Drawing>);
-      }
-      // Rectangle corner drag — reshape the bbox so the dragged corner
-      // moves to (msg.time, msg.price) and the diagonal stays fixed.
-      // Anchors are normalized to [TL, BR] after the update so future
-      // drags can rely on the canonical order.
-      if (msg.type === 'drawing_drag_corner') {
-        const d = drawings.find((x) => x.id === msg.id);
-        if (!d || d.locked || d.points.length < 2) return;
-        const a = d.points[0], b = d.points[1];
-        // Current bbox in data space (price decreases as y increases —
-        // but we don't care about pixel direction here, just min/max).
-        const tMin = Math.min(a.time,  b.time),  tMax = Math.max(a.time,  b.time);
-        const pMin = Math.min(a.price, b.price), pMax = Math.max(a.price, b.price);
-        // Map dragged corner to which side of the bbox each axis becomes.
-        // 'T' / 'B' refer to screen-top / -bottom which is HIGHER / LOWER price.
-        let newTMin = tMin, newTMax = tMax, newPMin = pMin, newPMax = pMax;
-        switch (msg.corner) {
-          case 'TL': newTMin = msg.time; newPMax = msg.price; break;
-          case 'TR': newTMax = msg.time; newPMax = msg.price; break;
-          case 'BL': newTMin = msg.time; newPMin = msg.price; break;
-          case 'BR': newTMax = msg.time; newPMin = msg.price; break;
-          default: return;
+        if (Array.isArray(msg.points)) {
+          updateDrawing(d.id, { points: msg.points } as Partial<Drawing>);
         }
-        // Re-normalize (user may have crossed the diagonal during drag).
-        const t0 = Math.min(newTMin, newTMax), t1 = Math.max(newTMin, newTMax);
-        const p0 = Math.max(newPMin, newPMax), p1 = Math.min(newPMin, newPMax);
-        // Anchors stored as [TL, BR] = [(t0,p0), (t1,p1)] (TL = high price, left time).
-        const newPoints = [{ time: t0, price: p0 }, { time: t1, price: p1 }];
-        updateDrawing(d.id, { points: newPoints } as Partial<Drawing>);
       }
       // Body-drag committed on touchend — one-shot snapshot of the final
       // anchor positions. The drag itself was rendered locally in the
