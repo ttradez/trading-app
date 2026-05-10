@@ -5,6 +5,44 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-09 — Phase 2A.1: single-tap opens settings + shows handles
+
+**Status:** Code complete on `master`. Type-check clean.
+
+Reverses the prior locked decision (single-tap = handles only, double-tap
+= settings) per the new TradingView-parity spec from this session.
+
+### What changed
+- `setSelected(id)` in drawingsStore now sets `settingsOpen = (id != null)`
+  in one shot. Selecting a drawing opens its settings sheet automatically;
+  deselecting closes it.
+- Removed the WebView's double-tap detection (`lastDrawingTapId` /
+  `lastDrawingTapTime` state + the `drawing_open_settings` postBack +
+  the React-side handler for it). All gone. `drawing_select` is now
+  the canonical "user wants to interact with this drawing" event.
+- Removed the now-unused `setSettingsOpen` from TradingChart's store
+  destructure.
+
+### Files touched
+- `src/store/drawingsStore.ts` — `setSelected` semantics
+- `src/components/chart/TradingChart.tsx` — touch handler + RN-side
+  message dispatch
+
+### Behavior contract going forward
+| Action | Result |
+|---|---|
+| Tap drawing | Select + handles + settings sheet (one tap) |
+| Tap empty area | Deselect + close settings |
+| Drag drawing body | Translate (still works, unchanged) |
+| Drag handle | Move single anchor (still works, unchanged) |
+| Long-press drawing | Quick-action menu (still works, unchanged) |
+
+Applies to all 6 existing keep-list tools (trendline, hline, vline,
+rectangle, fib_retracement, text). Phase 2A.2 follows for the rectangle
+4-corner handles.
+
+---
+
 ## 2026-05-09 — Drawing tools pruned to 10 essentials (TASK 1)
 
 **Status:** Code complete on `master`. Type-check clean.

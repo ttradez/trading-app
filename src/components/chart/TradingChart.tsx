@@ -926,9 +926,6 @@ function buildHTML(t: ChartTheme): string {
   function clearLongPress() {
     if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
   }
-  let lastDrawingTapTime = 0;
-  let lastDrawingTapId = null;
-
   function handleTap(clientX, clientY, target, _eventName, e) {
     // Pending position handle (tp / sl) — start dragging its price.
     const pendingKind = target && target.getAttribute && target.getAttribute('data-pending');
@@ -1286,23 +1283,10 @@ function buildHTML(t: ChartTheme): string {
     }
     pendingDragKind = null;
 
-    // If the touch ended on a drawing with no movement, it was a tap.
-    //   First such tap → already triggered drawing_select on touchstart.
-    //   Second tap on the same drawing within 350ms → drawing_open_settings.
-    if (drawingPan) {
-      if (!drawingPan.moved) {
-        const now = Date.now();
-        if (drawingPan.drawingId === lastDrawingTapId && (now - lastDrawingTapTime) < 350) {
-          postBack({ type: 'drawing_open_settings', id: drawingPan.drawingId });
-          lastDrawingTapId = null;
-          lastDrawingTapTime = 0;
-        } else {
-          lastDrawingTapId = drawingPan.drawingId;
-          lastDrawingTapTime = now;
-        }
-      }
-      drawingPan = null;
-    }
+    // TradingView-parity: a single drawing tap already fired drawing_select
+    // on touchstart, which now opens settings + shows handles in one shot.
+    // No double-tap detection any more.
+    drawingPan = null;
   });
 
   overlay.addEventListener('touchcancel', () => {
@@ -1482,7 +1466,7 @@ export default function TradingChart({ candles, positions, theme = DEFAULT_CHART
   const {
     drawings, activeTool, selectedId, pendingPoints, magnet,
     addDrawing, updateDrawing, removeDrawing, duplicateDrawing,
-    setSelected, setSettingsOpen, setActiveTool,
+    setSelected, setActiveTool,
     appendPendingPoint, resetPending,
   } = useDrawingsStore();
 
@@ -1560,20 +1544,16 @@ export default function TradingChart({ candles, positions, theme = DEFAULT_CHART
       if (msg.type === 'drawing_point') {
         handleDrawingPoint(msg.tool as DrawingType, msg.time, msg.price);
       }
-      // First tap on a drawing — show handles, enable body-drag.
-      // Does NOT open the settings sheet (that's drawing_open_settings).
+      // TradingView-parity: a single tap on a drawing both selects (handles
+      // visible) AND opens the settings sheet. Both are flipped by the
+      // store's setSelected — see drawingsStore.ts.
       if (msg.type === 'drawing_select') {
         setSelected(msg.id);
         if (activeTool !== 'cursor_cross') setActiveTool('cursor_cross');
       }
-      // Second tap within 350ms on the same already-selected drawing.
-      if (msg.type === 'drawing_open_settings') {
-        if (selectedId !== msg.id) setSelected(msg.id);
-        setSettingsOpen(true);
-      }
       // Tap on empty chart area while a drawing is selected.
       if (msg.type === 'drawing_deselect') {
-        setSelected(null);   // also clears settingsOpen via the store
+        setSelected(null);
       }
       if (msg.type === 'drawing_drag') {
         const d = drawings.find((x) => x.id === msg.id);

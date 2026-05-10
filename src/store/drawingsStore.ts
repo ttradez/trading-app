@@ -94,11 +94,11 @@ export const useDrawingsStore = create<DrawingsState>((set, get) => ({
     set({ drawings: [], selectedId: null, settingsOpen: false, pendingPoints: [] });
   },
 
-  // Switching selection (or deselecting) always closes any open settings —
-  // the modal targets a specific drawing, so a stale settingsOpen would refer
-  // to nothing useful.
+  // TradingView-parity: single-tap on a drawing both selects (handles
+  // visible) AND opens the settings sheet. setSelected drives both: any
+  // non-null id opens settings, null deselects + closes.
   setSelected: (id) =>
-    set({ selectedId: id, settingsOpen: id == null ? false : get().settingsOpen }),
+    set({ selectedId: id, settingsOpen: id != null }),
   setSettingsOpen: (open) => set({ settingsOpen: open }),
 
   toggleFavorite: (tool) => {
