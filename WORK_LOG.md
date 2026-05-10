@@ -5,6 +5,40 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-10 — Smoke-test fixes 4+5: rectangle + fib placement (atomic 2-point message)
+
+**Status:** Code complete on `master`. Type-check clean.
+
+Both issues had the same root cause. The drag-to-draw fast path in the WebView
+posted TWO back-to-back `drawing_point` messages (start + end). React's
+`handleDrawingPoint` reads `pendingPoints` from a destructured Zustand value
+captured at render time. Both messages arrive between renders, so:
+- msg 1: `[...[], {start}]` → length 1 < 2 → appendPendingPoint({start})
+- msg 2: `[...[], {end}]`   → length 1 < 2 → appendPendingPoint({end})
+                                ^ stale closure, store update from msg 1 not seen
+
+Result: `pendingPoints` ends up `[start, end]` but the drawing is never
+committed and the tool stays active. On the next tap the OLD start+end leak
+into the new drawing.
+
+### Fix
+- WebView placement-drag commit now sends ONE message: `drawing_place` with
+  a `points: [start, end]` array. Tap-tap path (single tap → drawing_point)
+  is unchanged; it doesn't have the back-to-back problem.
+- React side: new `drawing_place` handler bypasses `pendingPoints` entirely,
+  calls `addDrawing` once with both points, then `resetPending` +
+  `setActiveTool('cursor_cross')`.
+
+### Files touched
+- `src/components/chart/TradingChart.tsx` (WebView placementDrag commit + RN handler)
+
+### Behavior contract
+- Drag-to-draw rectangle: immediate commit on touchend, returns to cursor mode.
+- Drag-to-draw fib: same.
+- Tap-tap placement still works (unchanged code path).
+
+---
+
 ## 2026-05-10 — Smoke-test fix 3: smooth handle drag (detach + local mutation)
 
 **Status:** Code complete on `master`. Type-check clean.

@@ -1322,8 +1322,12 @@ function buildHTML(t: ChartTheme): string {
       drawingsList = drawingsList.filter(function (x) { return x.id !== PLACEMENT_PREVIEW_ID; });
       renderDrawings();
       if (moved && startC && endC) {
-        postBack({ type: 'drawing_point', tool, time: startC.time, price: startC.price });
-        postBack({ type: 'drawing_point', tool, time: endC.time,   price: endC.price   });
+        // Atomic 2-point placement — sent as a single message because two
+        // back-to-back drawing_point messages would both see a stale
+        // pendingPoints closure on the React side and never commit.
+        postBack({ type: 'drawing_place', tool,
+                   points: [{ time: startC.time, price: startC.price },
+                            { time: endC.time,   price: endC.price   }] });
       } else if (startC) {
         postBack({ type: 'drawing_point', tool, time: startC.time, price: startC.price });
       }
@@ -1659,6 +1663,20 @@ export default function TradingChart({ candles, positions, theme = DEFAULT_CHART
       }
       if (msg.type === 'log') {
         console.log('[CHART]', msg.msg);
+      }
+      // Atomic 2-point placement (drag-to-draw). Bypasses pendingPoints
+      // entirely so the stale-closure problem can't bite us.
+      if (msg.type === 'drawing_place' && Array.isArray(msg.points)) {
+        const def = TOOL_BY_ID[msg.tool as DrawingType];
+        if (!def || !def.drawable) return;
+        const id = `dr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        addDrawing({
+          id, type: msg.tool as DrawingType, points: msg.points,
+          style: { ...DEFAULT_STYLE, ...(msg.tool === 'text' ? { text: 'Text' } : {}) },
+        });
+        resetPending();
+        setActiveTool('cursor_cross');
+        return;
       }
       if (msg.type === 'drawing_point') {
         handleDrawingPoint(msg.tool as DrawingType, msg.time, msg.price);
