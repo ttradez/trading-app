@@ -5,6 +5,43 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-09 — Phase 2A.2: rectangle 4-corner handles + reshape
+
+**Status:** Code complete on `master`. Type-check clean.
+
+Rectangle previously rendered only 2 visual handles (one per stored
+anchor). TradingView shows all 4 corners. This commit adds the missing 2.
+
+### What changed
+- Renderer (TradingChart.tsx): when `d.type === 'rectangle' && pts.length === 2`,
+  emit handles at all 4 corners of the bounding box instead of at the 2
+  anchor points. Each corner carries a `data-corner="TL|TR|BR|BL"` attr.
+- Touch handler: dispatch on `data-handle` (existing path) OR `data-corner`
+  (new path). Corner drags post a new `drawing_drag_corner` message.
+- React-side handler: `drawing_drag_corner` reshapes the bbox by axis,
+  re-normalizes to canonical `[TL, BR]` after every update so the next
+  drag sees consistent anchor order. The dragged corner moves to the
+  finger; the diagonal corner stays fixed naturally.
+- User can drag past the diagonal (cross over); axes re-min/max so the
+  rectangle never inverts.
+
+### Files touched
+- `src/components/chart/TradingChart.tsx` — handle render + touch handler
+  + RN-side message dispatch
+
+### Behavior contract
+| Action | Result |
+|---|---|
+| Tap rectangle | Select + 4 corner handles + settings (from 2A.1) |
+| Drag any corner | Diagonal corner stays; rectangle reshapes |
+| Drag body (not on a handle) | Whole rectangle translates |
+| Drag past the diagonal | Rectangle re-normalizes, doesn't flip-render |
+
+Affects only `rectangle`. Other tools keep the 1-handle-per-anchor
+behavior. Phase 2A.3 (fib stroke-width) follows.
+
+---
+
 ## 2026-05-09 — Phase 2A.1: single-tap opens settings + shows handles
 
 **Status:** Code complete on `master`. Type-check clean.

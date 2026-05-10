@@ -474,22 +474,53 @@ function buildHTML(t: ChartTheme): string {
 
       // Drag handles when selected — extra-large hit area so finger drags work.
       if (isSel) {
-        pts.forEach((p, idx) => {
-          if (!p) return;
-          // Invisible 24px hit target
-          group.appendChild(svg('circle', {
-            cx: p.x, cy: p.y, r: 14,
-            fill: 'transparent',
-            'data-handle': idx, 'data-id': d.id,
-            'pointer-events': 'all',
-          }));
-          // Visible 5px dot
-          group.appendChild(svg('circle', {
-            cx: p.x, cy: p.y, r: 5,
-            fill: '#000', stroke: '#FFF', 'stroke-width': 2,
-            'pointer-events': 'none',
-          }));
-        });
+        // Rectangle gets 4 handles (one per visual corner of its bounding
+        // box) instead of just 2 anchor handles. The anchor list still has
+        // 2 entries — we DERIVE the other 2 visual corners from the bbox.
+        // Drag any corner -> the diagonal stays fixed; we recompute both
+        // anchors on the React side after the drag.
+        if (d.type === 'rectangle' && pts.length === 2 && pts[0] && pts[1]) {
+          const a = pts[0], b = pts[1];
+          const xMin = Math.min(a.x, b.x), xMax = Math.max(a.x, b.x);
+          const yMin = Math.min(a.y, b.y), yMax = Math.max(a.y, b.y);
+          // Order: TL, TR, BR, BL (clockwise from top-left). Encoded
+          // via data-corner so the drag handler can reshape per-corner.
+          const corners = [
+            { x: xMin, y: yMin, code: 'TL' },
+            { x: xMax, y: yMin, code: 'TR' },
+            { x: xMax, y: yMax, code: 'BR' },
+            { x: xMin, y: yMax, code: 'BL' },
+          ];
+          corners.forEach(function (c) {
+            group.appendChild(svg('circle', {
+              cx: c.x, cy: c.y, r: 14,
+              fill: 'transparent',
+              'data-corner': c.code, 'data-id': d.id,
+              'pointer-events': 'all',
+            }));
+            group.appendChild(svg('circle', {
+              cx: c.x, cy: c.y, r: 5,
+              fill: '#000', stroke: '#FFF', 'stroke-width': 2,
+              'pointer-events': 'none',
+            }));
+          });
+        } else {
+          // Default: one handle per anchor.
+          pts.forEach((p, idx) => {
+            if (!p) return;
+            group.appendChild(svg('circle', {
+              cx: p.x, cy: p.y, r: 14,
+              fill: 'transparent',
+              'data-handle': idx, 'data-id': d.id,
+              'pointer-events': 'all',
+            }));
+            group.appendChild(svg('circle', {
+              cx: p.x, cy: p.y, r: 5,
+              fill: '#000', stroke: '#FFF', 'stroke-width': 2,
+              'pointer-events': 'none',
+            }));
+          });
+        }
       }
       drawingsLayer.appendChild(group);
     });
@@ -936,10 +967,20 @@ function buildHTML(t: ChartTheme): string {
     }
 
     // Drag handle for an already-selected drawing's anchor → resize.
+    // Two flavors:
+    //   data-handle=<idx>     anchor index, used by every tool except rectangle
+    //   data-corner=TL|TR|BR|BL  rectangle's 4 visual corners (2 derived)
     const handleIdx = target && target.getAttribute && target.getAttribute('data-handle');
     if (handleIdx != null) {
       const id = target.getAttribute('data-id');
       drawingDragState = { id: id, idx: parseInt(handleIdx, 10) };
+      e && e.preventDefault && e.preventDefault();
+      return;
+    }
+    const cornerCode = target && target.getAttribute && target.getAttribute('data-corner');
+    if (cornerCode) {
+      const id = target.getAttribute('data-id');
+      drawingDragState = { id: id, corner: cornerCode };
       e && e.preventDefault && e.preventDefault();
       return;
     }
@@ -1134,11 +1175,21 @@ function buildHTML(t: ChartTheme): string {
     }
 
     // Anchor drag (selected drawing's handle).
+    // Two flavors based on what landed in drawingDragState during touchstart:
+    //   { id, idx }    → standard anchor drag, single point updated
+    //   { id, corner } → rectangle corner drag (TL/TR/BR/BL), both anchors
+    //                    recomputed on the React side so the diagonal stays fixed
     if (drawingDragState) {
       clearLongPress();
       const coord = chartCoordsAt(tc.clientX, tc.clientY);
       if (!coord) return;
-      postBack({ type: 'drawing_drag', id: drawingDragState.id, idx: drawingDragState.idx, time: coord.time, price: coord.price });
+      if (drawingDragState.corner) {
+        postBack({ type: 'drawing_drag_corner', id: drawingDragState.id,
+                   corner: drawingDragState.corner, time: coord.time, price: coord.price });
+      } else {
+        postBack({ type: 'drawing_drag', id: drawingDragState.id,
+                   idx: drawingDragState.idx, time: coord.time, price: coord.price });
+      }
       e.preventDefault();
       return;
     }
@@ -1561,6 +1612,35 @@ export default function TradingChart({ candles, positions, theme = DEFAULT_CHART
         const newPoints = d.points.map((p, i) =>
           i === msg.idx ? { time: msg.time, price: msg.price } : p
         );
+        updateDrawing(d.id, { points: newPoints } as Partial<Drawing>);
+      }
+      // Rectangle corner drag — reshape the bbox so the dragged corner
+      // moves to (msg.time, msg.price) and the diagonal stays fixed.
+      // Anchors are normalized to [TL, BR] after the update so future
+      // drags can rely on the canonical order.
+      if (msg.type === 'drawing_drag_corner') {
+        const d = drawings.find((x) => x.id === msg.id);
+        if (!d || d.locked || d.points.length < 2) return;
+        const a = d.points[0], b = d.points[1];
+        // Current bbox in data space (price decreases as y increases —
+        // but we don't care about pixel direction here, just min/max).
+        const tMin = Math.min(a.time,  b.time),  tMax = Math.max(a.time,  b.time);
+        const pMin = Math.min(a.price, b.price), pMax = Math.max(a.price, b.price);
+        // Map dragged corner to which side of the bbox each axis becomes.
+        // 'T' / 'B' refer to screen-top / -bottom which is HIGHER / LOWER price.
+        let newTMin = tMin, newTMax = tMax, newPMin = pMin, newPMax = pMax;
+        switch (msg.corner) {
+          case 'TL': newTMin = msg.time; newPMax = msg.price; break;
+          case 'TR': newTMax = msg.time; newPMax = msg.price; break;
+          case 'BL': newTMin = msg.time; newPMin = msg.price; break;
+          case 'BR': newTMax = msg.time; newPMin = msg.price; break;
+          default: return;
+        }
+        // Re-normalize (user may have crossed the diagonal during drag).
+        const t0 = Math.min(newTMin, newTMax), t1 = Math.max(newTMin, newTMax);
+        const p0 = Math.max(newPMin, newPMax), p1 = Math.min(newPMin, newPMax);
+        // Anchors stored as [TL, BR] = [(t0,p0), (t1,p1)] (TL = high price, left time).
+        const newPoints = [{ time: t0, price: p0 }, { time: t1, price: p1 }];
         updateDrawing(d.id, { points: newPoints } as Partial<Drawing>);
       }
       // Body-drag committed on touchend — one-shot snapshot of the final
