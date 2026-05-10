@@ -5,6 +5,73 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-09 — Drawing tools pruned to 10 essentials (TASK 1)
+
+**Status:** Code complete on `master`. Type-check clean.
+
+Removed 15 drawing tool types from `DrawingType` union + catalog +
+renderer + settings panel: `ray`, `info_line`, `extended_line`,
+`trend_angle`, `hray`, `cross_line`, `circle`, `arrow`,
+`parallel_channel`, `fib_extension`, `price_range`, `date_range`,
+`date_price_range`, `note`, `price_note`. Plus all `drawable: false`
+fluff (`cursor_dot`, `cursor_arrow`, `demonstration`, all gann/pattern/
+forecasting/volume variants, `highlighter`, `pin`/`table`/`callout`/
+`comment`).
+
+Final type union is exactly the 10-tool KEEP list + `cursor_cross` +
+`eraser`. Catalog has 12 entries total (10 tools + 2 cursor modes).
+
+### Side effect: B1 (rectangle selection) fixed incidentally
+TradingChart.tsx had two `else if (d.type === 'rectangle')` branches.
+The first (legacy `'rect'` alias) was reachable but lacked
+`data-id` / `pointer-events: 'all'`. The second was unreachable but
+correct. Deleting the legacy branch resolved the duplication — the
+remaining branch is the one with proper selection wiring.
+
+### B2 (fib `stroke-width: 1` hardcode) NOT fixed in this pass
+The hard-coded `'stroke-width': 1` in the fib renderer is untouched.
+Queued as the next surgical commit per audit's fix order step 3, once
+user confirms the smoke test.
+
+### Files touched
+- `src/types/drawings.ts` — type union + TOOL_CATALOG + CATEGORY_BUTTONS
+- `src/store/drawingsStore.ts` — favorites default + hydrate-time filter
+  for unknown stored types
+- `src/components/chart/TradingChart.tsx` — 11 renderer branches removed
+  (~280 lines off)
+- `src/components/chart/DrawingSettingsModal.tsx` — per-tool conditionals
+  narrowed to the 10 keep-tools
+- `docs/BLOCK_17_DRAWING_TOOLS_SPEC.md` — tool list updated to 10
+- `PROJECT_CONTEXT.md` — new "Drawing tool catalog" section
+
+### Untouched intentionally
+- `DrawingToolbar.tsx` — drives off `CATEGORY_BUTTONS` +
+  `TOOL_CATALOG.filter(byCategory)`. Picks up the prune for free.
+- `DrawingFavoritesBar.tsx` — already filters via `TOOL_BY_ID[id]`
+  membership; old stale favorites auto-stripped on render.
+
+### Missing implementations (KEEP list, renderer pending)
+Catalog entries marked `drawable: false`; UI hides them until renderers
+ship. Order to build per audit:
+1. `brush` (N-point freehand path)
+2. `gann_box` (2-anchor geometric grid)
+3. `long_position` (3-anchor entry/stop/target)
+4. `short_position` (same shape, inverted)
+
+### TASK 2 — blocked on architecture conflict
+TASK 2 prompt mandates `react-native-gesture-handler` for ALL touch
+handling and `Reanimated` shared values for drag. This directly
+contradicts the locked decision in
+`docs/BLOCK_17_DRAWING_TOOLS_SPEC.md` Section 2 (Option A — overlay
+inside WebView; explicitly rejected Option B — RN-side overlay with
+gesture handler — as "laggy during pan/zoom"). Drawings live INSIDE
+the WebView; RN gesture handler cannot reach into the WebView. The
+realistic TradingView-parity implementation uses the WebView's DOM
+touch events (the existing pattern). Awaiting user confirmation
+before proceeding.
+
+---
+
 ## 2026-05-09 — KLineChart Pro spike abandoned, returning to master
 
 **Decision:** Stop the KLineChart Pro spike. Return to the custom SVG

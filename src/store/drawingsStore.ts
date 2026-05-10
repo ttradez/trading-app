@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Drawing, DrawingType, DEFAULT_STYLE } from '../types/drawings';
+import { Drawing, DrawingType, DEFAULT_STYLE, TOOL_BY_ID } from '../types/drawings';
 
 const STORAGE_KEY = '@pocket_trade_drawings';
 const FAV_KEY     = '@pocket_trade_drawing_favorites';
@@ -53,7 +53,8 @@ const persistFavorites = (favs: Set<DrawingType>) => {
 export const useDrawingsStore = create<DrawingsState>((set, get) => ({
   drawings: [],
   activeTool: 'cursor_cross',
-  favorites: new Set(['trendline', 'hline', 'fib_retracement', 'rectangle', 'arrow']),
+  // Favorites — only IDs in the pruned 10-tool catalog. 'arrow' was deleted.
+  favorites: new Set<DrawingType>(['trendline', 'hline', 'fib_retracement', 'rectangle', 'text']),
   selectedId: null,
   settingsOpen: false,
   pendingPoints: [],
@@ -145,13 +146,21 @@ export const useDrawingsStore = create<DrawingsState>((set, get) => ({
         AsyncStorage.getItem(STICKY_KEY),
       ]);
       const patch: Partial<DrawingsState> = {};
+      // Tools deleted from the catalog after the 10-tool prune (DRAWING_TOOLS_AUDIT.md)
+      // may still be in users' AsyncStorage. Filter both lists by current TOOL_BY_ID
+      // membership so we never try to render or render-toolbar an unknown type.
+      const isKnownType = (t: string): t is DrawingType => !!TOOL_BY_ID[t as DrawingType];
       if (d) {
         const parsed = JSON.parse(d);
-        if (Array.isArray(parsed)) patch.drawings = parsed;
+        if (Array.isArray(parsed)) {
+          patch.drawings = parsed.filter((dr: any) => dr && isKnownType(dr.type));
+        }
       }
       if (f) {
         const parsed = JSON.parse(f);
-        if (Array.isArray(parsed)) patch.favorites = new Set(parsed);
+        if (Array.isArray(parsed)) {
+          patch.favorites = new Set<DrawingType>(parsed.filter(isKnownType));
+        }
       }
       if (m === 'off' || m === 'weak' || m === 'strong') patch.magnet = m;
       if (s === '1') patch.stickyMode = true;

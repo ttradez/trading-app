@@ -389,58 +389,6 @@ function buildHTML(t: ChartTheme): string {
           if (priceEnd != null) elements.push(priceTag(yEnd, stroke, priceEnd.toFixed(2)));
         }
       }
-      else if (d.type === 'ray') {
-        const a = pts[0], b = pts[1]; if (!a || !b) return;
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const safeDx = dx || 0.0001;
-        // Ray default: extends to the right past anchor B. extendLeft adds
-        // backward extension off anchor A toward x=0.
-        const tFwd = (W - a.x) / safeDx;
-        const fx = a.x + dx * Math.max(tFwd, 1);
-        const fy = a.y + dy * Math.max(tFwd, 1);
-        let x1 = a.x, y1 = a.y;
-        if (extL) {
-          const tBack = -a.x / safeDx;
-          x1 = a.x + dx * tBack;
-          y1 = a.y + dy * tBack;
-        }
-        elements.push(hitLine(x1, y1, fx, fy, d.id));
-        elements.push(svg('line', { x1, y1, x2: fx, y2: fy,
-          stroke, 'stroke-width': sw, 'stroke-dasharray': dash || '',
-          'stroke-opacity': strokeOp,
-          'data-id': d.id, 'pointer-events': 'none' }));
-        if (showPL) {
-          const priceEnd = series.coordinateToPrice(fy);
-          if (priceEnd != null) elements.push(priceTag(fy, stroke, priceEnd.toFixed(2)));
-        }
-      }
-      else if (d.type === 'extended_line' || d.type === 'info_line' || d.type === 'trend_angle') {
-        const a = pts[0], b = pts[1]; if (!a || !b) return;
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const tBack = -a.x / (dx || 0.0001);
-        const tFwd  = (W - a.x) / (dx || 0.0001);
-        const x1 = a.x + dx * tBack, y1 = a.y + dy * tBack;
-        const x2 = a.x + dx * tFwd,  y2 = a.y + dy * tFwd;
-        elements.push(hitLine(x1, y1, x2, y2, d.id));
-        elements.push(svg('line', {
-          x1, y1, x2, y2,
-          stroke, 'stroke-width': sw, 'stroke-dasharray': dash || '',
-          'stroke-opacity': strokeOp,
-          'data-id': d.id, 'pointer-events': 'none',
-        }));
-        if (d.type === 'trend_angle' && a) {
-          const angle = Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
-          elements.push(svg('text', { x: a.x + 8, y: a.y - 6, fill: stroke,
-            'font-size': 11, 'font-family': 'system-ui', 'pointer-events': 'none' },
-            [document.createTextNode(angle.toFixed(1) + '°')]));
-        }
-        if (d.type === 'info_line') {
-          const dist = Math.abs(d.points[1].price - d.points[0].price).toFixed(2);
-          elements.push(svg('text', { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - 6, fill: stroke,
-            'font-size': 11, 'font-family': 'system-ui', 'pointer-events': 'none' },
-            [document.createTextNode(dist)]));
-        }
-      }
       else if (d.type === 'hline') {
         const y = series.priceToCoordinate(d.points[0].price);
         if (y == null) return;
@@ -451,15 +399,6 @@ function buildHTML(t: ChartTheme): string {
           'data-id': d.id, 'pointer-events': 'none' }));
         if (showPL) elements.push(priceTag(y, stroke, d.points[0].price.toFixed(2)));
       }
-      else if (d.type === 'hray') {
-        const a = pts[0]; if (!a) return;
-        elements.push(hitLine(a.x, a.y, W, a.y, d.id));
-        elements.push(svg('line', { x1: a.x, y1: a.y, x2: W, y2: a.y,
-          stroke, 'stroke-width': sw, 'stroke-dasharray': dash || '',
-          'stroke-opacity': strokeOp,
-          'data-id': d.id, 'pointer-events': 'none' }));
-        if (showPL) elements.push(priceTag(a.y, stroke, d.points[0].price.toFixed(2)));
-      }
       else if (d.type === 'vline') {
         const x = chart.timeScale().timeToCoordinate(d.points[0].time);
         if (x == null) return;
@@ -468,27 +407,6 @@ function buildHTML(t: ChartTheme): string {
           stroke, 'stroke-width': sw, 'stroke-dasharray': dash || '',
           'stroke-opacity': strokeOp,
           'data-id': d.id, 'pointer-events': 'none' }));
-      }
-      else if (d.type === 'cross_line') {
-        const a = pts[0]; if (!a) return;
-        elements.push(hitLine(0, a.y, W, a.y, d.id));
-        elements.push(hitLine(a.x, 0, a.x, H, d.id));
-        elements.push(svg('line', { x1: 0, y1: a.y, x2: W, y2: a.y,
-          stroke, 'stroke-width': sw, 'stroke-dasharray': dash || '',
-          'stroke-opacity': strokeOp,
-          'data-id': d.id, 'pointer-events': 'none' }));
-        elements.push(svg('line', { x1: a.x, y1: 0, x2: a.x, y2: H,
-          stroke, 'stroke-width': sw, 'stroke-dasharray': dash || '',
-          'stroke-opacity': strokeOp,
-          'data-id': d.id, 'pointer-events': 'none' }));
-      }
-      else if (d.type === 'rect' || d.type === 'rectangle') {
-        const a = pts[0], b = pts[1]; if (!a || !b) return;
-        const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
-        const w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
-        elements.push(svg('rect', { x, y, width: w, height: h,
-          fill: d.style.fillColor || stroke, 'fill-opacity': d.style.fillOpacity ?? 0.15,
-          stroke, 'stroke-width': sw, 'stroke-dasharray': dash || '' }));
       }
       else if (d.type === 'fib_retracement') {
         const a = pts[0], b = pts[1]; if (!a || !b) return;
@@ -533,165 +451,9 @@ function buildHTML(t: ChartTheme): string {
           'data-id': d.id, 'pointer-events': 'all',
         }));
       }
-      else if (d.type === 'circle') {
-        const a = pts[0], b = pts[1]; if (!a || !b) return;
-        const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
-        const rx = Math.abs(b.x - a.x) / 2, ry = Math.abs(b.y - a.y) / 2;
-        elements.push(svg('ellipse', {
-          cx, cy, rx, ry,
-          fill: d.style.fillColor || stroke, 'fill-opacity': d.style.fillOpacity ?? 0.10,
-          stroke, 'stroke-width': sw, 'stroke-dasharray': dash || '',
-          'data-id': d.id, 'pointer-events': 'all',
-        }));
-      }
-      else if (d.type === 'arrow') {
-        const a = pts[0], b = pts[1]; if (!a || !b) return;
-        elements.push(hitLine(a.x, a.y, b.x, b.y, d.id));
-        // Shaft
-        elements.push(svg('line', {
-          x1: a.x, y1: a.y, x2: b.x, y2: b.y,
-          stroke, 'stroke-width': sw, 'stroke-dasharray': dash || '',
-          'data-id': d.id, 'pointer-events': 'none',
-        }));
-        // Arrowhead — small triangle at b, oriented along (a → b).
-        const angle = Math.atan2(b.y - a.y, b.x - a.x);
-        const headLen = 14, headW = 8;
-        const hx = b.x - headLen * Math.cos(angle);
-        const hy = b.y - headLen * Math.sin(angle);
-        const px1 = hx + headW * Math.sin(angle), py1 = hy - headW * Math.cos(angle);
-        const px2 = hx - headW * Math.sin(angle), py2 = hy + headW * Math.cos(angle);
-        elements.push(svg('polygon', {
-          points: b.x + ',' + b.y + ' ' + px1 + ',' + py1 + ' ' + px2 + ',' + py2,
-          fill: stroke, stroke: 'none', 'pointer-events': 'none',
-        }));
-      }
-      else if (d.type === 'parallel_channel') {
-        // 3 anchors: A, B = primary trendline. C = parallel offset (perpendicular distance).
-        const a = pts[0], b = pts[1], c = pts[2]; if (!a || !b || !c) return;
-        const dx = b.x - a.x, dy = b.y - a.y;
-        // Offset vector: perpendicular projection of (C - A) onto the normal of A→B.
-        const len = Math.sqrt(dx * dx + dy * dy) || 1;
-        const nx = -dy / len, ny = dx / len;
-        const cax = c.x - a.x, cay = c.y - a.y;
-        const offset = cax * nx + cay * ny;
-        const ox = nx * offset, oy = ny * offset;
-        // Extend both lines a little past A and B so they look like a real channel.
-        const ax2 = a.x - dx * 0.1, ay2 = a.y - dy * 0.1;
-        const bx2 = b.x + dx * 0.1, by2 = b.y + dy * 0.1;
-        // Filled band between the two parallel lines.
-        elements.push(svg('polygon', {
-          points: ax2 + ',' + ay2 + ' ' + bx2 + ',' + by2 + ' '
-                + (bx2 + ox) + ',' + (by2 + oy) + ' ' + (ax2 + ox) + ',' + (ay2 + oy),
-          fill: d.style.fillColor || stroke, 'fill-opacity': d.style.fillOpacity ?? 0.10,
-          stroke: 'none', 'pointer-events': 'none',
-        }));
-        // Hit-targets + visible lines.
-        elements.push(hitLine(ax2, ay2, bx2, by2, d.id));
-        elements.push(hitLine(ax2 + ox, ay2 + oy, bx2 + ox, by2 + oy, d.id));
-        elements.push(svg('line', {
-          x1: ax2, y1: ay2, x2: bx2, y2: by2,
-          stroke, 'stroke-width': sw, 'stroke-dasharray': dash || '',
-          'data-id': d.id, 'pointer-events': 'none',
-        }));
-        elements.push(svg('line', {
-          x1: ax2 + ox, y1: ay2 + oy, x2: bx2 + ox, y2: by2 + oy,
-          stroke, 'stroke-width': sw, 'stroke-dasharray': dash || '',
-          'data-id': d.id, 'pointer-events': 'none',
-        }));
-      }
-      else if (d.type === 'fib_extension') {
-        // 3 anchors: A, B, C. Levels project from C using the A→B move as the "1.0" unit.
-        const a = pts[0], b = pts[1], c = pts[2]; if (!a || !b || !c) return;
-        const FIBE = [0, 0.382, 0.5, 0.618, 1, 1.272, 1.414, 1.618, 2, 2.618];
-        const p0 = d.points[0].price, p1 = d.points[1].price, p2 = d.points[2].price;
-        const move = p1 - p0;  // primary leg
-        const x1 = Math.min(a.x, c.x), x2 = W;
-        FIBE.forEach((lvl) => {
-          const price = p2 + move * lvl;
-          const yL = series.priceToCoordinate(price);
-          if (yL == null) return;
-          elements.push(svg('line', {
-            x1, y1: yL, x2, y2: yL,
-            stroke, 'stroke-width': 1, 'stroke-dasharray': dash || '',
-            'data-id': d.id, 'pointer-events': 'none',
-          }));
-          elements.push(svg('text', {
-            x: x1 + 4, y: yL - 2, fill: stroke,
-            'font-size': 10, 'font-family': 'system-ui', 'pointer-events': 'none',
-          }, [document.createTextNode(lvl.toFixed(3) + '  ' + price.toFixed(2))]));
-        });
-      }
-      else if (d.type === 'price_range') {
-        // Vertical span between two prices — shows price delta + %.
-        const a = pts[0], b = pts[1]; if (!a || !b) return;
-        const x = Math.min(a.x, b.x), w = Math.abs(b.x - a.x);
-        const yT = Math.min(a.y, b.y), yB = Math.max(a.y, b.y);
-        const dPrice = d.points[1].price - d.points[0].price;
-        const pct = d.points[0].price !== 0 ? (dPrice / d.points[0].price) * 100 : 0;
-        elements.push(svg('rect', { x, y: yT, width: w, height: yB - yT,
-          fill: stroke, 'fill-opacity': 0.10, stroke, 'stroke-width': 1,
-          'data-id': d.id, 'pointer-events': 'all' }));
-        elements.push(svg('text', {
-          x: x + w / 2, y: (yT + yB) / 2, fill: '#fff',
-          'font-size': 11, 'font-family': 'system-ui', 'text-anchor': 'middle',
-          'pointer-events': 'none',
-        }, [document.createTextNode(
-          (dPrice >= 0 ? '+' : '') + dPrice.toFixed(2) +
-          '  (' + (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%)'
-        )]));
-      }
-      else if (d.type === 'date_range') {
-        // Horizontal span between two times — shows bar count.
-        const a = pts[0], b = pts[1]; if (!a || !b) return;
-        const x = Math.min(a.x, b.x), w = Math.abs(b.x - a.x);
-        elements.push(svg('rect', {
-          x, y: 0, width: w, height: H,
-          fill: stroke, 'fill-opacity': 0.08, stroke: 'none',
-          'data-id': d.id, 'pointer-events': 'all',
-        }));
-        elements.push(svg('line', { x1: x,     y1: 0, x2: x,     y2: H, stroke, 'stroke-width': sw, 'pointer-events': 'none' }));
-        elements.push(svg('line', { x1: x + w, y1: 0, x2: x + w, y2: H, stroke, 'stroke-width': sw, 'pointer-events': 'none' }));
-        // Bar-count label
-        const dt = Math.abs(d.points[1].time - d.points[0].time);
-        const minutes = Math.round(dt / 60);
-        const label = minutes >= 1440 ? Math.round(minutes / 1440) + 'd'
-                    : minutes >= 60   ? Math.round(minutes / 60) + 'h'
-                    : minutes + 'm';
-        elements.push(svg('text', {
-          x: x + w / 2, y: 18, fill: stroke,
-          'font-size': 11, 'font-family': 'system-ui', 'text-anchor': 'middle',
-          'font-weight': '700', 'pointer-events': 'none',
-        }, [document.createTextNode(label)]));
-      }
-      else if (d.type === 'date_price_range') {
-        // Combined: rectangle plus delta-price/percent/bar-count label.
-        const a = pts[0], b = pts[1]; if (!a || !b) return;
-        const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
-        const w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
-        elements.push(svg('rect', {
-          x, y, width: w, height: h,
-          fill: stroke, 'fill-opacity': 0.10, stroke, 'stroke-width': 1, 'stroke-dasharray': '3,3',
-          'data-id': d.id, 'pointer-events': 'all',
-        }));
-        const dPrice = d.points[1].price - d.points[0].price;
-        const pct = d.points[0].price !== 0 ? (dPrice / d.points[0].price) * 100 : 0;
-        const dt = Math.abs(d.points[1].time - d.points[0].time);
-        const minutes = Math.round(dt / 60);
-        const dur = minutes >= 1440 ? Math.round(minutes / 1440) + 'd'
-                  : minutes >= 60   ? Math.round(minutes / 60) + 'h'
-                  : minutes + 'm';
-        elements.push(svg('text', {
-          x: x + w / 2, y: y + h / 2, fill: '#fff',
-          'font-size': 11, 'font-family': 'system-ui', 'text-anchor': 'middle',
-          'pointer-events': 'none',
-        }, [document.createTextNode(
-          (dPrice >= 0 ? '+' : '') + dPrice.toFixed(2) + ' · ' +
-          (pct    >= 0 ? '+' : '') + pct.toFixed(2)    + '% · ' + dur
-        )]));
-      }
-      else if (d.type === 'text' || d.type === 'note' || d.type === 'price_note') {
+      else if (d.type === 'text') {
         const a = pts[0]; if (!a) return;
-        const text = d.style.text || (d.type === 'price_note' ? d.points[0].price.toFixed(2) : 'Note');
+        const text = d.style.text || 'Text';
         const fontSize = d.style.fontSize || 12;
         elements.push(svg('text', { x: a.x + 6, y: a.y, fill: stroke,
           'font-size': fontSize, 'font-family': 'system-ui', 'font-weight': '600' },
@@ -1773,7 +1535,7 @@ export default function TradingChart({ candles, positions, theme = DEFAULT_CHART
       const id = `dr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
       addDrawing({
         id, type: tool, points,
-        style: { ...DEFAULT_STYLE, ...(tool === 'text' || tool === 'note' ? { text: 'Note' } : {}) },
+        style: { ...DEFAULT_STYLE, ...(tool === 'text' ? { text: 'Text' } : {}) },
       });
       resetPending();
       // TradingView default: tool always exits after one placement and the

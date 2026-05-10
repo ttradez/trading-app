@@ -47,15 +47,14 @@ export default function DrawingSettingsModal() {
   if (!drawing || !settingsOpen) return null;
 
   const def  = TOOL_BY_ID[drawing.type];
-  const isTextual = drawing.type === 'text' || drawing.type === 'note' || drawing.type === 'price_note';
-  const hasFill   = drawing.type === 'rectangle' || drawing.type === 'circle'
-                  || drawing.type === 'parallel_channel'
-                  || drawing.type === 'price_range' || drawing.type === 'date_price_range';
-  // Per-tool feature flags — drives which optional rows the panel renders.
+  // Per-tool feature flags — pruned to the 10 keep-tools (DRAWING_TOOLS_AUDIT.md).
+  // 'note', 'price_note', 'circle', 'parallel_channel', 'price_range',
+  // 'date_price_range', 'ray', 'hray' all deleted from the catalog.
+  const isTextual        = drawing.type === 'text';
+  const hasFill          = drawing.type === 'rectangle' || drawing.type === 'gann_box';
   const isFib            = drawing.type === 'fib_retracement';
-  const canExtend        = drawing.type === 'trendline' || drawing.type === 'ray';
-  const canShowPriceLbl  = drawing.type === 'trendline' || drawing.type === 'ray'
-                        || drawing.type === 'hline'     || drawing.type === 'hray';
+  const canExtend        = drawing.type === 'trendline';
+  const canShowPriceLbl  = drawing.type === 'trendline' || drawing.type === 'hline';
 
   const setStyle = (patch: Partial<DrawingStyle>) =>
     updateDrawing(drawing.id, { style: { ...drawing.style, ...patch } } as any);

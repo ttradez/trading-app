@@ -1,10 +1,23 @@
 # Block 17 — Drawing Tools Spec
 
-Status: SPEC LOCKED on 3/4 open questions. Section 3 gesture-forwarding (option A vs B) still awaiting Claude Code's final write-up before implementation can begin.
+Status: SPEC LOCKED. Implemented on `master`. Tool list expanded from the original 5 to 10 after KLineChart Pro spike was abandoned and the audit was done — see `docs/DRAWING_TOOLS_AUDIT.md` and `PROJECT_CONTEXT.md` "Drawing tool catalog".
 
 ## Scope
 
-Five tools on a transparent overlay above `src/components/chart/TradingChart.tsx` (Lightweight Charts WebView): horizontal line, trendline, rectangle, fib retracement, text label. Per-session lifetime — wiped when `sessionStore.endSession()` or `reset()` runs. No backend.
+10 tools on a transparent SVG overlay rendered inside the WebView above `src/components/chart/TradingChart.tsx` (Lightweight Charts):
+
+1. Trendline (2 anchors)
+2. Horizontal line (1 anchor, extends both ways)
+3. Vertical line (1 anchor, extends both ways)
+4. Rectangle (2 corner anchors)
+5. Fib retracement (2 anchors, 7 default visible levels)
+6. Gann box (2 anchors, geometric grid) — **renderer pending**
+7. Long position (3 anchors: entry / stop / target — TradingView-style visual) — **renderer pending**
+8. Short position (3 anchors: entry / stop / target, inverted) — **renderer pending**
+9. Brush (freehand N-point path) — **renderer pending**
+10. Text label (1 anchor + text input)
+
+Drawings persist via AsyncStorage globally (per-symbol persistence deferred). Old persisted drawings of pruned types are filtered out gracefully on hydrate (see `drawingsStore.hydrate()`).
 
 ## 1. State location — new `drawingStore`
 

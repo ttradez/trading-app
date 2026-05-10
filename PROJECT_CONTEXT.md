@@ -73,7 +73,28 @@ Auto-popup on trade close. Auto-fills: symbol, direction, entry/exit, size, SL/T
 - fetch_kaggle_intraday.py wired correctly: KAGGLE_MAP only has clean_SPY.csv→ES, clean_QQQ.csv→NQ; resamples to 5m/15m/30m/1h/4h.
 
 ### IN FLIGHT
-- **Block 17 (custom SVG drawing tools)** — code complete on `master` at commit `258f5ae`. Adds: split selection vs settings (single tap = handles, double tap = settings sheet), transform-based body-drag (no SVG rebuild during drag), drag-to-draw placement for 2-point tools (live dashed preview), icon-only floating favorites bar, 200ms tap-suppression after tool activation (kills favorite-pill leak), 24px line / 12px rect hit slop, continuous rAF (`priceProjectionTick`) re-renders drawings on vertical pan with drag pause. **Status: ready for smoke test on device** — manual verification checklist in WORK_LOG.md (2026-05-09 entry).
+- **Block 17 (custom SVG drawing tools)** — code complete on `master` at commit `258f5ae`. Adds: split selection vs settings (single tap = handles, double tap = settings sheet), transform-based body-drag (no SVG rebuild during drag), drag-to-draw placement for 2-point tools (live dashed preview), icon-only floating favorites bar, 200ms tap-suppression after tool activation (kills favorite-pill leak), 24px line / 12px rect hit slop, continuous rAF (`priceProjectionTick`) re-renders drawings on vertical pan with drag pause. **Pruned to 10 tools** per `docs/DRAWING_TOOLS_AUDIT.md` (TASK 1 of the post-spike push) — see "Drawing tool catalog" below for the canonical list. **Status: ready for smoke test on device.**
+
+### Drawing tool catalog (10 tools, locked)
+
+After the post-KLineChart-spike audit + prune. ANY tool not in this list is intentionally not in the codebase.
+
+| # | Tool | ID | Anchors | Catalog `drawable` | Renderer present? |
+|---:|---|---|---:|:---:|:---:|
+| 1 | Trendline | `trendline` | 2 | ✓ | ✓ |
+| 2 | Horizontal line | `hline` | 1 | ✓ | ✓ |
+| 3 | Vertical line | `vline` | 1 | ✓ | ✓ |
+| 4 | Rectangle | `rectangle` | 2 | ✓ | ✓ |
+| 5 | Fib retracement | `fib_retracement` | 2 | ✓ | ✓ |
+| 6 | Gann box | `gann_box` | 2 | ✗ pending | ✗ pending |
+| 7 | Long position | `long_position` | 3 | ✗ pending | ✗ pending |
+| 8 | Short position | `short_position` | 3 | ✗ pending | ✗ pending |
+| 9 | Brush | `brush` | N (path) | ✗ pending | ✗ pending |
+| 10 | Text | `text` | 1 | ✓ | ✓ |
+
+Cursors `cursor_cross` + `eraser` are pointer modes (not drawings), kept for the toolbar's selection state.
+
+The 4 "pending" tools are placeholder catalog entries with `drawable: false` — UI hides them from the placement toolbar until renderers ship.
 - **Firebase setup** — bundle ID `com.pockettrade.app` (iOS + Android), Expo managed workflow, pure-JS firebase v12.12.1 (NOT @react-native-firebase). Six EXPO_PUBLIC_FIREBASE_* env vars in `.env` still empty awaiting console values. Walkthrough being conducted in Claude Remote with screenshots.
 
 ### ABANDONED
