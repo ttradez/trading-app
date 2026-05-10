@@ -324,22 +324,42 @@ export default function DrawingSettingsModal() {
               </>
             )}
 
-            {/* Lock toggle */}
-            <Text style={[labelStyle, styles.sectionLabel]}>Lock</Text>
-            <View style={styles.row}>
-              <TouchableOpacity
-                style={[styles.pill, drawing.locked && styles.pillActive]}
-                onPress={() => updateDrawing(drawing.id, { locked: !drawing.locked } as any)}
-              >
-                <Ionicons name={drawing.locked ? 'lock-closed' : 'lock-open-outline'}
-                          size={14} color={drawing.locked ? colors.bg : colors.textPrimary}
-                          style={{ marginRight: 6 }} />
-                <Text style={[styles.pillText, drawing.locked && styles.pillTextActive]}>
-                  {drawing.locked ? 'LOCKED' : 'UNLOCKED'}
-                </Text>
-              </TouchableOpacity>
-            </View>
           </ScrollView>
+
+          {/* Action footer — Lock toggle, Duplicate, Delete.
+              Replaces the long-press "Drawing Actions" alert (removed). */}
+          <View style={styles.footer}>
+            <TouchableOpacity
+              style={[styles.footerBtn, drawing.locked && styles.footerBtnLocked]}
+              onPress={() => updateDrawing(drawing.id, { locked: !drawing.locked } as any)}
+            >
+              <Ionicons
+                name={drawing.locked ? 'lock-closed' : 'lock-open-outline'}
+                size={16}
+                color={drawing.locked ? colors.bg : colors.textPrimary}
+                style={{ marginRight: 6 }}
+              />
+              <Text style={[styles.footerBtnText, drawing.locked && styles.footerBtnTextLocked]}>
+                {drawing.locked ? 'LOCKED' : 'LOCK'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.footerBtn}
+              onPress={() => duplicateDrawing(drawing.id)}
+            >
+              <Ionicons name="copy-outline" size={16} color={colors.textPrimary} style={{ marginRight: 6 }} />
+              <Text style={styles.footerBtnText}>DUPLICATE</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.footerBtn, styles.footerBtnDelete]}
+              onPress={() => removeDrawing(drawing.id)}
+            >
+              <Ionicons name="trash-outline" size={16} color={colors.red} style={{ marginRight: 6 }} />
+              <Text style={[styles.footerBtnText, { color: colors.red }]}>DELETE</Text>
+            </TouchableOpacity>
+          </View>
         </Pressable>
       </Pressable>
     </Modal>
@@ -360,6 +380,39 @@ const styles = StyleSheet.create({
   },
   headerTitle: { flex: 1, color: colors.textPrimary, fontSize: fontSize.md, fontWeight: fontWeight.bold },
   headerBtn: { padding: spacing.sm },
+
+  // Action footer at the bottom of the sheet — replaces the long-press
+  // alert. Three full-width-ish pill buttons: lock toggle, duplicate, delete.
+  footer: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.md, paddingVertical: spacing.md,
+    borderTopWidth: 1, borderTopColor: colors.border,
+    gap: spacing.sm,
+  },
+  footerBtn: {
+    flex: 1,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.cardAlt,
+    borderRadius: radius.sm,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  footerBtnLocked: {
+    backgroundColor: colors.gold,
+    borderColor: colors.gold,
+  },
+  footerBtnDelete: {
+    borderColor: colors.red,
+  },
+  footerBtnText: {
+    color: colors.textPrimary,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.bold,
+    letterSpacing: 0.6,
+  },
+  footerBtnTextLocked: {
+    color: colors.bg,
+  },
 
   sectionLabel: { marginTop: spacing.md, marginBottom: spacing.sm },
 

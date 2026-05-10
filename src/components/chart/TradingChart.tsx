@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useMemo } from 'react';
-import { View, StyleSheet, Alert } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { SessionCandle, SessionPosition } from '../../store/sessionStore';
 import { useDrawingsStore } from '../../store/drawingsStore';
@@ -951,11 +951,10 @@ function buildHTML(t: ChartTheme): string {
     price_range: true, date_range: true, date_price_range: true,
   };
   const PLACEMENT_PREVIEW_ID = '__placement_preview__';
-  // Long-press detection — fires drawing_longpress to RN after 500ms of
-  // no movement on a drawing tap. RN shows a quick action sheet
-  // (Delete / Duplicate / Lock).
+  // Long-press timer machinery is retained for safe no-op clearing from
+  // existing drag paths, but never armed — Lock/Duplicate/Delete moved
+  // into the settings sheet as buttons (DrawingSettingsModal footer).
   let longPressTimer = null;
-  let longPressFired = false;
   function clearLongPress() {
     if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
   }
@@ -1016,14 +1015,8 @@ function buildHTML(t: ChartTheme): string {
         postBack({ type: 'drawing_select', id: hitId });
       }
 
-      // Arm long-press: 500ms of stillness on this drawing → quick action
-      // sheet. Cleared on movement or touchend.
-      longPressFired = false;
-      clearLongPress();
-      longPressTimer = setTimeout(function () {
-        longPressFired = true;
-        postBack({ type: 'drawing_longpress', id: hitId });
-      }, 500);
+      // Long-press popup intentionally disabled — Lock/Duplicate/Delete now
+      // live as buttons inside the settings sheet (opened via double-tap).
 
       // Arm body-drag with the touch's start position. The translate-on-move
       // logic in touchmove only fires once the finger has moved more than
@@ -1319,13 +1312,6 @@ function buildHTML(t: ChartTheme): string {
         return;
       }
     }
-    // Long-press already fired → suppress the double-tap detection too.
-    if (longPressFired) {
-      clearLongPress();
-      longPressFired = false;
-      drawingPan = null;
-      return;
-    }
     clearLongPress();
     if (pendingDragKind && pendingPosition) {
       // Snap to a 0.25 tick on release, then commit to React.
@@ -1370,7 +1356,6 @@ function buildHTML(t: ChartTheme): string {
       renderDrawings();
     }
     clearLongPress();
-    longPressFired = false;
   });
 
   window.addEventListener('resize', () => {
@@ -1535,7 +1520,7 @@ export default function TradingChart({ candles, positions, theme = DEFAULT_CHART
 
   const {
     drawings, activeTool, selectedId, pendingPoints, magnet,
-    addDrawing, updateDrawing, removeDrawing, duplicateDrawing,
+    addDrawing, updateDrawing, removeDrawing,
     setSelected, setSettingsOpen, setActiveTool,
     appendPendingPoint, resetPending,
   } = useDrawingsStore();
@@ -1675,23 +1660,8 @@ export default function TradingChart({ candles, positions, theme = DEFAULT_CHART
           updateDrawing(d.id, { points: msg.points } as Partial<Drawing>);
         }
       }
-      // Long-press → quick action sheet (Delete / Duplicate / Lock / Cancel).
-      if (msg.type === 'drawing_longpress') {
-        const d = drawings.find((x) => x.id === msg.id);
-        if (!d) return;
-        const lockLabel = d.locked ? 'Unlock' : 'Lock';
-        Alert.alert(
-          'Drawing actions',
-          undefined,
-          [
-            { text: 'Delete',   style: 'destructive', onPress: () => removeDrawing(d.id) },
-            { text: 'Duplicate',                       onPress: () => duplicateDrawing(d.id) },
-            { text: lockLabel,                          onPress: () =>
-              updateDrawing(d.id, { locked: !d.locked } as Partial<Drawing>) },
-            { text: 'Cancel',  style: 'cancel' },
-          ],
-        );
-      }
+      // drawing_longpress popup removed — Lock / Duplicate / Delete now
+      // live as buttons in the settings sheet (DrawingSettingsModal footer).
       if (msg.type === 'drawing_erase') {
         removeDrawing(msg.id);
       }

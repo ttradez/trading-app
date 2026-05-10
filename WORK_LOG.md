@@ -5,6 +5,35 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-09 — Smoke-test fix 2: kill Drawing Actions popup, footer buttons in settings sheet
+
+**Status:** Code complete on `master`. Type-check clean.
+
+User saw two panels stacking on tap (the long-press alert + the
+settings sheet) and only wants the settings sheet. Moved Lock /
+Duplicate / Delete actions into the settings sheet's footer.
+
+### What changed
+- WebView: removed the long-press timer arming (`setTimeout`) that
+  fired `drawing_longpress`. Timer machinery + `clearLongPress()`
+  retained as a no-op so existing drag paths can still call it safely.
+  Removed `longPressFired` flag + its check in touchend.
+- React-side: removed the `drawing_longpress` `Alert.alert` handler.
+  Removed the now-unused `Alert` import + `duplicateDrawing` from the
+  store destructure (used only by the popup).
+- DrawingSettingsModal: replaced the inline "Lock" toggle row at the
+  bottom of the ScrollView with a proper action footer below the
+  ScrollView, containing three buttons:
+    [ LOCK / LOCKED ] [ DUPLICATE ] [ DELETE (red) ]
+  Tapping outside the sheet still closes it (the existing backdrop
+  Pressable handles that — Cancel button isn't needed).
+
+### Files touched
+- `src/components/chart/TradingChart.tsx`
+- `src/components/chart/DrawingSettingsModal.tsx`
+
+---
+
 ## 2026-05-09 — Phase 2A smoke-test fix 1: revert tap behavior
 
 **Status:** Code complete on `master`. Type-check clean.
