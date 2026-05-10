@@ -73,8 +73,11 @@ Auto-popup on trade close. Auto-fills: symbol, direction, entry/exit, size, SL/T
 - fetch_kaggle_intraday.py wired correctly: KAGGLE_MAP only has clean_SPY.csv→ES, clean_QQQ.csv→NQ; resamples to 5m/15m/30m/1h/4h.
 
 ### IN FLIGHT
-- **Block 17 (drawing tools)** — spec written by Claude Code on the web. See `docs/BLOCK_17_DRAWING_TOOLS_SPEC.md`. 3/4 open questions locked (canvas not SVG, toolbar in RN, defer snap-to-OHLC). Spec fully locked. Ready for implementation.
+- **Block 17 (custom SVG drawing tools)** — code complete on `master` at commit `258f5ae`. Adds: split selection vs settings (single tap = handles, double tap = settings sheet), transform-based body-drag (no SVG rebuild during drag), drag-to-draw placement for 2-point tools (live dashed preview), icon-only floating favorites bar, 200ms tap-suppression after tool activation (kills favorite-pill leak), 24px line / 12px rect hit slop, continuous rAF (`priceProjectionTick`) re-renders drawings on vertical pan with drag pause. **Status: ready for smoke test on device** — manual verification checklist in WORK_LOG.md (2026-05-09 entry).
 - **Firebase setup** — bundle ID `com.pockettrade.app` (iOS + Android), Expo managed workflow, pure-JS firebase v12.12.1 (NOT @react-native-firebase). Six EXPO_PUBLIC_FIREBASE_* env vars in `.env` still empty awaiting console values. Walkthrough being conducted in Claude Remote with screenshots.
+
+### ABANDONED
+- **KLineChart Pro spike** (`feature/klinechart-spike` branch, latest commit `3f5f458`) — 7 iterations attempting to swap our custom-SVG drawing system for the KLineChart Pro library inside the WebView. Spike was preserved but abandoned because: (a) couldn't get a clean simultaneous state — fixing pan/zoom broke layout, fixing layout reintroduced overlays, etc.; (b) couldn't determine which API path was usable without device-side log access; (c) custom SVG drawing system on master already worked in earlier user testing. Branch is parked as fallback if we revisit; do NOT delete. Reason for keeping: research artifact (locale, theme, CDN-via-WebView pattern, defensive path-A/B fallbacks, in-WebView debug log overlay) might inform a future swap.
 
 ### NOT YET BUILT
 - Real news data source (FRED is macro-only and not useful per-trade — panel hidden in v1, news_snapshot column kept in trades table for future)

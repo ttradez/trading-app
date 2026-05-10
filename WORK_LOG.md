@@ -5,6 +5,38 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-09 — KLineChart Pro spike abandoned, returning to master
+
+**Decision:** Stop the KLineChart Pro spike. Return to the custom SVG
+drawing system on `master` (commit `258f5ae`) and smoke-test it before
+touching any drawing code.
+
+### Why
+- 7 iterations on `feature/klinechart-spike` (commits `f8a5803` →
+  `3f5f458`) couldn't reach a clean simultaneous state — every fix
+  reintroduced a different problem (pan/zoom vs layout, indicators vs
+  overlays vs popup vs axis drag).
+- Couldn't determine which API path was usable without device-side log
+  access; defensive path-A/path-B code was the workaround but accumulated
+  complexity faster than results.
+- The custom SVG system on master had already been validated by the user
+  in earlier sessions; the spike was solving a problem that wasn't
+  blocking anything yet.
+
+### What stays
+- `feature/klinechart-spike` branch is preserved (NOT deleted). Latest
+  commit `3f5f458` includes a useful in-WebView debug log overlay and
+  the locale/theme/CDN setup that could inform a future swap.
+- All 7 iter commits remain on the branch as a research artifact.
+
+### What's next
+- User to reload `master` on device and smoke-test the existing custom
+  drawing system end-to-end (checklist in the next entry below).
+- Surgical fixes only — do NOT rewrite anything until the smoke test
+  produces a concrete defect list.
+
+---
+
 ## 2026-05-09 — Drawing tools (TradingView parity, intra-session)
 
 **Status:** Code complete. Manual smoke test pending on device.
