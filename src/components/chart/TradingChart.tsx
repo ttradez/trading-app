@@ -260,6 +260,18 @@ function buildHTML(t: ChartTheme): string {
     try { chart.clearCrosshairPosition(); } catch (err) {}
   }
 
+  // Empty-canvas tap → deselect any active drawing. The SVG overlay has
+  // pointer-events:none in cursor mode (so chart pan/zoom works), which
+  // means taps on empty area never bubble to our handleTap and the
+  // drawing_deselect path can't fire from there. subscribeClick fills the
+  // gap — lightweight-charts only fires this for clicks on the chart
+  // canvas itself, NOT for taps that an SVG drawing element captured.
+  chart.subscribeClick(function () {
+    if (drawingSelectedId) {
+      postBack({ type: 'drawing_deselect' });
+    }
+  });
+
   // ── Drawings (overlay SVG) ───────────────────────────────────────────────────
   // Drawings come from React Native as { id, type, points: [{time, price}, …], style }.
   // We convert each point's chart-coordinates into pixel-coordinates using the
