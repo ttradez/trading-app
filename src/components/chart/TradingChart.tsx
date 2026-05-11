@@ -3,7 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { SessionCandle, SessionPosition } from '../../store/sessionStore';
 import { useDrawingsStore } from '../../store/drawingsStore';
-import { TOOL_BY_ID, DEFAULT_STYLE, TRENDLINE_DEFAULT_STYLE, Drawing, DrawingType } from '../../types/drawings';
+import { TOOL_BY_ID, DEFAULT_STYLE, TRENDLINE_DEFAULT_STYLE, HRAY_DEFAULT_STYLE, Drawing, DrawingType } from '../../types/drawings';
 
 export interface ChartTheme {
   background:    string;
@@ -352,8 +352,11 @@ function buildHTML(t: ChartTheme): string {
       const extR = !!d.style.extendRight;
       const showPL = !!d.style.showPriceLabel;
       const pts = d.points.map(px);
-      // Skip drawings that have any off-chart coordinate (panned away)
-      if (pts.some((p) => p === null) && d.type !== 'hline' && d.type !== 'vline' && d.type !== 'cross_line') {
+      // Skip drawings that have any off-chart coordinate (panned away).
+      // Exceptions: vline doesn't depend on price; hray depends on time but
+      // is handled specially in its renderer (anchor before view → render
+      // from left edge; anchor after view → skip).
+      if (pts.some((p) => p === null) && d.type !== 'vline' && d.type !== 'hray' && d.type !== 'cross_line') {
         return;
       }
 
@@ -397,15 +400,36 @@ function buildHTML(t: ChartTheme): string {
           if (priceEnd != null) elements.push(priceTag(yEnd, stroke, priceEnd.toFixed(2)));
         }
       }
-      else if (d.type === 'hline') {
+      else if (d.type === 'hray') {
+        // Horizontal ray (docs/TRADINGVIEW_REFERENCE.md §2). Starts at the
+        // anchor's (time, price) and extends right to the chart edge.
+        // Anchor before view → render from left edge. Anchor after view →
+        // skip entirely (ray hasn't started yet from the viewer's POV).
         const y = series.priceToCoordinate(d.points[0].price);
         if (y == null) return;
-        elements.push(hitLine(0, y, W, y, d.id));
-        elements.push(svg('line', { x1: 0, y1: y, x2: W, y2: y,
+        const xRaw = chart.timeScale().timeToCoordinate(d.points[0].time);
+        if (xRaw == null) return;
+        if (xRaw > W) return;
+        const startX = Math.max(0, xRaw);
+        // Selected-line highlight underlay (matches trendline §1 treatment).
+        if (isSel) {
+          elements.push(svg('line', { x1: startX, y1: y, x2: W, y2: y,
+            stroke, 'stroke-width': sw + 4, 'stroke-opacity': 0.25,
+            'pointer-events': 'none' }));
+        }
+        elements.push(hitLine(startX, y, W, y, d.id));
+        elements.push(svg('line', { x1: startX, y1: y, x2: W, y2: y,
           stroke, 'stroke-width': sw, 'stroke-dasharray': dash || '',
           'stroke-opacity': strokeOp,
           'data-id': d.id, 'pointer-events': 'none' }));
         if (showPL) elements.push(priceTag(y, stroke, d.points[0].price.toFixed(2)));
+        // Anchor marker — small color-matched dot where the ray begins
+        // (only when the anchor is actually inside the visible chart).
+        if (xRaw >= 0 && xRaw <= W) {
+          elements.push(svg('circle', { cx: xRaw, cy: y, r: 3,
+            fill: stroke, stroke: '#FFF', 'stroke-width': 1,
+            'pointer-events': 'none' }));
+        }
       }
       else if (d.type === 'vline') {
         const x = chart.timeScale().timeToCoordinate(d.points[0].time);
@@ -515,16 +539,17 @@ function buildHTML(t: ChartTheme): string {
             }));
           });
         } else {
-          // Default: one handle per anchor. Trendline (per
-          // docs/TRADINGVIEW_REFERENCE.md §1) uses a larger, color-matched
-          // circle with white border + 25px hit-slop. Other tools keep the
-          // legacy black-with-white-stroke handle until their own pass.
-          const isTrend = d.type === 'trendline';
-          const hitR  = isTrend ? 25 : 14;
-          const visR  = isTrend ? 6  : 5;
-          const fillC = isTrend ? stroke : '#000';
+          // Default: one handle per anchor. Tools that have gone through
+          // their TradingView-parity pass (trendline §1, hray §2) use a
+          // larger, color-matched circle with white border + 25 px hit
+          // slop. Other tools keep the legacy black-with-white-stroke
+          // handle until their own pass.
+          const isRich = d.type === 'trendline' || d.type === 'hray';
+          const hitR  = isRich ? 25 : 14;
+          const visR  = isRich ? 6  : 5;
+          const fillC = isRich ? stroke : '#000';
           const strokeC = '#FFF';
-          const strokeW = isTrend ? 2 : 2;
+          const strokeW = isRich ? 2 : 2;
           pts.forEach((p, idx) => {
             if (!p) return;
             group.appendChild(svg('circle', {
@@ -1606,9 +1631,12 @@ export default function TradingChart({ candles, positions, theme = DEFAULT_CHART
     const points = [...pendingPoints, { time, price }];
     if (points.length >= def.pointsRequired) {
       const id = `dr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-      // Per-tool default style. Trendline locked to TradingView parity
-      // (#2962FF, 1px solid, 100% opacity) by docs/TRADINGVIEW_REFERENCE.md §1.
-      const baseStyle = tool === 'trendline' ? TRENDLINE_DEFAULT_STYLE : DEFAULT_STYLE;
+      // Per-tool default style. Tools with explicit TradingView-parity
+      // defaults (see docs/TRADINGVIEW_REFERENCE.md) override DEFAULT_STYLE.
+      const baseStyle =
+        tool === 'trendline' ? TRENDLINE_DEFAULT_STYLE :
+        tool === 'hray'      ? HRAY_DEFAULT_STYLE      :
+        DEFAULT_STYLE;
       addDrawing({
         id, type: tool, points,
         style: { ...baseStyle, ...(tool === 'text' ? { text: 'Text' } : {}) },

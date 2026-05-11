@@ -5,6 +5,102 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-10 — Horizontal Ray TradingView-parity v1 (replaces Horizontal Line)
+
+**Status:** Code complete on `master`. Type-check clean. Hray-only; no other
+drawing tool touched (handle visual + opacity slider + 16-color palette were
+already gated behind a per-tool flag from the trendline pass and now opt in
+hray too).
+
+Authoritative spec: `docs/TRADINGVIEW_REFERENCE.md` §2 (renamed from
+"Horizontal Line" → "Horizontal Ray" in commit `5b5d206`).
+
+### What replaced `hline`
+- DrawingType union, TOOL_CATALOG entry, and default favorites set all
+  migrated from `hline` → `hray`. Existing `hline` records in AsyncStorage
+  are filtered out gracefully on hydrate (unknown type) — known minor
+  regression: anyone with persisted hlines from before this commit loses
+  them on first launch. Accepted per the prompt ("delete the old, build
+  the new").
+
+### Defaults (Part A)
+- New `HRAY_DEFAULT_STYLE` constant in `src/types/drawings.ts` —
+  `#2962FF`, lineWidth 1, solid, 100% opacity, `showPriceLabel: true`.
+- `handleDrawingPoint` switches on `tool` for per-tool defaults:
+  `trendline → TRENDLINE_DEFAULT_STYLE`, `hray → HRAY_DEFAULT_STYLE`,
+  everything else → `DEFAULT_STYLE`.
+
+### Placement (Part B)
+- `PlacementBanner` now reads a `BANNER_LABELS` lookup and displays the
+  matching label while active. `hray → "PLACING HORIZONTAL RAY"`.
+- Tap-tap placement and auto-deactivate already in place (Issue 6 +
+  handleDrawingPoint). No sticky mode.
+
+### Rendering (Part C)
+- New `d.type === 'hray'` branch in the WebView renderer. Starts at
+  `timeToCoordinate(anchor.time)`, extends to `W`. When the anchor's
+  time is BEFORE the visible chart, falls back to `startX = 0` so the
+  ray still fills the visible width. When the anchor is AFTER the
+  visible chart, the ray skips rendering entirely.
+- Anchor marker: small 3 px color-filled dot with 1 px white border at
+  the ray's left end, drawn only when the anchor is in view.
+- Selected highlight: extra underlay stroke at `lineWidth + 4`, 25%
+  opacity (same treatment as trendline §1).
+
+### Interaction (Parts D–E)
+- Anchor-handle drag updates the point in BOTH dimensions (existing
+  generic handle-drag flow already does this — vertical → price,
+  horizontal → time). No special hray code needed.
+- Body-drag (transform-only during touchmove, commit on touchend)
+  translates the single anchor by the same (dt, dp). Already wired.
+- Handle visual: extended the `isRich` flag in the renderer to
+  include `hray` (12 px color-matched filled circle + 2 px white
+  border + 25 px hit ring). Other tools keep the legacy handle.
+
+### Settings panel (Part F)
+- New `useRichSettings = isTrendline || isHRay` flag in the modal.
+  Both tools now get: 16-color palette (`TRENDLINE_COLORS`), the
+  inline `OpacitySlider`, 1/2/3/4 width pills, and the confirm dialog
+  on Delete (label adapts: "Delete horizontal ray?" / "Delete trendline?").
+- `canShowPriceLbl` narrowed to `isHRay` — trendline doesn't expose it
+  (deferred per §1); hray defaults it On and exposes the toggle.
+
+### Drawing actions popup (Part G)
+- Already removed (smoke-test fix 2); confirmed during the trendline pass.
+
+### Persistence (Part H)
+- Hray anchor stored as absolute `(time, price)`. Reproject every frame
+  via `timeToCoordinate` / `priceToCoordinate`. AsyncStorage persistence
+  already covered by `drawingsStore.persistDrawings`.
+
+### Files touched
+- `src/types/drawings.ts` (DrawingType, TOOL_CATALOG entry, HRAY_DEFAULT_STYLE)
+- `src/components/chart/TradingChart.tsx` (renderer, default switch, handle, exemption)
+- `src/components/chart/DrawingSettingsModal.tsx` (isHRay, useRichSettings, canShowPriceLbl)
+- `src/components/chart/PlacementBanner.tsx` (BANNER_LABELS lookup)
+- `src/store/drawingsStore.ts` (default favorites)
+- `PROJECT_CONTEXT.md` (catalog row 2)
+
+### Deferred (not in v1)
+- Label text / font / size / bold / italic / color / background / border /
+  horizontal alignment / vertical alignment
+- Coordinates numeric input (manual price + time entry)
+- Visibility on timeframes
+- Extend-left toggle (would turn the ray into a full horizontal line —
+  separate feature)
+
+### Architectural flags
+- The off-chart-pts exemption in the renderer used to include `'hline'`;
+  swapped to `'hray'` since hline no longer exists in the type system.
+  `'cross_line'` is still in the exemption list as dead code from a
+  pre-prune tool — left untouched (out of scope; can be cleaned in a
+  future pass).
+- AsyncStorage migration is lossy by design — no shim to convert old
+  hline records to hray. If we ever want non-lossy migration, the
+  hydrate filter in `drawingsStore.ts` is the place to do it.
+
+---
+
 ## 2026-05-10 — Trendline TradingView-parity v1
 
 **Status:** Code complete on `master`. Type-check clean. Trendline-only;

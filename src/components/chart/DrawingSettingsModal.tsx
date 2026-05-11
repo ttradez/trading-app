@@ -119,15 +119,21 @@ export default function DrawingSettingsModal() {
   const hasFill          = drawing.type === 'rectangle' || drawing.type === 'gann_box';
   const isFib            = drawing.type === 'fib_retracement';
   const isTrendline      = drawing.type === 'trendline';
+  const isHRay           = drawing.type === 'hray';
+  // Tools that have shipped their TradingView-parity v1 settings pass —
+  // they share the same UI: 16-swatch palette, slider opacity, 1/2/3/4
+  // width pills, delete-with-confirm. Other tools keep the legacy UI.
+  const useRichSettings  = isTrendline || isHRay;
   const canExtend        = drawing.type === 'trendline';
-  // Trendline v1 spec defers showPriceLabel — restrict it to hline only.
-  const canShowPriceLbl  = drawing.type === 'hline';
-  // Trendline v1 settings spec: 1/2/3/4 px only (TradingView dropdown).
-  const widthOptions     = isTrendline ? [1, 2, 3, 4] : [1, 2, 3, 4, 5, 6];
-  const palette          = isTrendline ? TRENDLINE_COLORS : QUICK_COLORS;
+  // hray defaults price label ON and exposes the toggle. Trendline v1
+  // defers label/price label entirely.
+  const canShowPriceLbl  = isHRay;
+  const widthOptions     = useRichSettings ? [1, 2, 3, 4] : [1, 2, 3, 4, 5, 6];
+  const palette          = useRichSettings ? TRENDLINE_COLORS : QUICK_COLORS;
   const handleDelete = () => {
-    if (isTrendline) {
-      Alert.alert('Delete trendline?', 'This cannot be undone.', [
+    if (useRichSettings) {
+      const label = isHRay ? 'horizontal ray' : 'trendline';
+      Alert.alert(`Delete ${label}?`, 'This cannot be undone.', [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Delete', style: 'destructive', onPress: () => removeDrawing(drawing.id) },
       ]);
@@ -239,10 +245,11 @@ export default function DrawingSettingsModal() {
               ))}
             </View>
 
-            {/* Stroke opacity — trendline gets a 0..100% slider per spec;
-                other tools keep the 4-pill quantized control. */}
+            {/* Stroke opacity — rich-settings tools (trendline §1, hray §2)
+                get a 0..100% slider per spec; other tools keep the 4-pill
+                quantized control. */}
             <Text style={[labelStyle, styles.sectionLabel]}>Line opacity</Text>
-            {isTrendline ? (
+            {useRichSettings ? (
               <OpacitySlider
                 value={drawing.style.strokeOpacity ?? 1}
                 onChange={(v) => setStyle({ strokeOpacity: v })}

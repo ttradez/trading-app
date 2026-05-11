@@ -19,8 +19,9 @@ export type DrawingCategory =
 export type DrawingType =
   // Cursors (not drawings; pointer modes)
   | 'cursor_cross' | 'eraser'
-  // Lines & shapes — 4 keep tools
-  | 'trendline' | 'hline' | 'vline' | 'rectangle'
+  // Lines & shapes — 4 keep tools (hray replaces hline per
+  // docs/TRADINGVIEW_REFERENCE.md §2 — extends right from anchor only)
+  | 'trendline' | 'hray' | 'vline' | 'rectangle'
   // Studies — 2 keep tools
   | 'fib_retracement' | 'gann_box'
   // Positions — 2 keep tools (TradingView-style entry/stop/target visuals)
@@ -48,7 +49,7 @@ export const TOOL_CATALOG: ToolDef[] = [
 
   // ── Lines & shapes ─────────────────────────────────────────────────────────
   { id: 'trendline', label: 'Trendline',       icon: 'trending-up-outline', category: 'lines', pointsRequired: 2, drawable: true },
-  { id: 'hline',     label: 'Horizontal line', icon: 'remove-outline',      category: 'lines', pointsRequired: 1, drawable: true },
+  { id: 'hray',      label: 'Horizontal ray',  icon: 'remove-outline',      category: 'lines', pointsRequired: 1, drawable: true },
   { id: 'vline',     label: 'Vertical line',   icon: 'reorder-two-outline', category: 'lines', pointsRequired: 1, drawable: true },
   { id: 'rectangle', label: 'Rectangle',       icon: 'square-outline',      category: 'lines', pointsRequired: 2, drawable: true },
 
@@ -154,6 +155,18 @@ export const TRENDLINE_DEFAULT_STYLE: DrawingStyle = {
   extendLeft: false,
   extendRight: false,
   showPriceLabel: false,
+};
+
+/** TradingView-parity defaults for newly-placed horizontal rays.
+ *  Locked by docs/TRADINGVIEW_REFERENCE.md §2: blue #2962FF, 1px solid,
+ *  100% opacity, price label ON by default. */
+export const HRAY_DEFAULT_STYLE: DrawingStyle = {
+  ...DEFAULT_STYLE,
+  color: '#2962FF',
+  lineWidth: 1,
+  lineStyle: 'solid',
+  strokeOpacity: 1,
+  showPriceLabel: true,
 };
 
 /** Full set of fib levels the renderer supports. */
