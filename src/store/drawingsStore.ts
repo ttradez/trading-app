@@ -2,8 +2,12 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Drawing, DrawingType, DEFAULT_STYLE, TOOL_BY_ID } from '../types/drawings';
 
-const STORAGE_KEY = '@pocket_trade_drawings';
-const FAV_KEY     = '@pocket_trade_drawing_favorites';
+// Storage keys bumped to v2 on 2026-05-11 (drawing-tools reset). Any
+// drawings/favorites the user persisted before the reset live at the v1
+// keys and are intentionally orphaned — see backup tag
+// `drawings-before-reset` if those records are ever needed.
+const STORAGE_KEY = '@pocket_trade_drawings_v2';
+const FAV_KEY     = '@pocket_trade_drawing_favorites_v2';
 const MAGNET_KEY  = '@pocket_trade_magnet_mode';
 const STICKY_KEY  = '@pocket_trade_sticky_drawing';
 
@@ -53,9 +57,9 @@ const persistFavorites = (favs: Set<DrawingType>) => {
 export const useDrawingsStore = create<DrawingsState>((set, get) => ({
   drawings: [],
   activeTool: 'cursor_cross',
-  // Favorites — only IDs in the pruned 10-tool catalog. 'arrow' was deleted;
-  // 'hline' was replaced by 'horizontal_line' (extends right only, see TRADINGVIEW_REFERENCE §2).
-  favorites: new Set<DrawingType>(['trendline', 'horizontal_line', 'fib_retracement', 'rectangle', 'text']),
+  // Favorites — empty post-reset. As drawing tools come back online,
+  // they can be added here as sensible defaults, or left to user opt-in.
+  favorites: new Set<DrawingType>(),
   selectedId: null,
   settingsOpen: false,
   pendingPoints: [],

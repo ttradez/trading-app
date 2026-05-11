@@ -5,6 +5,104 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-11 — Drawing tools full reset
+
+Single commit. After multiple iterations on trendline + horizontal_line
+accumulated bugs, dead code paths, and half-implemented behaviors, we
+deleted ALL per-tool implementations and kept only the framework. Each
+tool will be rebuilt one at a time from `docs/TRADINGVIEW_REFERENCE.md`
+plus upcoming Claude Remote research.
+
+### Backup
+- Local git tag `drawings-before-reset` preserves the pre-reset state.
+  Push deferred per the prompt ("only if you have push access").
+
+### Deleted (per-tool implementations)
+- `src/types/drawings.ts` — TRENDLINE_DEFAULT_STYLE, HLINE_DEFAULT_STYLE,
+  FibLevelConfig + FIB_LEVELS + FIB_LEVEL_DEFAULTS + resolveFibLevel.
+  DrawingType union narrowed to `'cursor_cross' | 'eraser'` (cursor
+  modes only). TOOL_CATALOG holds those two entries — no drawables.
+- `src/components/chart/TradingChart.tsx`:
+  - All per-tool render branches in `renderDrawings` (trendline,
+    horizontal_line, vline, fib_retracement, rectangle, text).
+  - Fib helpers: `FIB_LEVELS_ALL`, `FIB_HIDDEN_BY_DEFAULT`,
+    `fibLevelEffective`.
+  - Per-tool drag math: rectangle corner reshape, horizontal_line
+    time-lock (handle drag), horizontal_line x-lock (body drag
+    touchmove), horizontal_line dt=0 (body drag touchend commit).
+  - Per-tool handle visuals: the `isRich` flag (color-matched
+    trendline/horizontal_line handles).
+  - Per-tool default style switch in `handleDrawingPoint` — now uses
+    generic `DEFAULT_STYLE` for any drawing that gets created.
+- `src/components/chart/DrawingSettingsModal.tsx`:
+  - All per-tool branches: `isTextual`, `hasFill`, `isFib`,
+    `isTrendline`, `isHLine`, `useRichSettings`, `canExtend`,
+    `canShowPriceLbl`, `widthOptions`, `palette`, `handleDelete`
+    confirm-dialog.
+  - Per-tool sections: extend toggles, price-label toggle, fill
+    opacity, fib per-level config, text/font controls.
+  - Tool-specific palette (`TRENDLINE_COLORS`), fib color cycle.
+  - Imports of `FIB_LEVELS`, `FIB_LEVEL_DEFAULTS`, `FibLevelConfig`,
+    `TextInput`, `Alert`.
+- `src/components/chart/PlacementBanner.tsx` — emptied
+  `BANNER_LABELS`. Shell stays.
+- `src/store/drawingsStore.ts` — default favorites Set emptied.
+
+### Kept (framework)
+- The whole touch dispatcher: handleTap, touchstart/touchmove/touchend
+  branches for pendingPosition drag, placementTap, drawingDragState
+  (handle drag, transform-only mutation), drawingBodyDrag (transform
+  pattern), drawingPan (chart pan fall-through).
+- Selection state machine + `drawing_select` / `drawing_deselect`
+  postBack flow.
+- `chart.subscribeClick` empty-canvas-tap deselect.
+- `chart.subscribeCrosshairMove` SHOW/HIDE log + force-clear hook
+  (`clearCrosshair()` called from drawing taps).
+- `trackingMode.exitMode = OnTouchEnd` chart option.
+- Renderer entry points: `renderDrawings()` shell, generic handle
+  rendering (one circle per anchor, black-with-white-stroke until a
+  tool overrides), generic body-drag wrap-in-`<g>` pattern.
+- Generic helpers: `hitLine`, `hitRect`, `dashFor`, `px`, `svg`,
+  `priceTag` (kept for future tools; explicitly `void`d so JS doesn't
+  tree-shake).
+- Settings modal shell: header (hide / duplicate / delete / close),
+  Color / Line style / Line width / Line opacity controls,
+  `OpacitySlider` (PanResponder-based, no new dep), Lock / Duplicate /
+  Delete footer.
+- `drawingsStore` API: all CRUD, magnet, sticky, favorites, hydrate,
+  duplicateDrawing.
+- `DrawingFavoritesBar` (renders null while favorites is empty).
+- `PlacementBanner` (renders null while no tool has a label).
+- AsyncStorage persistence — STORAGE_KEY and FAV_KEY bumped to `_v2`
+  so prior user-drawn data is orphaned cleanly.
+
+### Outside drawings — UNTOUCHED
+- Chart engine (lightweight-charts), candles, indicators, sessions,
+  replay controller, TP/SL pending order layer, pan/zoom math.
+- `docs/TRADINGVIEW_REFERENCE.md` (authoritative spec — preserved).
+- All non-drawing screens, navigation, Firebase, IAP, backend.
+
+### Files touched
+- `src/types/drawings.ts`
+- `src/components/chart/TradingChart.tsx`
+- `src/components/chart/DrawingSettingsModal.tsx`
+- `src/components/chart/PlacementBanner.tsx`
+- `src/store/drawingsStore.ts`
+- `PROJECT_CONTEXT.md`
+
+### Architectural flags
+- AsyncStorage `_v2` migration is intentionally lossy — prior records
+  are not converted; they're just unreachable from the new keys.
+- The drag-state `drawingDragState.corner` payload type still exists
+  in WebView JS (it's not typed), but nothing constructs it now that
+  the rectangle 4-handle path was removed. The branch was deleted in
+  touchmove. Future tools that want corner-style drags will re-add it.
+- `priceTag` and `hitRect` helpers reference `void` to prevent
+  tree-shaking until tools reach for them. Drop the `void` calls
+  whenever the first tool re-uses them.
+
+---
+
 ## 2026-05-11 — Horizontal Line: 4 follow-up fixes after smoke test
 
 Four issues from smoke test, one commit per issue (in order):

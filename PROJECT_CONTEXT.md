@@ -73,31 +73,22 @@ Auto-popup on trade close. Auto-fills: symbol, direction, entry/exit, size, SL/T
 - fetch_kaggle_intraday.py wired correctly: KAGGLE_MAP only has clean_SPY.csv→ES, clean_QQQ.csv→NQ; resamples to 5m/15m/30m/1h/4h.
 
 ### IN FLIGHT
-- **Block 17 (custom SVG drawing tools)** — code complete on `master` at commit `258f5ae`. Adds: split selection vs settings (single tap = handles, double tap = settings sheet), transform-based body-drag (no SVG rebuild during drag), drag-to-draw placement for 2-point tools (live dashed preview), icon-only floating favorites bar, 200ms tap-suppression after tool activation (kills favorite-pill leak), 24px line / 12px rect hit slop, continuous rAF (`priceProjectionTick`) re-renders drawings on vertical pan with drag pause. **Pruned to 10 tools** per `docs/DRAWING_TOOLS_AUDIT.md` (TASK 1 of the post-spike push) — see "Drawing tool catalog" below for the canonical list. **Status: ready for smoke test on device.**
+- **Drawing tools: FULL RESET (2026-05-11)** — All per-tool implementations were deleted on `master` at commit (this commit). The drawing FRAMEWORK is preserved: touch dispatcher, selection / body-drag / handle-drag plumbing, the settings modal shell + OpacitySlider, the placement banner shell, the persistence layer, the favorites bar container, the empty-tap deselect hook, the crosshair show/hide log, and the renderer entry points. ZERO drawing tools are currently registered. The DrawingType union is `'cursor_cross' | 'eraser'` (cursor modes only). AsyncStorage keys were bumped to `*_v2` so prior user-drawn drawings are orphaned. Backup of the previous state lives at the local git tag `drawings-before-reset`.
 
-### Drawing tool catalog (10 tools, locked)
+  **Next:** rebuild tool-by-tool with surgical prompts against `docs/TRADINGVIEW_REFERENCE.md` plus upcoming Claude Remote research. Each tool re-adds its render branch + per-tool drag math + settings panel section + placement banner label as it ships.
+
+### Drawing tool catalog (currently EMPTY)
 
 **Authoritative spec for behavior + defaults: [`docs/TRADINGVIEW_REFERENCE.md`](docs/TRADINGVIEW_REFERENCE.md).**
-Every per-tool implementation prompt must reference the matching section in that doc — placement flow, anchor count, default visual style, full settings panel, interaction behaviors, edge cases, and source links. Sections 1–5 (trendline, hline, vline, fib_retracement, gann_box) are complete; section 6 (long_position) is partial; sections 7–10 (short_position, text, brush, rectangle) pending — Claude Remote producing.
-
-After the post-KLineChart-spike audit + prune. ANY tool not in this list is intentionally not in the codebase.
+Every per-tool implementation prompt must reference the matching section in that doc — placement flow, anchor count, default visual style, full settings panel, interaction behaviors, edge cases, and source links.
 
 | # | Tool | ID | Anchors | Catalog `drawable` | Renderer present? |
 |---:|---|---|---:|:---:|:---:|
-| 1 | Trendline | `trendline` | 2 | ✓ | ✓ |
-| 2 | Horizontal line | `horizontal_line` | 1 | ✓ | ✓ |
-| 3 | Vertical line | `vline` | 1 | ✓ | ✓ |
-| 4 | Rectangle | `rectangle` | 2 | ✓ | ✓ |
-| 5 | Fib retracement | `fib_retracement` | 2 | ✓ | ✓ |
-| 6 | Gann box | `gann_box` | 2 | ✗ pending | ✗ pending |
-| 7 | Long position | `long_position` | 3 | ✗ pending | ✗ pending |
-| 8 | Short position | `short_position` | 3 | ✗ pending | ✗ pending |
-| 9 | Brush | `brush` | N (path) | ✗ pending | ✗ pending |
-| 10 | Text | `text` | 1 | ✓ | ✓ |
+| — | — | — | — | — | — |
 
-Cursors `cursor_cross` + `eraser` are pointer modes (not drawings), kept for the toolbar's selection state.
+Tools shipped post-reset: **none.** Cursors `cursor_cross` + `eraser` remain in the catalog as pointer modes (not drawings).
 
-The 4 "pending" tools are placeholder catalog entries with `drawable: false` — UI hides them from the placement toolbar until renderers ship.
+Pre-reset state (for reference; recover via `git checkout drawings-before-reset`): trendline + horizontal_line shipped TradingView-parity v1; rectangle / fib_retracement / text had earlier-generation implementations; gann_box / long_position / short_position / brush were placeholder entries.
 - **Firebase setup** — bundle ID `com.pockettrade.app` (iOS + Android), Expo managed workflow, pure-JS firebase v12.12.1 (NOT @react-native-firebase). Six EXPO_PUBLIC_FIREBASE_* env vars in `.env` still empty awaiting console values. Walkthrough being conducted in Claude Remote with screenshots.
 
 ### ABANDONED

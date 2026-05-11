@@ -3,13 +3,11 @@ import { View, Text, StyleSheet } from 'react-native';
 import { colors, fontSize, fontWeight, radius, spacing } from '../../theme';
 import { useDrawingsStore } from '../../store/drawingsStore';
 
-// Tools that have shipped their TradingView-parity v1 implementation and
-// therefore opt into the placement banner. Other tools intentionally do
-// not trigger this banner yet — they will be added as each ships its pass.
-const BANNER_LABELS: Partial<Record<string, string>> = {
-  trendline: 'PLACING TRENDLINE',
-  horizontal_line: 'PLACING HORIZONTAL LINE',
-};
+// RESET on 2026-05-11. The placement banner shell is preserved so it
+// can light up again the moment a tool registers a label here. Tools
+// will add their entries (e.g. trendline: 'PLACING TRENDLINE') as they
+// come back online. While this map is empty, the banner never renders.
+const BANNER_LABELS: Partial<Record<string, string>> = {};
 
 /**
  * Top-of-chart banner shown while a v1-shipped drawing tool is active, so

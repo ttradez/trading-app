@@ -3,7 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { SessionCandle, SessionPosition } from '../../store/sessionStore';
 import { useDrawingsStore } from '../../store/drawingsStore';
-import { TOOL_BY_ID, DEFAULT_STYLE, TRENDLINE_DEFAULT_STYLE, HLINE_DEFAULT_STYLE, Drawing, DrawingType } from '../../types/drawings';
+import { TOOL_BY_ID, DEFAULT_STYLE, Drawing, DrawingType } from '../../types/drawings';
 
 export interface ChartTheme {
   background:    string;
@@ -340,18 +340,8 @@ function buildHTML(t: ChartTheme): string {
     return (x == null || y == null) ? null : { x, y };
   }
 
-  // Default fib level visibility (must mirror FIB_LEVEL_DEFAULTS in
-  // src/types/drawings.ts — keep in sync).
-  const FIB_LEVELS_ALL = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.414, 1.618];
-  const FIB_HIDDEN_BY_DEFAULT = { 1.272: true, 1.414: true, 1.618: true };
-  function fibLevelEffective(lvl, overrides, fallbackColor) {
-    const o = overrides ? overrides.find(function (e) { return e.value === lvl; }) : null;
-    return {
-      visible: o && o.visible !== undefined ? o.visible : !FIB_HIDDEN_BY_DEFAULT[lvl],
-      color:   o && o.color   ? o.color   : fallbackColor,
-    };
-  }
-  // Tiny right-axis price tag helper used by extend-line / show-price-label.
+  // Tiny right-axis price tag helper. Kept as a generic utility for the
+  // tools that will come back online (trendline, horizontal_line, etc.).
   function priceTag(yy, color, txt) {
     const W = window.innerWidth;
     const tw = Math.max(40, txt.length * 7 + 8);
@@ -367,173 +357,33 @@ function buildHTML(t: ChartTheme): string {
     }, [document.createTextNode(txt)]));
     return g;
   }
+  // Reference unused vars so JS engines don't tree-shake them prematurely
+  // when no tools are registered. priceTag + hitRect will be used again as
+  // tools come back online.
+  void priceTag; void hitRect;
 
   function renderDrawings() {
     drawingsLayer.innerHTML = '';
     updatePlotClip();
-    const W = window.innerWidth;
-    const H = window.innerHeight;
 
+    // ── Drawing tool renderer (RESET) ────────────────────────────────────
+    // All per-tool render branches were deleted in the 2026-05-11 reset.
+    // The renderer SHELL stays so the framework (touchstart/move/end
+    // dispatch, body-drag transform, handle-drag detach, selection sync)
+    // remains testable. As tools come back online, each appends its own
+    // SVG elements here per drawing in drawingsList — see the backup tag
+    // 'drawings-before-reset' for prior implementations.
     drawingsList.forEach((d) => {
       if (d.hidden) return;
       const isSel = d.id === drawingSelectedId;
-      const dash  = dashFor(d.style.lineStyle);
       const stroke = d.style.color;
-      const sw = d.style.lineWidth || 2;
-      // strokeOpacity is OPTIONAL on style; default 1 (fully opaque).
-      const strokeOp = (d.style.strokeOpacity == null) ? 1 : d.style.strokeOpacity;
-      const extL = !!d.style.extendLeft;
-      const extR = !!d.style.extendRight;
-      const showPL = !!d.style.showPriceLabel;
-      const pts = d.points.map(px);
-      // Skip drawings that have any off-chart coordinate (panned away).
-      // Exceptions: vline doesn't depend on price; horizontal_line depends on time but
-      // is handled specially in its renderer (anchor before view → render
-      // from left edge; anchor after view → skip).
-      if (pts.some((p) => p === null) && d.type !== 'vline' && d.type !== 'horizontal_line' && d.type !== 'cross_line') {
-        return;
-      }
 
-      let elements = [];
+      // Per-tool element building goes here (currently empty — no tools).
+      const elements = [];
 
-      if (d.type === 'trendline') {
-        const a = pts[0], b = pts[1]; if (!a || !b) return;
-        // Compute the visible endpoints. Default = the two anchors.
-        // extendLeft/Right project the line to chart edges (same math as
-        // extended_line, but each side is independently toggleable).
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const safeDx = dx || 0.0001;
-        let x1 = a.x, y1 = a.y, x2 = b.x, y2 = b.y;
-        if (extL) {
-          const t = -a.x / safeDx;
-          x1 = a.x + dx * t;
-          y1 = a.y + dy * t;
-        }
-        if (extR) {
-          const t = (W - a.x) / safeDx;
-          x2 = a.x + dx * t;
-          y2 = a.y + dy * t;
-        }
-        elements.push(hitLine(x1, y1, x2, y2, d.id));
-        // Selected-line highlight (TradingView §1) — wider, low-alpha
-        // underlay rendered beneath the main stroke so the active line
-        // visually pops without changing its color or width settings.
-        if (isSel) {
-          elements.push(svg('line', { x1, y1, x2, y2,
-            stroke, 'stroke-width': sw + 4, 'stroke-opacity': 0.25,
-            'pointer-events': 'none' }));
-        }
-        elements.push(svg('line', { x1, y1, x2, y2,
-          stroke, 'stroke-width': sw, 'stroke-dasharray': dash || '',
-          'stroke-opacity': strokeOp,
-          'data-id': d.id, 'pointer-events': 'none' }));
-        if (showPL) {
-          // Price tag at the right end of the rendered line.
-          const yEnd = y2;
-          const priceEnd = series.coordinateToPrice(yEnd);
-          if (priceEnd != null) elements.push(priceTag(yEnd, stroke, priceEnd.toFixed(2)));
-        }
-      }
-      else if (d.type === 'horizontal_line') {
-        // Horizontal line (docs/TRADINGVIEW_REFERENCE.md §2 — extends RIGHT
-        // ONLY despite the name; see the type-file note). Starts at the
-        // anchor's (time, price) and extends right to the chart edge.
-        // Anchor before view → render from left edge. Anchor after view →
-        // skip entirely (ray hasn't started yet from the viewer's POV).
-        const y = series.priceToCoordinate(d.points[0].price);
-        if (y == null) return;
-        const xRaw = chart.timeScale().timeToCoordinate(d.points[0].time);
-        if (xRaw == null) return;
-        if (xRaw > W) return;
-        const startX = Math.max(0, xRaw);
-        // Selected-line highlight underlay (matches trendline §1 treatment).
-        if (isSel) {
-          elements.push(svg('line', { x1: startX, y1: y, x2: W, y2: y,
-            stroke, 'stroke-width': sw + 4, 'stroke-opacity': 0.25,
-            'pointer-events': 'none' }));
-        }
-        elements.push(hitLine(startX, y, W, y, d.id));
-        elements.push(svg('line', { x1: startX, y1: y, x2: W, y2: y,
-          stroke, 'stroke-width': sw, 'stroke-dasharray': dash || '',
-          'stroke-opacity': strokeOp,
-          'data-id': d.id, 'pointer-events': 'none' }));
-        if (showPL) elements.push(priceTag(y, stroke, d.points[0].price.toFixed(2)));
-        // Anchor marker — small color-matched dot where the ray begins
-        // (only when the anchor is actually inside the visible chart).
-        if (xRaw >= 0 && xRaw <= W) {
-          elements.push(svg('circle', { cx: xRaw, cy: y, r: 3,
-            fill: stroke, stroke: '#FFF', 'stroke-width': 1,
-            'pointer-events': 'none' }));
-        }
-      }
-      else if (d.type === 'vline') {
-        const x = chart.timeScale().timeToCoordinate(d.points[0].time);
-        if (x == null) return;
-        elements.push(hitLine(x, 0, x, H, d.id));
-        elements.push(svg('line', { x1: x, y1: 0, x2: x, y2: H,
-          stroke, 'stroke-width': sw, 'stroke-dasharray': dash || '',
-          'stroke-opacity': strokeOp,
-          'data-id': d.id, 'pointer-events': 'none' }));
-      }
-      else if (d.type === 'fib_retracement') {
-        const a = pts[0], b = pts[1]; if (!a || !b) return;
-        const p0 = d.points[0].price, p1 = d.points[1].price;
-        const x1 = Math.min(a.x, b.x), x2 = W;
-        const overrides = d.style.fibLevels;
-        const bgOp = (d.style.fibBgOpacity == null) ? 0.04 : d.style.fibBgOpacity;
-        // Background range fill — uses fibBgOpacity (editable). 0 hides it.
-        if (bgOp > 0) {
-          elements.push(svg('rect', {
-            x: x1, y: Math.min(a.y, b.y), width: x2 - x1, height: Math.abs(b.y - a.y),
-            fill: stroke, 'fill-opacity': bgOp, stroke: 'none', 'pointer-events': 'none',
-          }));
-        }
-        // Per-level rendering: visibility + color comes from overrides or defaults.
-        // Hidden levels are skipped entirely (no line, no label).
-        FIB_LEVELS_ALL.forEach((lvl) => {
-          const eff = fibLevelEffective(lvl, overrides, stroke);
-          if (!eff.visible) return;
-          const price = p0 + (p1 - p0) * lvl;
-          const yL = series.priceToCoordinate(price);
-          if (yL == null) return;
-          elements.push(svg('line', {
-            x1, y1: yL, x2, y2: yL,
-            // Audit B2 fix: honor user's lineWidth setting instead of
-            // hard-coding 1. Settings panel exposes 1-6.
-            stroke: eff.color, 'stroke-width': sw, 'stroke-dasharray': dash || '',
-            'stroke-opacity': strokeOp, 'pointer-events': 'none',
-          }));
-          elements.push(svg('text', {
-            x: x1 + 4, y: yL - 2, fill: eff.color,
-            'font-size': 10, 'font-family': 'system-ui', 'pointer-events': 'none',
-          }, [document.createTextNode(lvl.toFixed(3) + '  ' + price.toFixed(2))]));
-        });
-      }
-      else if (d.type === 'rectangle') {
-        const a = pts[0], b = pts[1]; if (!a || !b) return;
-        const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
-        const w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
-        elements.push(svg('rect', {
-          x, y, width: w, height: h,
-          fill: d.style.fillColor || stroke, 'fill-opacity': d.style.fillOpacity ?? 0.15,
-          stroke, 'stroke-width': sw, 'stroke-dasharray': dash || '',
-          'data-id': d.id, 'pointer-events': 'all',
-        }));
-      }
-      else if (d.type === 'text') {
-        const a = pts[0]; if (!a) return;
-        const text = d.style.text || 'Text';
-        const fontSize = d.style.fontSize || 12;
-        elements.push(svg('text', { x: a.x + 6, y: a.y, fill: stroke,
-          'font-size': fontSize, 'font-family': 'system-ui', 'font-weight': '600' },
-          [document.createTextNode(text)]));
-        // Small anchor circle
-        elements.push(svg('circle', { cx: a.x, cy: a.y, r: 3, fill: stroke }));
-      }
-
-      // Wrap every drawing's elements in a g identified by drawing id.
-      // The body-drag uses this group transform to translate the whole
-      // shape during a drag (no SVG rebuild — touch target never detaches).
+      // Wrap each drawing in a <g> with data-drawing-id so body-drag's
+      // transform-translate pattern keeps working without changes when
+      // tools return.
       const group = svg('g', { 'data-drawing-id': d.id });
       elements.forEach((el) => {
         if (!el.getAttribute('data-id')) el.setAttribute('data-id', d.id);
@@ -541,76 +391,39 @@ function buildHTML(t: ChartTheme): string {
         group.appendChild(el);
       });
 
-      // Drag handles when selected — extra-large hit area so finger drags work.
+      // Generic handle rendering — one per anchor — when the drawing is
+      // selected. Per-tool handle visuals (e.g. trendline's color-matched
+      // ring) will move next to their respective render branches.
       if (isSel) {
-        // Rectangle gets 4 handles (one per visual corner of its bounding
-        // box) instead of just 2 anchor handles. The anchor list still has
-        // 2 entries — we DERIVE the other 2 visual corners from the bbox.
-        // Drag any corner -> the diagonal stays fixed; we recompute both
-        // anchors on the React side after the drag.
-        if (d.type === 'rectangle' && pts.length === 2 && pts[0] && pts[1]) {
-          const a = pts[0], b = pts[1];
-          const xMin = Math.min(a.x, b.x), xMax = Math.max(a.x, b.x);
-          const yMin = Math.min(a.y, b.y), yMax = Math.max(a.y, b.y);
-          // Order: TL, TR, BR, BL (clockwise from top-left). Encoded
-          // via data-corner so the drag handler can reshape per-corner.
-          const corners = [
-            { x: xMin, y: yMin, code: 'TL' },
-            { x: xMax, y: yMin, code: 'TR' },
-            { x: xMax, y: yMax, code: 'BR' },
-            { x: xMin, y: yMax, code: 'BL' },
-          ];
-          corners.forEach(function (c) {
-            group.appendChild(svg('circle', {
-              cx: c.x, cy: c.y, r: 14,
-              fill: 'transparent',
-              'data-corner': c.code, 'data-id': d.id,
-              'pointer-events': 'all',
-            }));
-            group.appendChild(svg('circle', {
-              cx: c.x, cy: c.y, r: 5,
-              fill: '#000', stroke: '#FFF', 'stroke-width': 2,
-              'pointer-events': 'none',
-            }));
-          });
-        } else {
-          // Default: one handle per anchor. Tools that have gone through
-          // their TradingView-parity pass (trendline §1, horizontal_line §2) use a
-          // larger, color-matched circle with white border + 25 px hit
-          // slop. Other tools keep the legacy black-with-white-stroke
-          // handle until their own pass.
-          const isRich = d.type === 'trendline' || d.type === 'horizontal_line';
-          const hitR  = isRich ? 25 : 14;
-          const visR  = isRich ? 6  : 5;
-          const fillC = isRich ? stroke : '#000';
-          const strokeC = '#FFF';
-          const strokeW = isRich ? 2 : 2;
-          pts.forEach((p, idx) => {
-            if (!p) return;
-            group.appendChild(svg('circle', {
-              cx: p.x, cy: p.y, r: hitR,
-              fill: 'transparent',
-              'data-handle': idx, 'data-id': d.id,
-              'pointer-events': 'all',
-            }));
-            group.appendChild(svg('circle', {
-              cx: p.x, cy: p.y, r: visR,
-              fill: fillC, stroke: strokeC, 'stroke-width': strokeW,
-              'pointer-events': 'none',
-            }));
-          });
-        }
+        const pts = d.points.map(px);
+        pts.forEach((p, idx) => {
+          if (!p) return;
+          group.appendChild(svg('circle', {
+            cx: p.x, cy: p.y, r: 14,
+            fill: 'transparent',
+            'data-handle': idx, 'data-id': d.id,
+            'pointer-events': 'all',
+          }));
+          group.appendChild(svg('circle', {
+            cx: p.x, cy: p.y, r: 5,
+            fill: '#000', stroke: '#FFF', 'stroke-width': 2,
+            'pointer-events': 'none',
+          }));
+        });
       }
+      // Reference 'stroke' so future per-tool branches can pick it up; the
+      // void keeps JS happy until a tool actually paints.
+      void stroke;
       drawingsLayer.appendChild(group);
     });
 
-    // Pending points for an in-progress placement
+    // Pending points for an in-progress placement (generic — works for any
+    // multi-tap tool that comes back online).
     drawingPendingPoints.forEach((pt) => {
       const c = px(pt);
       if (!c) return;
       drawingsLayer.appendChild(svg('circle', { cx: c.x, cy: c.y, r: 4, fill: '#FFD700' }));
     });
-
   }
 
   // ── Pending order layer (BUY/SELL preview) ──────────────────────────────
@@ -1248,48 +1061,18 @@ function buildHTML(t: ChartTheme): string {
       const dIdx = drawingsList.findIndex(function (x) { return x.id === drawingDragState.id; });
       if (dIdx < 0) { e.preventDefault(); return; }
       const d = drawingsList[dIdx];
-      if (drawingDragState.corner) {
-        // Rectangle corner reshape — diagonal stays fixed.
-        if (d.points.length >= 2) {
-          const a = d.points[0], b = d.points[1];
-          const tMin = Math.min(a.time, b.time),  tMax = Math.max(a.time, b.time);
-          const pMin = Math.min(a.price, b.price), pMax = Math.max(a.price, b.price);
-          let newTMin = tMin, newTMax = tMax, newPMin = pMin, newPMax = pMax;
-          switch (drawingDragState.corner) {
-            case 'TL': newTMin = coord.time; newPMax = coord.price; break;
-            case 'TR': newTMax = coord.time; newPMax = coord.price; break;
-            case 'BL': newTMin = coord.time; newPMin = coord.price; break;
-            case 'BR': newTMax = coord.time; newPMin = coord.price; break;
-          }
-          const t0 = Math.min(newTMin, newTMax), t1 = Math.max(newTMin, newTMax);
-          const p0 = Math.max(newPMin, newPMax), p1 = Math.min(newPMin, newPMax);
-          d.points = [{ time: t0, price: p0 }, { time: t1, price: p1 }];
-        }
-      } else {
-        // Standard anchor drag — single point. For horizontal_line, the
-        // anchor's TIME is locked (line extends right-only and the user
-        // expects only price to change on drag — see §2 implementation
-        // prompt). Other tools update both time and price.
-        const lockTime = d.type === 'horizontal_line';
-        d.points = d.points.map(function (p, i) {
-          if (i !== drawingDragState.idx) return p;
-          return lockTime
-            ? { time: p.time, price: coord.price }
-            : { time: coord.time, price: coord.price };
-        });
-      }
+      // RESET: generic anchor drag — single point updated to (coord.time,
+      // coord.price). Per-tool drag specializations (rectangle corner
+      // reshape, horizontal_line time-lock, etc.) were removed in the
+      // 2026-05-11 reset; each tool re-adds its branch here when it comes
+      // back. drawingDragState.corner is no longer set anywhere (rectangle
+      // 4-corner handle path was deleted), so we don't branch on it.
+      d.points = d.points.map(function (p, i) {
+        return i === drawingDragState.idx ? { time: coord.time, price: coord.price } : p;
+      });
       renderDrawings();
-      // Move the floating handle to mirror the finger so the user sees the
-      // drag knob track their touch (the canonical handle inside drawingsLayer
-      // has been re-rendered at the new anchor position; the floating one is
-      // purely visual feedback for the active drag). For horizontal_line the
-      // handle's x stays at its rendered anchor x (we only update cy).
-      const dragD = drawingsList[dIdx];
-      const lockX = dragD && dragD.type === 'horizontal_line';
-      const anchorPoint = lockX && dragD ? dragD.points[drawingDragState.idx] : null;
-      const px = lockX && anchorPoint
-        ? chart.timeScale().timeToCoordinate(anchorPoint.time)
-        : chart.timeScale().timeToCoordinate(coord.time);
+      // Move the floating handle to mirror the finger.
+      const px = chart.timeScale().timeToCoordinate(coord.time);
       const py = series.priceToCoordinate(coord.price);
       if (px != null && py != null && drawingDragState.handleEl) {
         drawingDragState.handleEl.setAttribute('cx', String(px));
@@ -1321,12 +1104,10 @@ function buildHTML(t: ChartTheme): string {
       }
       const group = drawingsLayer.querySelector('g[data-drawing-id="' + drawingBodyDrag.id + '"]');
       if (group) {
-        // horizontal_line: lock x, translate y only. The touchend commit
-        // does the same (dt=0). Other tools translate freely in both axes.
-        const dD = drawingsList.find(function (x) { return x.id === drawingBodyDrag.id; });
-        const lockX = dD && dD.type === 'horizontal_line';
-        const tx = lockX ? 0 : ddx;
-        group.setAttribute('transform', 'translate(' + tx + ',' + ddy + ')');
+        // RESET: generic 2-axis translate. Per-tool axis locks (e.g.
+        // horizontal_line's lockX=0) are removed; they'll come back with
+        // each tool's implementation.
+        group.setAttribute('transform', 'translate(' + ddx + ',' + ddy + ')');
       }
       e.preventDefault();
       return;
@@ -1411,11 +1192,10 @@ function buildHTML(t: ChartTheme): string {
           if (startCoord && endCoord) {
             const d = drawingsList.find(function (x) { return x.id === dragId; });
             if (d) {
-              // horizontal_line: lock time, only translate price (the line
-              // extends right-only from the anchor; dragging the body
-              // re-anchors the price, never the start time).
-              const lockTime = d.type === 'horizontal_line';
-              const dt = lockTime ? 0 : (endCoord.time - startCoord.time);
+              // RESET: generic time+price translation. Per-tool axis
+              // locks (e.g. horizontal_line's dt=0) come back with each
+              // tool.
+              const dt = endCoord.time - startCoord.time;
               const dp = endCoord.price - startCoord.price;
               d.points = d.points.map(function (p) {
                 return { time: p.time + dt, price: p.price + dp };
@@ -1693,16 +1473,9 @@ export default function TradingChart({ candles, positions, theme = DEFAULT_CHART
     const points = [...pendingPoints, { time, price }];
     if (points.length >= def.pointsRequired) {
       const id = `dr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-      // Per-tool default style. Tools with explicit TradingView-parity
-      // defaults (see docs/TRADINGVIEW_REFERENCE.md) override DEFAULT_STYLE.
-      const baseStyle =
-        tool === 'trendline' ? TRENDLINE_DEFAULT_STYLE :
-        tool === 'horizontal_line'      ? HLINE_DEFAULT_STYLE      :
-        DEFAULT_STYLE;
-      addDrawing({
-        id, type: tool, points,
-        style: { ...baseStyle, ...(tool === 'text' ? { text: 'Text' } : {}) },
-      });
+      // RESET: per-tool default styles will return alongside each tool's
+      // implementation. For now everything new uses the generic DEFAULT_STYLE.
+      addDrawing({ id, type: tool, points, style: { ...DEFAULT_STYLE } });
       resetPending();
       // TradingView default: tool always exits after one placement and the
       // chart returns to normal pan/zoom mode.
