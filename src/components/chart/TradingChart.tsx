@@ -121,25 +121,13 @@ function buildHTML(t: ChartTheme): string {
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: ${t.background}; overflow: hidden; }
-  /* Three layers stacked by z-index so drawings render BEHIND candles:
-     - #drawings-below (z 1) — drawings layer, painted first
-     - #chart         (z 2) — lightweight-charts canvases, painted on top of drawings
-     - #overlay       (z 9999) — pending order, hit targets, banners */
-  #chart { width: 100vw; height: 100vh; position: relative; z-index: 2; }
-  #drawings-below, #overlay {
-    position: absolute; left: 0; top: 0;
-    width: 100vw; height: 100vh;
-    pointer-events: none;
-  }
-  #drawings-below { z-index: 1; }
-  #overlay        { z-index: 9999; }
+  #chart { width: 100vw; height: 100vh; }
 </style>
 </head>
 <body>
-<!-- Drawings live BELOW the chart canvas so candles always paint on top.
-     Hit areas (when tools regain selection) still work because per-element
-     pointer-events: 'all'/'stroke' overrides the SVG root's 'none'. -->
-<svg id="drawings-below" xmlns="http://www.w3.org/2000/svg">
+<div id="chart"></div>
+<svg id="overlay" xmlns="http://www.w3.org/2000/svg"
+     style="position:absolute;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:9999;">
   <defs>
     <!-- Clips drawings to the chart's plot area so they don't bleed onto
          the price scale (right) or time scale (bottom). -->
@@ -147,13 +135,11 @@ function buildHTML(t: ChartTheme): string {
       <rect id="plotClipRect" x="0" y="0" width="100%" height="100%" />
     </clipPath>
   </defs>
-  <g id="drawingsLayer" clip-path="url(#plotClip)"></g>
-</svg>
-<div id="chart"></div>
-<svg id="overlay" xmlns="http://www.w3.org/2000/svg">
   <!-- hitBg catches empty taps in placement mode (so they register as
        drawing points instead of falling through to chart pan). -->
   <rect id="hitBg" x="0" y="0" width="100%" height="100%" fill="transparent" pointer-events="none" />
+  <!-- All drawings live inside this clipped group. -->
+  <g id="drawingsLayer" clip-path="url(#plotClip)"></g>
   <!-- Pending order (BUY/SELL preview) lives on its own layer so dragging
        TP/SL never touches the drawings layer. Elements are built once and
        mutated in place during drag for 60fps movement. -->
