@@ -5,6 +5,87 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-10 — Trendline TradingView-parity v1
+
+**Status:** Code complete on `master`. Type-check clean. Trendline-only;
+no other drawing tool touched.
+
+Authoritative spec: `docs/TRADINGVIEW_REFERENCE.md` §1.
+
+### Defaults (Part A)
+- New `TRENDLINE_DEFAULT_STYLE` constant in `src/types/drawings.ts` —
+  `#2962FF`, lineWidth 1, solid, 100% opacity, no extend, no label.
+- `handleDrawingPoint` in TradingChart.tsx picks per-tool defaults: trendline
+  uses `TRENDLINE_DEFAULT_STYLE`; everything else still uses `DEFAULT_STYLE`.
+
+### Placement flow (Part B)
+- New `PlacementBanner` component renders a centered top pill
+  ("PLACING TRENDLINE", #2962FF) only while `activeTool === 'trendline'`.
+  `pointerEvents="none"` so it never eats touches.
+- Tap-tap placement + auto-deactivate to `cursor_cross` was already wired
+  (Issue 6 + handleDrawingPoint). No sticky mode for trendline (none of the
+  pruned tools opt-in to stickyMode).
+
+### Selection / drag (Parts C–D)
+- Single-tap select + double-tap settings was already in place (smoke-test
+  fix 1). Body-drag = transform-only, handle-drag = detach-and-reparent
+  with local mutation (smoke-test fix 3) — both apply uniformly.
+- Trendline-only handle visuals: 12 px diameter circle filled with line
+  color + 2 px white border + 25 px transparent hit ring. Other tools keep
+  the legacy black-with-white-stroke handle.
+- Trendline-only selected highlight: when selected, render an extra
+  underlay stroke at `lineWidth + 4` and 25% opacity for a subtle glow.
+
+### Settings panel (Part E)
+- `DrawingSettingsModal` branches on `isTrendline = drawing.type === 'trendline'`:
+  - **Color:** spec's exact 16-color palette (`TRENDLINE_COLORS`); other
+    tools keep `QUICK_COLORS`.
+  - **Line opacity:** new inline `OpacitySlider` (PanResponder + measured
+    track, no new dep) showing live `%` value. Other tools keep the
+    25/50/75/100 pill quartet.
+  - **Line width:** restricted to 1/2/3/4 px (TradingView dropdown). Other
+    tools keep 1–6.
+  - **Line style:** Solid/Dashed/Dotted (unchanged, already met spec).
+  - **Extend left/right:** unchanged, already trendline-gated by `canExtend`.
+  - **Show price label:** removed for trendline (deferred per v1 spec);
+    `canShowPriceLbl` narrowed to hline only.
+  - **Lock / Duplicate / Delete:** footer buttons retained. Delete on
+    trendline now opens an `Alert.alert` confirm; other tools delete
+    immediately as before.
+
+### Drawing actions popup (Part F)
+- Already removed in smoke-test fix 2 (`drawing_longpress` handler + alert
+  deleted). Only no-op timer machinery remains for safe drag-path calls.
+  Verified via grep.
+
+### Persistence (Part G)
+- Trendline anchors are stored as absolute `(time, price)` and reproject
+  every frame via `chart.timeScale().timeToCoordinate` /
+  `series.priceToCoordinate`. AsyncStorage persistence already handled by
+  `drawingsStore.persistDrawings`. No changes needed.
+
+### Files touched
+- `src/types/drawings.ts`
+- `src/components/chart/TradingChart.tsx`
+- `src/components/chart/DrawingSettingsModal.tsx`
+- `src/components/chart/PlacementBanner.tsx` (new)
+- `src/screens/TradingScreen.tsx`
+
+### Deferred (not in v1)
+- Arrow heads, middle point, label/text/font/bold/italic/background/border
+- Show angle / price range / bars range / date-time range / distance
+- Coordinates numeric input
+- Visibility on timeframes
+- Snap-to-bar (separate from existing magnet mode)
+
+### Architectural flag
+- The opacity slider is custom (PanResponder + locationX). On Android,
+  `nativeEvent.locationX` is occasionally jittery during fast moves —
+  fine for this slider's coarse purpose, but if smoke test reports
+  drift consider switching to a measured `pageX` + `measure()` flow.
+
+---
+
 ## 2026-05-10 — Smoke-test fix 6: gesture arbitration (tap-place + drag-to-pan)
 
 **Status:** Code complete on `master`. Type-check clean.

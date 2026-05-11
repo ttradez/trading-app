@@ -142,6 +142,20 @@ export const DEFAULT_STYLE: DrawingStyle = {
   fibBgOpacity: 0.04,
 };
 
+/** TradingView-parity defaults for newly-placed trendlines.
+ *  Locked by docs/TRADINGVIEW_REFERENCE.md §1: blue #2962FF, 1px solid,
+ *  100% opacity, no extend, no label. Other tools keep DEFAULT_STYLE. */
+export const TRENDLINE_DEFAULT_STYLE: DrawingStyle = {
+  ...DEFAULT_STYLE,
+  color: '#2962FF',
+  lineWidth: 1,
+  lineStyle: 'solid',
+  strokeOpacity: 1,
+  extendLeft: false,
+  extendRight: false,
+  showPriceLabel: false,
+};
+
 /** Full set of fib levels the renderer supports. */
 export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.414, 1.618];
 

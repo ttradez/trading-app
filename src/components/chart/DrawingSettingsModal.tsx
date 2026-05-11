@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, Modal, Pressable, TouchableOpacity, TextInput, ScrollView,
+  PanResponder, Alert, LayoutChangeEvent,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, fontSize, fontWeight, radius, labelStyle } from '../../theme';
@@ -15,6 +16,72 @@ const QUICK_COLORS = [
   '#3B82F6', '#58a6ff', '#A855F7', '#EC4899',
 ];
 
+// Trendline v1 palette — exact 16 colors specified in
+// docs/TRADINGVIEW_REFERENCE.md §1 implementation prompt.
+const TRENDLINE_COLORS = [
+  '#FF4757', '#FFA502', '#FFD93D', '#1DD1A1',
+  '#00D395', '#009688', '#2962FF', '#6C5CE7',
+  '#FF6B81', '#FF7675', '#FAB1A0', '#74B9FF',
+  '#FFFFFF', '#B2BEC3', '#636E72', '#2D3436',
+];
+
+/** Tiny inline slider for line opacity. Avoids pulling in a new dependency.
+ *  Maps the touch's locationX along a measured track to a 0..1 value and
+ *  reports it via onChange continuously during the drag. */
+function OpacitySlider({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const [trackWidth, setTrackWidth] = useState(0);
+  const onLayout = (e: LayoutChangeEvent) => setTrackWidth(e.nativeEvent.layout.width);
+  const setFromX = React.useCallback((x: number) => {
+    if (trackWidth <= 0) return;
+    const ratio = Math.max(0, Math.min(1, x / trackWidth));
+    onChange(Math.round(ratio * 100) / 100);
+  }, [trackWidth, onChange]);
+  const responder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder:  () => true,
+    onPanResponderGrant: (e) => setFromX(e.nativeEvent.locationX),
+    onPanResponderMove:  (e) => setFromX(e.nativeEvent.locationX),
+  }), [setFromX]);
+  const pct = Math.round(value * 100);
+  return (
+    <View style={sliderStyles.wrap}>
+      <View style={sliderStyles.track} onLayout={onLayout} {...responder.panHandlers}>
+        <View style={[sliderStyles.fill, { width: trackWidth * value }]} />
+        <View style={[sliderStyles.thumb, { left: trackWidth * value - 8 }]} />
+      </View>
+      <Text style={sliderStyles.label}>{pct}%</Text>
+    </View>
+  );
+}
+
+const sliderStyles = StyleSheet.create({
+  wrap: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  track: {
+    flex: 1, height: 6,
+    backgroundColor: colors.cardAlt,
+    borderRadius: 3,
+    borderWidth: 1, borderColor: colors.border,
+    justifyContent: 'center',
+  },
+  fill: {
+    position: 'absolute', left: 0, top: 0, bottom: 0,
+    backgroundColor: '#2962FF', borderRadius: 3,
+  },
+  thumb: {
+    position: 'absolute',
+    width: 16, height: 16, borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2, borderColor: '#2962FF',
+  },
+  label: {
+    color: colors.textPrimary,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.bold,
+    width: 42, textAlign: 'right',
+    fontVariant: ['tabular-nums'],
+  },
+});
+
 // Compact color cycle used by per-fib-level swatches (tap to advance).
 const FIB_COLOR_CYCLE = [
   '#FFFFFF', '#9CA3AF', '#EAB308', '#22C55E',
@@ -26,8 +93,6 @@ const LINE_STYLES: { id: DrawingStyle['lineStyle']; label: string; preview: stri
   { id: 'dashed', label: 'Dashed', preview: '— — —' },
   { id: 'dotted', label: 'Dotted', preview: '· · · ·' },
 ];
-
-const LINE_WIDTHS = [1, 2, 3, 4, 5, 6];
 
 /**
  * Inline floating sheet that edits the currently-selected drawing.
@@ -53,8 +118,23 @@ export default function DrawingSettingsModal() {
   const isTextual        = drawing.type === 'text';
   const hasFill          = drawing.type === 'rectangle' || drawing.type === 'gann_box';
   const isFib            = drawing.type === 'fib_retracement';
+  const isTrendline      = drawing.type === 'trendline';
   const canExtend        = drawing.type === 'trendline';
-  const canShowPriceLbl  = drawing.type === 'trendline' || drawing.type === 'hline';
+  // Trendline v1 spec defers showPriceLabel — restrict it to hline only.
+  const canShowPriceLbl  = drawing.type === 'hline';
+  // Trendline v1 settings spec: 1/2/3/4 px only (TradingView dropdown).
+  const widthOptions     = isTrendline ? [1, 2, 3, 4] : [1, 2, 3, 4, 5, 6];
+  const palette          = isTrendline ? TRENDLINE_COLORS : QUICK_COLORS;
+  const handleDelete = () => {
+    if (isTrendline) {
+      Alert.alert('Delete trendline?', 'This cannot be undone.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => removeDrawing(drawing.id) },
+      ]);
+    } else {
+      removeDrawing(drawing.id);
+    }
+  };
 
   const setStyle = (patch: Partial<DrawingStyle>) =>
     updateDrawing(drawing.id, { style: { ...drawing.style, ...patch } } as any);
@@ -105,7 +185,7 @@ export default function DrawingSettingsModal() {
             <TouchableOpacity onPress={() => duplicateDrawing(drawing.id)} style={styles.headerBtn}>
               <Ionicons name="copy-outline" size={18} color={colors.textPrimary} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => { removeDrawing(drawing.id); }} style={styles.headerBtn}>
+            <TouchableOpacity onPress={handleDelete} style={styles.headerBtn}>
               <Ionicons name="trash-outline" size={18} color={colors.red} />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setSettingsOpen(false)} style={styles.headerBtn}>
@@ -114,10 +194,11 @@ export default function DrawingSettingsModal() {
           </View>
 
           <ScrollView contentContainerStyle={{ padding: spacing.md }}>
-            {/* Color row */}
+            {/* Color row — trendline gets the spec's exact 16-color palette;
+                other tools keep the legacy QUICK_COLORS swatches. */}
             <Text style={[labelStyle, styles.sectionLabel]}>Color</Text>
             <View style={styles.colorRow}>
-              {QUICK_COLORS.map((c) => (
+              {palette.map((c) => (
                 <TouchableOpacity
                   key={c}
                   style={[styles.swatch, { backgroundColor: c },
@@ -143,10 +224,11 @@ export default function DrawingSettingsModal() {
               ))}
             </View>
 
-            {/* Line width */}
+            {/* Line width — trendline restricted to TradingView 1/2/3/4 px;
+                other tools keep the wider 1-6 set. */}
             <Text style={[labelStyle, styles.sectionLabel]}>Line width</Text>
             <View style={styles.row}>
-              {LINE_WIDTHS.map((w) => (
+              {widthOptions.map((w) => (
                 <TouchableOpacity
                   key={w}
                   style={[styles.widthBtn, drawing.style.lineWidth === w && styles.widthBtnActive]}
@@ -157,21 +239,29 @@ export default function DrawingSettingsModal() {
               ))}
             </View>
 
-            {/* Stroke opacity — separate from fill; affects line color alpha. */}
+            {/* Stroke opacity — trendline gets a 0..100% slider per spec;
+                other tools keep the 4-pill quantized control. */}
             <Text style={[labelStyle, styles.sectionLabel]}>Line opacity</Text>
-            <View style={styles.row}>
-              {[0.25, 0.5, 0.75, 1].map((op) => (
-                <TouchableOpacity
-                  key={op}
-                  style={[styles.pill, (drawing.style.strokeOpacity ?? 1) === op && styles.pillActive]}
-                  onPress={() => setStyle({ strokeOpacity: op })}
-                >
-                  <Text style={[styles.pillText, (drawing.style.strokeOpacity ?? 1) === op && styles.pillTextActive]}>
-                    {Math.round(op * 100)}%
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            {isTrendline ? (
+              <OpacitySlider
+                value={drawing.style.strokeOpacity ?? 1}
+                onChange={(v) => setStyle({ strokeOpacity: v })}
+              />
+            ) : (
+              <View style={styles.row}>
+                {[0.25, 0.5, 0.75, 1].map((op) => (
+                  <TouchableOpacity
+                    key={op}
+                    style={[styles.pill, (drawing.style.strokeOpacity ?? 1) === op && styles.pillActive]}
+                    onPress={() => setStyle({ strokeOpacity: op })}
+                  >
+                    <Text style={[styles.pillText, (drawing.style.strokeOpacity ?? 1) === op && styles.pillTextActive]}>
+                      {Math.round(op * 100)}%
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
 
             {/* Extend left / right — only for trendline & ray (hline/hray are
                 already infinite by definition). */}
@@ -354,7 +444,7 @@ export default function DrawingSettingsModal() {
 
             <TouchableOpacity
               style={[styles.footerBtn, styles.footerBtnDelete]}
-              onPress={() => removeDrawing(drawing.id)}
+              onPress={handleDelete}
             >
               <Ionicons name="trash-outline" size={16} color={colors.red} style={{ marginRight: 6 }} />
               <Text style={[styles.footerBtnText, { color: colors.red }]}>DELETE</Text>

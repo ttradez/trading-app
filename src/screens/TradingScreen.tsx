@@ -11,6 +11,7 @@ import WheelPickerModal, { WheelHandle, WheelAnchor } from '../components/WheelP
 import DrawingToolbar from '../components/chart/DrawingToolbar';
 import DrawingSettingsModal from '../components/chart/DrawingSettingsModal';
 import DrawingFavoritesBar from '../components/chart/DrawingFavoritesBar';
+import PlacementBanner from '../components/chart/PlacementBanner';
 import MagnetToggle from '../components/chart/MagnetToggle';
 import TradeCardModal from '../components/TradeCardModal';
 import NewsPanel from '../components/NewsPanel';
@@ -790,6 +791,7 @@ export default function TradingScreen() {
           {/* Floating favorites bar — quick access to starred drawing tools.
               Positions itself absolutely just below the OHLC readout. */}
           {candles.length > 0 && <DrawingFavoritesBar />}
+          {candles.length > 0 && <PlacementBanner />}
 
           {sessionId && candles.length > 0 ? (
             <TradingChart

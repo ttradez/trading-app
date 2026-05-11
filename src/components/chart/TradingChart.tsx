@@ -3,7 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { SessionCandle, SessionPosition } from '../../store/sessionStore';
 import { useDrawingsStore } from '../../store/drawingsStore';
-import { TOOL_BY_ID, DEFAULT_STYLE, Drawing, DrawingType } from '../../types/drawings';
+import { TOOL_BY_ID, DEFAULT_STYLE, TRENDLINE_DEFAULT_STYLE, Drawing, DrawingType } from '../../types/drawings';
 
 export interface ChartTheme {
   background:    string;
@@ -378,6 +378,14 @@ function buildHTML(t: ChartTheme): string {
           y2 = a.y + dy * t;
         }
         elements.push(hitLine(x1, y1, x2, y2, d.id));
+        // Selected-line highlight (TradingView §1) — wider, low-alpha
+        // underlay rendered beneath the main stroke so the active line
+        // visually pops without changing its color or width settings.
+        if (isSel) {
+          elements.push(svg('line', { x1, y1, x2, y2,
+            stroke, 'stroke-width': sw + 4, 'stroke-opacity': 0.25,
+            'pointer-events': 'none' }));
+        }
         elements.push(svg('line', { x1, y1, x2, y2,
           stroke, 'stroke-width': sw, 'stroke-dasharray': dash || '',
           'stroke-opacity': strokeOp,
@@ -507,18 +515,27 @@ function buildHTML(t: ChartTheme): string {
             }));
           });
         } else {
-          // Default: one handle per anchor.
+          // Default: one handle per anchor. Trendline (per
+          // docs/TRADINGVIEW_REFERENCE.md §1) uses a larger, color-matched
+          // circle with white border + 25px hit-slop. Other tools keep the
+          // legacy black-with-white-stroke handle until their own pass.
+          const isTrend = d.type === 'trendline';
+          const hitR  = isTrend ? 25 : 14;
+          const visR  = isTrend ? 6  : 5;
+          const fillC = isTrend ? stroke : '#000';
+          const strokeC = '#FFF';
+          const strokeW = isTrend ? 2 : 2;
           pts.forEach((p, idx) => {
             if (!p) return;
             group.appendChild(svg('circle', {
-              cx: p.x, cy: p.y, r: 14,
+              cx: p.x, cy: p.y, r: hitR,
               fill: 'transparent',
               'data-handle': idx, 'data-id': d.id,
               'pointer-events': 'all',
             }));
             group.appendChild(svg('circle', {
-              cx: p.x, cy: p.y, r: 5,
-              fill: '#000', stroke: '#FFF', 'stroke-width': 2,
+              cx: p.x, cy: p.y, r: visR,
+              fill: fillC, stroke: strokeC, 'stroke-width': strokeW,
               'pointer-events': 'none',
             }));
           });
@@ -1589,9 +1606,12 @@ export default function TradingChart({ candles, positions, theme = DEFAULT_CHART
     const points = [...pendingPoints, { time, price }];
     if (points.length >= def.pointsRequired) {
       const id = `dr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      // Per-tool default style. Trendline locked to TradingView parity
+      // (#2962FF, 1px solid, 100% opacity) by docs/TRADINGVIEW_REFERENCE.md §1.
+      const baseStyle = tool === 'trendline' ? TRENDLINE_DEFAULT_STYLE : DEFAULT_STYLE;
       addDrawing({
         id, type: tool, points,
-        style: { ...DEFAULT_STYLE, ...(tool === 'text' ? { text: 'Text' } : {}) },
+        style: { ...baseStyle, ...(tool === 'text' ? { text: 'Text' } : {}) },
       });
       resetPending();
       // TradingView default: tool always exits after one placement and the
