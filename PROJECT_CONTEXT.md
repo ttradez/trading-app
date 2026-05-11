@@ -77,6 +77,9 @@ Auto-popup on trade close. Auto-fills: symbol, direction, entry/exit, size, SL/T
 
 ### Drawing tool catalog (10 tools, locked)
 
+**Authoritative spec for behavior + defaults: [`docs/TRADINGVIEW_REFERENCE.md`](docs/TRADINGVIEW_REFERENCE.md).**
+Every per-tool implementation prompt must reference the matching section in that doc — placement flow, anchor count, default visual style, full settings panel, interaction behaviors, edge cases, and source links. Sections 1–5 (trendline, hline, vline, fib_retracement, gann_box) are complete; section 6 (long_position) is partial; sections 7–10 (short_position, text, brush, rectangle) pending — Claude Remote producing.
+
 After the post-KLineChart-spike audit + prune. ANY tool not in this list is intentionally not in the codebase.
 
 | # | Tool | ID | Anchors | Catalog `drawable` | Renderer present? |
