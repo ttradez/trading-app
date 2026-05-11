@@ -5,6 +5,87 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-11 — Horizontal Line: 4 follow-up fixes after smoke test
+
+Four issues from smoke test, one commit per issue (in order):
+
+### `b731831` — Issue 1: rename Horizontal Ray → Horizontal Line
+User kept the right-only ray behavior but wanted the "Horizontal Line"
+label everywhere. Renamed type id `hray` → `horizontal_line`, label
+"Horizontal ray" → "Horizontal line", constant `HRAY_DEFAULT_STYLE` →
+`HLINE_DEFAULT_STYLE`, banner "PLACING HORIZONTAL RAY" → "PLACING
+HORIZONTAL LINE", `isHRay` → `isHLine`, docs/TRADINGVIEW_REFERENCE.md
+§2 title back to "Horizontal Line" with a prominent divergence note
+(we intentionally differ from TradingView's both-ways behavior).
+Second lossy AsyncStorage migration in a row — drawings persisted as
+`hray` get filtered out on hydrate (unknown type). Accepted; no
+migration shim.
+
+### `37d62bf` — Issue 2: crosshair leak + auto-hide
+1. `trackingMode.exitMode = OnTouchEnd` on the chart — the
+   lightweight-charts default `OnNextTap` was the "stuck crosshair"
+   root cause; finger-up dismisses now.
+2. `clearCrosshair()` (wraps `chart.clearCrosshairPosition()`) called
+   from every handleTap branch that captures a drawing tap (handle,
+   corner, eraser, body select). Defensive belt-and-braces — even if
+   a stale crosshair is somehow visible, drawing taps blow it away.
+3. Diagnostic log: `subscribeCrosshairMove` + state-transition log
+   `crosshair: SHOW` / `crosshair: HIDE` (fires only when
+   `param.time` defined ↔ undefined transitions, so the RN console
+   stays readable). Expected output during normal use: SHOW on
+   long-press, HIDE on touchend, NO log when tapping a drawing.
+
+### `4ca95c6` — Issue 3: body drag from any point on the line
+The hitLine spanning the full ray already armed body-drag on any
+touch along the line, but the (dx, dy) translate moved the anchor in
+both axes. Locked x to 0 for `horizontal_line` in three places:
+- touchmove body-drag: `tx = 0` on the group's translate transform
+- touchend body-drag: `dt = 0` in the (startCoord, endCoord) → delta
+  commit math
+- touchmove handle-drag: anchor's `time` stays at original (only
+  `price` follows finger); the floating handle's `cx` also stays put
+  so visual feedback is vertical-only
+
+Net behavior: ANY touch on the line (handle or body) = price drag,
+time stays fixed. Matches the spec exactly.
+
+### `f4c9265` — Issue 4: selection highlight not clearing
+Real root cause: when not in placement mode, both `overlay` and
+`hitBg` have `pointer-events: none`, so empty-area taps fall through
+to the chart canvas. That meant the `drawing_deselect` postBack at
+the end of `handleTap` was unreachable from the "tap empty"
+gesture. Fix: `chart.subscribeClick(...)` — lightweight-charts only
+fires this for clicks on the canvas (not for SVG-captured drawing
+taps). When it fires AND `drawingSelectedId` is set → postBack
+`drawing_deselect` → RN clears selection → next render drops the
+`isSel` underlay.
+
+Side effect: trendline now also deselects-on-tap-empty (it had the
+same bug, but the highlight there was a short segment between two
+anchors and easy to miss).
+
+### Files touched (all four commits)
+- `src/types/drawings.ts`
+- `src/components/chart/TradingChart.tsx`
+- `src/components/chart/DrawingSettingsModal.tsx`
+- `src/components/chart/PlacementBanner.tsx`
+- `src/store/drawingsStore.ts`
+- `docs/TRADINGVIEW_REFERENCE.md`
+- `PROJECT_CONTEXT.md`
+
+### Architectural flags
+- The `subscribeClick` deselect path doesn't trigger when the user
+  starts a pan/zoom — lightweight-charts distinguishes click from
+  drag. So selection survives pan/zoom, matching TradingView. If
+  users complain that a 2-finger zoom should also deselect, we'd need
+  to listen to touch events differently.
+- `clearCrosshair()` is `try/catch`-wrapped because
+  `chart.clearCrosshairPosition()` was added in a relatively recent
+  lightweight-charts version; the wrapper is a no-op on older builds
+  rather than throwing.
+
+---
+
 ## 2026-05-10 — Horizontal Ray TradingView-parity v1 (replaces Horizontal Line)
 
 **Status:** Code complete on `master`. Type-check clean. Hray-only; no other
