@@ -1254,17 +1254,30 @@ function buildHTML(t: ChartTheme): string {
           d.points = [{ time: t0, price: p0 }, { time: t1, price: p1 }];
         }
       } else {
-        // Standard anchor drag — single point.
+        // Standard anchor drag — single point. For horizontal_line, the
+        // anchor's TIME is locked (line extends right-only and the user
+        // expects only price to change on drag — see §2 implementation
+        // prompt). Other tools update both time and price.
+        const lockTime = d.type === 'horizontal_line';
         d.points = d.points.map(function (p, i) {
-          return i === drawingDragState.idx ? { time: coord.time, price: coord.price } : p;
+          if (i !== drawingDragState.idx) return p;
+          return lockTime
+            ? { time: p.time, price: coord.price }
+            : { time: coord.time, price: coord.price };
         });
       }
       renderDrawings();
       // Move the floating handle to mirror the finger so the user sees the
       // drag knob track their touch (the canonical handle inside drawingsLayer
       // has been re-rendered at the new anchor position; the floating one is
-      // purely visual feedback for the active drag).
-      const px = chart.timeScale().timeToCoordinate(coord.time);
+      // purely visual feedback for the active drag). For horizontal_line the
+      // handle's x stays at its rendered anchor x (we only update cy).
+      const dragD = drawingsList[dIdx];
+      const lockX = dragD && dragD.type === 'horizontal_line';
+      const anchorPoint = lockX && dragD ? dragD.points[drawingDragState.idx] : null;
+      const px = lockX && anchorPoint
+        ? chart.timeScale().timeToCoordinate(anchorPoint.time)
+        : chart.timeScale().timeToCoordinate(coord.time);
       const py = series.priceToCoordinate(coord.price);
       if (px != null && py != null && drawingDragState.handleEl) {
         drawingDragState.handleEl.setAttribute('cx', String(px));
@@ -1296,7 +1309,12 @@ function buildHTML(t: ChartTheme): string {
       }
       const group = drawingsLayer.querySelector('g[data-drawing-id="' + drawingBodyDrag.id + '"]');
       if (group) {
-        group.setAttribute('transform', 'translate(' + ddx + ',' + ddy + ')');
+        // horizontal_line: lock x, translate y only. The touchend commit
+        // does the same (dt=0). Other tools translate freely in both axes.
+        const dD = drawingsList.find(function (x) { return x.id === drawingBodyDrag.id; });
+        const lockX = dD && dD.type === 'horizontal_line';
+        const tx = lockX ? 0 : ddx;
+        group.setAttribute('transform', 'translate(' + tx + ',' + ddy + ')');
       }
       e.preventDefault();
       return;
@@ -1379,10 +1397,14 @@ function buildHTML(t: ChartTheme): string {
           const startCoord = chartCoordsAt(startX, startY);
           const endCoord   = chartCoordsAt(startX + dx, startY + dy);
           if (startCoord && endCoord) {
-            const dt = endCoord.time  - startCoord.time;
-            const dp = endCoord.price - startCoord.price;
             const d = drawingsList.find(function (x) { return x.id === dragId; });
             if (d) {
+              // horizontal_line: lock time, only translate price (the line
+              // extends right-only from the anchor; dragging the body
+              // re-anchors the price, never the start time).
+              const lockTime = d.type === 'horizontal_line';
+              const dt = lockTime ? 0 : (endCoord.time - startCoord.time);
+              const dp = endCoord.price - startCoord.price;
               d.points = d.points.map(function (p) {
                 return { time: p.time + dt, price: p.price + dp };
               });
