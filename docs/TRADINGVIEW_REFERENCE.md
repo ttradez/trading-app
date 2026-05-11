@@ -78,13 +78,13 @@ Conventions used throughout:
 
 ---
 
-## 2. Horizontal Line
+## 2. Horizontal Ray
 
 ### Placement
-- **Desktop:** Single click anywhere on the chart. The line is placed at the y-coordinate of the click and spans the entire visible (and beyond) x-axis.
+- **Desktop:** Single click anywhere on the chart. The ray is placed at the y-coordinate (price) AND x-coordinate (time) of the click. It renders as a horizontal line that STARTS at the anchor's time and extends infinitely to the right.
 - **Mobile:** Single tap anywhere on the chart.
-- **Anchor points:** 1 anchor (price only — time component is decorative/anchor-for-label-positioning).
-- **Preview/ghost:** Yes — a horizontal guideline follows the cursor before commit.
+- **Anchor points:** 1 anchor (time + price). Time is meaningful — it defines where the ray begins on the x-axis. The left end stops at the anchor; only the right end is infinite.
+- **Preview/ghost:** Yes — a horizontal guideline follows the cursor before commit, anchored at the cursor's current x.
 
 ### Default Visual Style
 - **Default color:** `#2962FF` blue **(observed)**.
@@ -107,22 +107,23 @@ Conventions used throughout:
 - **Background** — toggle + color picker — default Off.
 - **Border** — toggle + color picker — default Off.
 - **Price** — numeric input — manual price for the anchor.
+- **Time** — date+time input — manual time for the anchor (defines where the ray begins).
 - **Visibility on timeframes** — multi-checkbox — all on by default.
 - **Lock / Disable selection** — toggles — default Off.
 
 ### Interaction Behaviors
-- **Single tap:** Selects; one drag handle appears at the anchor point.
+- **Single tap:** Selects; one drag handle appears at the anchor point (left end of the visible ray).
 - **Double tap:** Opens settings.
 - **Long press:** Opens context menu.
-- **Handles when selected:** A single circular handle at the anchor x; the rest of the line shows a thin "selected" highlight.
-- **Dragging:** Dragging anywhere on the line moves it vertically only (price-only). The x-anchor can be moved horizontally by dragging its handle, but this is purely cosmetic for label positioning.
-- **Snap-to-OHLC:** Honors Magnet mode for the initial price.
+- **Handles when selected:** A single circular handle at the anchor (time, price); the rest of the visible line shows a thin "selected" highlight.
+- **Dragging:** Dragging the anchor handle moves it in BOTH dimensions — vertical drag changes the ray's price, horizontal drag changes where it starts. Dragging the line body moves the whole ray rigidly (anchor translates in both dimensions by the same delta).
+- **Snap-to-OHLC:** Honors Magnet mode for the initial anchor.
 
 ### Special Behaviors / Edge Cases
-- Always extends across the entire visible chart and continues to do so when scrolling left/right.
-- Survives timeframe changes (price is constant across timeframes).
+- The ray STARTS at the anchor's time and extends infinitely toward the right (later bars). Time anchor matters — unlike a horizontal LINE where the time component is decorative, the ray's time anchor defines its left edge.
+- When the anchor scrolls off the left side of the visible chart, the ray fills the visible width from `x = 0` (so users always see the price level after the start). When the anchor's time is to the right of the visible chart, nothing renders — the ray hasn't begun yet from the viewer's perspective.
+- Survives timeframe changes — anchor is stored as an absolute timestamp + price.
 - Bound per-symbol by default.
-- A separate but visually similar tool exists: **Horizontal Ray** — single price anchor that only extends in one direction. Don't confuse these.
 
 **Sources:**
 - TradingView Help — "Horizontal line drawing tool": https://www.tradingview.com/support/solutions/43000516927/
