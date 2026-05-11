@@ -156,6 +156,10 @@ function buildHTML(t: ChartTheme): string {
       horzLines: { color: '${t.gridColor}', visible: ${t.showGrid !== false} },
     },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    // Crosshair on mobile activates via long-press; dismiss on touchend so
+    // it doesn't get stuck (lightweight-charts default is OnNextTap which
+    // means a stray crosshair survives until the next tap somewhere).
+    trackingMode: { exitMode: LightweightCharts.TrackingModeExitMode.OnTouchEnd },
     rightPriceScale: { borderColor: '${t.borderColor}' },
     timeScale: {
       borderColor: '${t.borderColor}',
@@ -236,6 +240,24 @@ function buildHTML(t: ChartTheme): string {
     activeLines = lines.map(({ price, color, title, style }) =>
       series.createPriceLine({ price, color, lineWidth: 2, lineStyle: style, axisLabelVisible: true, title })
     );
+  }
+
+  // ── Crosshair tracking ───────────────────────────────────────────────────
+  // Diagnostics + force-hide hook. trackingMode.exitMode=OnTouchEnd (set
+  // above) is what actually auto-dismisses the crosshair on touchend.
+  // The log fires on state transitions only (not every move) so the RN
+  // console stays readable. clearCrosshair() is called from handleTap when
+  // a touch lands on a drawing, so the crosshair never overlaps a selection.
+  let crosshairVisible = false;
+  chart.subscribeCrosshairMove(function (param) {
+    const isVisible = param && param.time !== undefined && param.point !== undefined;
+    if (isVisible !== crosshairVisible) {
+      crosshairVisible = isVisible;
+      postBack({ type: 'log', msg: 'crosshair: ' + (isVisible ? 'SHOW' : 'HIDE') });
+    }
+  });
+  function clearCrosshair() {
+    try { chart.clearCrosshairPosition(); } catch (err) {}
   }
 
   // ── Drawings (overlay SVG) ───────────────────────────────────────────────────
@@ -1018,6 +1040,7 @@ function buildHTML(t: ChartTheme): string {
       const id = target.getAttribute('data-id');
       drawingDragState = { id: id, idx: parseInt(handleIdx, 10), handleEl: target };
       overlay.appendChild(target);
+      clearCrosshair();
       e && e.preventDefault && e.preventDefault();
       return;
     }
@@ -1026,6 +1049,7 @@ function buildHTML(t: ChartTheme): string {
       const id = target.getAttribute('data-id');
       drawingDragState = { id: id, corner: cornerCode, handleEl: target };
       overlay.appendChild(target);
+      clearCrosshair();
       e && e.preventDefault && e.preventDefault();
       return;
     }
@@ -1036,6 +1060,7 @@ function buildHTML(t: ChartTheme): string {
 
     // Eraser: tap drawing to delete.
     if (hitId && drawingActiveTool === 'eraser') {
+      clearCrosshair();
       postBack({ type: 'drawing_erase', id: hitId });
       e && e.preventDefault && e.preventDefault();
       return;
@@ -1043,6 +1068,8 @@ function buildHTML(t: ChartTheme): string {
 
     // Cursor mode + tap landed on a drawing.
     if (!isPlacing && hitId && hitId !== 'hitBg') {
+      // Drawing taps must never leave a stale crosshair on screen.
+      clearCrosshair();
       // Find the drawing; bail if it's locked (no drag, no menu).
       const dHit = drawingsList.find(function (x) { return x.id === hitId; });
       if (dHit && dHit.locked) return;
