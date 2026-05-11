@@ -82,6 +82,8 @@ Auto-popup on trade close. Auto-fills: symbol, direction, entry/exit, size, SL/T
 **Authoritative spec for behavior + defaults: [`docs/TRADINGVIEW_REFERENCE.md`](docs/TRADINGVIEW_REFERENCE.md).**
 Every per-tool implementation prompt must reference the matching section in that doc — placement flow, anchor count, default visual style, full settings panel, interaction behaviors, edge cases, and source links.
 
+Implementation patterns for touch/drag/selection live in [`docs/MOBILE_DRAG_RESEARCH.md`](docs/MOBILE_DRAG_RESEARCH.md) — reference this for every drawing tool prompt.
+
 | # | Tool | ID | Anchors | Catalog `drawable` | Renderer present? |
 |---:|---|---|---:|:---:|:---:|
 | — | — | — | — | — | — |
