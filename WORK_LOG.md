@@ -5,6 +5,52 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-11 — Horizontal Line: step 1.5 (z-order + icon fix)
+
+Two small fixes before step 2.
+
+### Fix A — render behind candles (`513fb4e`)
+Drawings used to render on top of candles because the overlay SVG had
+`z-index: 9999` and held `drawingsLayer` alongside the pending-order
+elements. Lines visibly cut through candle bodies.
+
+Split the overlay into two SVGs by z-index:
+- `#drawings-below` (z 1): `plotClip` + `drawingsLayer`. Drawings paint
+  here, beneath the chart canvas.
+- `#chart` (z 2): lightweight-charts canvases (`position: relative` +
+  `z-index: 2` stacks above `#drawings-below`).
+- `#overlay` (z 9999): `hitBg` + `pendingLayer`. Pending order pills,
+  hit targets, banners still paint above candles.
+
+`document.getElementById('drawingsLayer')` and `'plotClipRect'` keep
+resolving — IDs are unique across the document regardless of which SVG
+holds them.
+
+**Architectural flag:** when selection / hit areas come back (step 2+),
+touch listeners need to attach to `#drawings-below` too. Currently
+they're only on `#overlay`, which is fine for step 1 (drawings have
+`pointer-events: 'none'`).
+
+### Fix B — replace ambiguous icon (commit below)
+**Diagnosis of the "floating '−' pill":** it's the `DrawingFavoritesBar`
+positioned at `top: 56, alignItems: center` with a dark
+`rgba(15,15,18,0.85)` background and rounded corners — showing one tool
+(`horizontal_line`) via Ionicons `remove-outline`, which is visually
+indistinguishable from a minus glyph. Intentional UI (the placement
+entry point), but unrecognizable.
+
+Fix: render a custom inline SVG icon (`horizontal line + anchor dot at
+the left end`) for `horizontal_line` per the step 1 spec. Other tools
+keep their Ionicons mapping via a new `ToolIcon` shim that falls back
+to `TOOL_BY_ID[id].icon`. `react-native-svg` was already a dependency
+(used by `DashboardCharts.tsx`).
+
+### Files touched
+- `src/components/chart/TradingChart.tsx` (z-order split)
+- `src/components/chart/DrawingFavoritesBar.tsx` (`ToolIcon` shim)
+
+---
+
 ## 2026-05-11 — Horizontal Line: step 1 (placement + render)
 
 First tool back online post-reset. Step 1 scope is intentionally tight:

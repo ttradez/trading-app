@@ -1,9 +1,32 @@
 import React from 'react';
 import { View, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Svg, { Line, Circle } from 'react-native-svg';
 import { colors, radius } from '../../theme';
 import { useDrawingsStore } from '../../store/drawingsStore';
 import { TOOL_BY_ID, DrawingType } from '../../types/drawings';
+
+/**
+ * Per-tool icon component. Falls back to Ionicons when no custom icon is
+ * registered for the tool. Custom icons exist because some tools have no
+ * good Ionicons equivalent (e.g. horizontal_line — the closest generic
+ * icon, 'remove-outline', is indistinguishable from a minus glyph).
+ */
+function ToolIcon({ id, size, color }: { id: DrawingType; size: number; color: string }) {
+  if (id === 'horizontal_line') {
+    // Horizontal line with an anchor dot at the left end (per
+    // TRADINGVIEW_REFERENCE.md §2 implementation prompt — the
+    // tool extends right-only from the anchor).
+    return (
+      <Svg width={size} height={size} viewBox="0 0 24 24">
+        <Line x1={4} y1={12} x2={22} y2={12} stroke={color} strokeWidth={2} strokeLinecap="round" />
+        <Circle cx={4} cy={12} r={2.5} fill={color} />
+      </Svg>
+    );
+  }
+  const def = TOOL_BY_ID[id];
+  return <Ionicons name={def.icon as any} size={size} color={color} />;
+}
 
 /**
  * Floating favorites bar — shows the user's starred drawing tools as pills
@@ -49,8 +72,8 @@ export default function DrawingFavoritesBar() {
               hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
               accessibilityLabel={def.label}
             >
-              <Ionicons
-                name={def.icon as any}
+              <ToolIcon
+                id={id}
                 size={18}
                 color={isActive ? colors.bg : colors.textPrimary}
               />
