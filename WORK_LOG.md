@@ -5,6 +5,45 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-11 — Step 1.5 follow-ups: revert z-order + remove banner
+
+User reported "can't place a drawing now" and "banner comes off the top
+of my screen, I don't want it." Two commits walked back the most-recent
+changes that broke things or annoyed:
+
+### `3530654` — Revert Fix A (drawings back on top of candles)
+The previous split (`#drawings-below` z 1 / `#chart` z 2 / `#overlay` z 9999)
+correctly stacked drawings below the chart in the DOM, but
+lightweight-charts paints an **opaque** background canvas
+(`layout.background.color = #000000`) as the bottom of its internal
+canvas stack. Net effect: drawings at z 1 sat behind that opaque bg
+canvas — completely invisible. Placement was working all along; the
+line just couldn't be seen.
+
+True "drawings between bg and candles" needs the lightweight-charts
+**Primitives API**, which v4.1.3 doesn't expose (added in 4.2 / 5.x).
+To revisit "behind candles" we'd have to upgrade the chart library or
+run a custom canvas inside lightweight-charts's render stack — both
+much bigger changes than this step. Until then, drawings render above
+candles; the "lines cut through candle bodies" tradeoff is accepted.
+
+### `502cbaa` — Remove PlacementBanner entirely
+The "PLACING HORIZONTAL LINE" pill at `top: 8` was hitting the device's
+status-bar / notch area on some phones, reading as a stray UI artifact.
+The favorites-bar pill already turns gold when the tool is active,
+which is enough placement-mode indication. Killed
+`src/components/chart/PlacementBanner.tsx`, the import in
+`TradingScreen.tsx`, and its render call. If we ever want a placement
+indicator again, the gold-pill state already does it without occupying
+extra screen real estate.
+
+### Files touched
+- `src/components/chart/TradingChart.tsx` (z-order revert)
+- `src/components/chart/PlacementBanner.tsx` (deleted)
+- `src/screens/TradingScreen.tsx` (removed import + render)
+
+---
+
 ## 2026-05-11 — Horizontal Line: step 1.5 (z-order + icon fix)
 
 Two small fixes before step 2.
