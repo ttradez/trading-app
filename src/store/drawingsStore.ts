@@ -54,8 +54,8 @@ export const useDrawingsStore = create<DrawingsState>((set, get) => ({
   drawings: [],
   activeTool: 'cursor_cross',
   // Favorites — only IDs in the pruned 10-tool catalog. 'arrow' was deleted;
-  // 'hline' was replaced by 'hray' (extends right only, see TRADINGVIEW_REFERENCE §2).
-  favorites: new Set<DrawingType>(['trendline', 'hray', 'fib_retracement', 'rectangle', 'text']),
+  // 'hline' was replaced by 'horizontal_line' (extends right only, see TRADINGVIEW_REFERENCE §2).
+  favorites: new Set<DrawingType>(['trendline', 'horizontal_line', 'fib_retracement', 'rectangle', 'text']),
   selectedId: null,
   settingsOpen: false,
   pendingPoints: [],

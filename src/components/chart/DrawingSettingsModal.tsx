@@ -114,25 +114,25 @@ export default function DrawingSettingsModal() {
   const def  = TOOL_BY_ID[drawing.type];
   // Per-tool feature flags — pruned to the 10 keep-tools (DRAWING_TOOLS_AUDIT.md).
   // 'note', 'price_note', 'circle', 'parallel_channel', 'price_range',
-  // 'date_price_range', 'ray', 'hray' all deleted from the catalog.
+  // 'date_price_range', 'ray', 'horizontal_line' all deleted from the catalog.
   const isTextual        = drawing.type === 'text';
   const hasFill          = drawing.type === 'rectangle' || drawing.type === 'gann_box';
   const isFib            = drawing.type === 'fib_retracement';
   const isTrendline      = drawing.type === 'trendline';
-  const isHRay           = drawing.type === 'hray';
+  const isHLine           = drawing.type === 'horizontal_line';
   // Tools that have shipped their TradingView-parity v1 settings pass —
   // they share the same UI: 16-swatch palette, slider opacity, 1/2/3/4
   // width pills, delete-with-confirm. Other tools keep the legacy UI.
-  const useRichSettings  = isTrendline || isHRay;
+  const useRichSettings  = isTrendline || isHLine;
   const canExtend        = drawing.type === 'trendline';
-  // hray defaults price label ON and exposes the toggle. Trendline v1
+  // horizontal_line defaults price label ON and exposes the toggle. Trendline v1
   // defers label/price label entirely.
-  const canShowPriceLbl  = isHRay;
+  const canShowPriceLbl  = isHLine;
   const widthOptions     = useRichSettings ? [1, 2, 3, 4] : [1, 2, 3, 4, 5, 6];
   const palette          = useRichSettings ? TRENDLINE_COLORS : QUICK_COLORS;
   const handleDelete = () => {
     if (useRichSettings) {
-      const label = isHRay ? 'horizontal ray' : 'trendline';
+      const label = isHLine ? 'horizontal line' : 'trendline';
       Alert.alert(`Delete ${label}?`, 'This cannot be undone.', [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Delete', style: 'destructive', onPress: () => removeDrawing(drawing.id) },
@@ -245,7 +245,7 @@ export default function DrawingSettingsModal() {
               ))}
             </View>
 
-            {/* Stroke opacity — rich-settings tools (trendline §1, hray §2)
+            {/* Stroke opacity — rich-settings tools (trendline §1, horizontal_line §2)
                 get a 0..100% slider per spec; other tools keep the 4-pill
                 quantized control. */}
             <Text style={[labelStyle, styles.sectionLabel]}>Line opacity</Text>
@@ -270,7 +270,7 @@ export default function DrawingSettingsModal() {
               </View>
             )}
 
-            {/* Extend left / right — only for trendline & ray (hline/hray are
+            {/* Extend left / right — only for trendline & ray (hline/horizontal_line are
                 already infinite by definition). */}
             {canExtend && (
               <>

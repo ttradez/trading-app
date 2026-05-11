@@ -1,11 +1,15 @@
 /**
  * Drawing tool catalog — pruned to 10 essential tools per
  * docs/DRAWING_TOOLS_AUDIT.md. Anything that used to exist (ray, info
- * line, extended line, trend angle, cross line, hray, circle, arrow,
+ * line, extended line, trend angle, cross line, circle, arrow,
  * parallel channel, fib extension, all patterns / forecasting / volume,
  * date/price range measurers, note / price-note text variants, etc.) is
  * intentionally absent — DELETED, not just hidden. Old drawings of those
  * types persisted in AsyncStorage are filtered out gracefully on hydrate.
+ *
+ * Naming note: the "horizontal_line" tool's line extends RIGHT ONLY from
+ * its anchor (semantically a ray). User preference is to keep the
+ * "Horizontal Line" label in the UI — see docs/TRADINGVIEW_REFERENCE.md §2.
  */
 
 export type DrawingCategory =
@@ -19,9 +23,9 @@ export type DrawingCategory =
 export type DrawingType =
   // Cursors (not drawings; pointer modes)
   | 'cursor_cross' | 'eraser'
-  // Lines & shapes — 4 keep tools (hray replaces hline per
-  // docs/TRADINGVIEW_REFERENCE.md §2 — extends right from anchor only)
-  | 'trendline' | 'hray' | 'vline' | 'rectangle'
+  // Lines & shapes — 4 keep tools. `horizontal_line` extends RIGHT ONLY
+  // from its anchor (the file-top note explains the naming).
+  | 'trendline' | 'horizontal_line' | 'vline' | 'rectangle'
   // Studies — 2 keep tools
   | 'fib_retracement' | 'gann_box'
   // Positions — 2 keep tools (TradingView-style entry/stop/target visuals)
@@ -49,7 +53,7 @@ export const TOOL_CATALOG: ToolDef[] = [
 
   // ── Lines & shapes ─────────────────────────────────────────────────────────
   { id: 'trendline', label: 'Trendline',       icon: 'trending-up-outline', category: 'lines', pointsRequired: 2, drawable: true },
-  { id: 'hray',      label: 'Horizontal ray',  icon: 'remove-outline',      category: 'lines', pointsRequired: 1, drawable: true },
+  { id: 'horizontal_line',      label: 'Horizontal line', icon: 'remove-outline',      category: 'lines', pointsRequired: 1, drawable: true },
   { id: 'vline',     label: 'Vertical line',   icon: 'reorder-two-outline', category: 'lines', pointsRequired: 1, drawable: true },
   { id: 'rectangle', label: 'Rectangle',       icon: 'square-outline',      category: 'lines', pointsRequired: 2, drawable: true },
 
@@ -157,10 +161,12 @@ export const TRENDLINE_DEFAULT_STYLE: DrawingStyle = {
   showPriceLabel: false,
 };
 
-/** TradingView-parity defaults for newly-placed horizontal rays.
+/** TradingView-parity defaults for newly-placed horizontal lines.
  *  Locked by docs/TRADINGVIEW_REFERENCE.md §2: blue #2962FF, 1px solid,
- *  100% opacity, price label ON by default. */
-export const HRAY_DEFAULT_STYLE: DrawingStyle = {
+ *  100% opacity, price label ON by default. Note: this tool's "line"
+ *  extends RIGHT ONLY from its anchor (a ray semantically) — we keep the
+ *  "Horizontal Line" name in the UI per user preference. */
+export const HLINE_DEFAULT_STYLE: DrawingStyle = {
   ...DEFAULT_STYLE,
   color: '#2962FF',
   lineWidth: 1,

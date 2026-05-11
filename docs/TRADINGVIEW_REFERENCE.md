@@ -78,10 +78,12 @@ Conventions used throughout:
 
 ---
 
-## 2. Horizontal Ray
+## 2. Horizontal Line
+
+> **Naming divergence from TradingView:** TradingView's "Horizontal Line" tool extends both directions across the chart. We deliberately implement this tool with **right-only extension** (semantically a ray) per user requirement, but keep the **"Horizontal Line"** UI label. Internal type id is `horizontal_line`.
 
 ### Placement
-- **Desktop:** Single click anywhere on the chart. The ray is placed at the y-coordinate (price) AND x-coordinate (time) of the click. It renders as a horizontal line that STARTS at the anchor's time and extends infinitely to the right.
+- **Desktop:** Single click anywhere on the chart. The line is placed at the y-coordinate (price) AND x-coordinate (time) of the click. It renders as a horizontal line that STARTS at the anchor's time and extends infinitely to the right.
 - **Mobile:** Single tap anywhere on the chart.
 - **Anchor points:** 1 anchor (time + price). Time is meaningful — it defines where the ray begins on the x-axis. The left end stops at the anchor; only the right end is infinite.
 - **Preview/ghost:** Yes — a horizontal guideline follows the cursor before commit, anchored at the cursor's current x.
@@ -112,16 +114,17 @@ Conventions used throughout:
 - **Lock / Disable selection** — toggles — default Off.
 
 ### Interaction Behaviors
-- **Single tap:** Selects; one drag handle appears at the anchor point (left end of the visible ray).
+- **Single tap:** Selects; one drag handle appears at the anchor point (left end of the visible line).
 - **Double tap:** Opens settings.
 - **Long press:** Opens context menu.
 - **Handles when selected:** A single circular handle at the anchor (time, price); the rest of the visible line shows a thin "selected" highlight.
-- **Dragging:** Dragging the anchor handle moves it in BOTH dimensions — vertical drag changes the ray's price, horizontal drag changes where it starts. Dragging the line body moves the whole ray rigidly (anchor translates in both dimensions by the same delta).
+- **Dragging:** Any touch on the line (handle OR body) drags the line vertically — only the **price** changes; the anchor's time stays fixed. The handle is purely a visual affordance for the anchor location; we deliberately defer horizontal-handle-drag (which would re-anchor the start time) per user preference.
 - **Snap-to-OHLC:** Honors Magnet mode for the initial anchor.
 
 ### Special Behaviors / Edge Cases
-- The ray STARTS at the anchor's time and extends infinitely toward the right (later bars). Time anchor matters — unlike a horizontal LINE where the time component is decorative, the ray's time anchor defines its left edge.
-- When the anchor scrolls off the left side of the visible chart, the ray fills the visible width from `x = 0` (so users always see the price level after the start). When the anchor's time is to the right of the visible chart, nothing renders — the ray hasn't begun yet from the viewer's perspective.
+- **Naming divergence — keep noting it.** TradingView's Horizontal Line extends across the entire chart in both directions. Our tool extends RIGHT ONLY from its anchor (semantically a ray) but keeps the "Horizontal Line" UI label per user preference.
+- The line STARTS at the anchor's time and extends infinitely toward the right (later bars). Time anchor matters — it defines the left edge.
+- When the anchor scrolls off the left side of the visible chart, the line fills the visible width from `x = 0` (so users always see the price level after the start). When the anchor's time is to the right of the visible chart, nothing renders — the line hasn't begun yet from the viewer's perspective.
 - Survives timeframe changes — anchor is stored as an absolute timestamp + price.
 - Bound per-symbol by default.
 

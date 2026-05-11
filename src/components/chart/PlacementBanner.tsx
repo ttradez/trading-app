@@ -8,7 +8,7 @@ import { useDrawingsStore } from '../../store/drawingsStore';
 // not trigger this banner yet — they will be added as each ships its pass.
 const BANNER_LABELS: Partial<Record<string, string>> = {
   trendline: 'PLACING TRENDLINE',
-  hray:      'PLACING HORIZONTAL RAY',
+  horizontal_line: 'PLACING HORIZONTAL LINE',
 };
 
 /**

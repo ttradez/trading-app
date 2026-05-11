@@ -85,7 +85,7 @@ After the post-KLineChart-spike audit + prune. ANY tool not in this list is inte
 | # | Tool | ID | Anchors | Catalog `drawable` | Renderer present? |
 |---:|---|---|---:|:---:|:---:|
 | 1 | Trendline | `trendline` | 2 | ✓ | ✓ |
-| 2 | Horizontal ray | `hray` | 1 | ✓ | ✓ |
+| 2 | Horizontal line | `horizontal_line` | 1 | ✓ | ✓ |
 | 3 | Vertical line | `vline` | 1 | ✓ | ✓ |
 | 4 | Rectangle | `rectangle` | 2 | ✓ | ✓ |
 | 5 | Fib retracement | `fib_retracement` | 2 | ✓ | ✓ |
