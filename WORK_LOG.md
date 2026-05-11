@@ -5,6 +5,77 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-11 — Horizontal Line: step 1 (placement + render)
+
+First tool back online post-reset. Step 1 scope is intentionally tight:
+placement + render + persistence only. Selection, drag, settings, delete,
+long-press are all explicitly out of scope and will arrive in later
+steps. Spec: `docs/TRADINGVIEW_REFERENCE.md` §2.
+
+### What shipped
+- **Type registry** (`src/types/drawings.ts`):
+  - `DrawingType` union extended with `'horizontal_line'`.
+  - `TOOL_CATALOG` row added: label "Horizontal line", icon
+    `remove-outline`, category `lines`, `pointsRequired: 1`,
+    `drawable: true`.
+  - New `HLINE_DEFAULT_STYLE`: `#2962FF`, `lineWidth: 1`, solid,
+    full opacity.
+- **Default style switch** (`TradingChart.tsx` `handleDrawingPoint`):
+  picks `HLINE_DEFAULT_STYLE` when the tool is `horizontal_line`;
+  everything else still uses `DEFAULT_STYLE`.
+- **Render branch** (`TradingChart.tsx` `renderDrawings`):
+  new `if (d.type === 'horizontal_line')` block. Reads anchor from
+  `points[0]`, projects via `timeToCoordinate` + `priceToCoordinate`,
+  draws an SVG line from `max(0, anchorX)` to the chart's right edge.
+  Anchor before view → renders from `x=0` so the price level stays
+  visible; anchor after view → skips entirely (line hasn't begun yet
+  from POV). `pointer-events: 'none'` — no hit area, no selection
+  capture in step 1.
+- **Placement banner** (`PlacementBanner.tsx`):
+  `BANNER_LABELS.horizontal_line = 'PLACING HORIZONTAL LINE'`. Banner
+  lights up while the tool is active.
+- **Default favorites** (`drawingsStore.ts`):
+  `new Set(['horizontal_line'])` so the icon appears in the favorites
+  bar on first launch without requiring a favorites-toggle UI.
+
+### Re-render plumbing (already in place from reset)
+- `chart.timeScale().subscribeVisibleLogicalRangeChange(scheduleRender)`
+  — re-renders on pan/zoom.
+- `priceProjectionTick` rAF — re-renders on price-scale shifts when no
+  drag is in flight.
+- `drawingsStore.persistDrawings` writes to AsyncStorage (`@pocket_trade_drawings_v2`)
+  on every change; `hydrate()` restores on mount.
+
+### Explicitly NOT shipped (per step 1 prompt)
+- Selection (no handles on tap, no highlight, no drawing_select postBack triggered)
+- Body or handle drag
+- Double-tap → settings panel
+- Color / style customization (defaults only — no settings panel branches)
+- Delete, duplicate, long-press menu
+
+Taps on an existing horizontal line are a no-op in step 1: the visible
+line has `pointer-events: 'none'`, so touches fall through to the chart
+canvas (which just pans normally).
+
+### Files touched
+- `src/types/drawings.ts`
+- `src/components/chart/TradingChart.tsx`
+- `src/components/chart/PlacementBanner.tsx`
+- `src/store/drawingsStore.ts`
+
+### Architectural notes
+- The render branch reads `lineWidth`, `lineStyle`, `strokeOpacity` from
+  `drawing.style` (the framework's existing shape), with the user-facing
+  data-model concepts (color, lineWidth, lineStyle, opacity) all mapped
+  one-to-one. Time + price live in `points[0]` per the framework
+  convention so future drag steps can mutate uniformly.
+- The reset's `void priceTag; void hitRect;` lines still keep those
+  helpers from being tree-shaken. The horizontal_line branch doesn't
+  use them yet — they'll come back when step 2+ adds price label /
+  hit area.
+
+---
+
 ## 2026-05-11 — Drawing tools full reset
 
 Single commit. After multiple iterations on trendline + horizontal_line

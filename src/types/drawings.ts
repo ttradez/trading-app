@@ -28,7 +28,9 @@ export type DrawingCategory =
  */
 export type DrawingType =
   // Cursors (not drawings; pointer modes)
-  | 'cursor_cross' | 'eraser';
+  | 'cursor_cross' | 'eraser'
+  // Drawings (post-reset rebuild — one tool at a time)
+  | 'horizontal_line';
 
 export interface ToolDef {
   id: DrawingType;
@@ -42,9 +44,15 @@ export interface ToolDef {
 }
 
 export const TOOL_CATALOG: ToolDef[] = [
-  // ── Cursors (no drawing tools registered post-reset) ───────────────────────
+  // ── Cursors ────────────────────────────────────────────────────────────────
   { id: 'cursor_cross', label: 'Cross',  icon: 'add-outline',       category: 'cursors', pointsRequired: 0, drawable: false },
   { id: 'eraser',       label: 'Eraser', icon: 'trash-bin-outline', category: 'cursors', pointsRequired: 0, drawable: false },
+
+  // ── Drawings (post-reset rebuild) ──────────────────────────────────────────
+  // Horizontal line (TRADINGVIEW_REFERENCE.md §2) — single anchor, extends
+  // right only from the anchor's (time, price). Step 1: placement + render
+  // only; selection / drag / settings come in later steps.
+  { id: 'horizontal_line', label: 'Horizontal line', icon: 'remove-outline', category: 'lines', pointsRequired: 1, drawable: true },
 ];
 
 export const TOOL_BY_ID: Record<DrawingType, ToolDef> =
@@ -105,4 +113,14 @@ export const DEFAULT_STYLE: DrawingStyle = {
   extendLeft: false,
   extendRight: false,
   showPriceLabel: false,
+};
+
+/** TradingView-parity defaults for horizontal_line (docs/TRADINGVIEW_REFERENCE.md §2).
+ *  Right-only line: blue #2962FF, 1 px, solid, full opacity. */
+export const HLINE_DEFAULT_STYLE: DrawingStyle = {
+  ...DEFAULT_STYLE,
+  color: '#2962FF',
+  lineWidth: 1,
+  lineStyle: 'solid',
+  strokeOpacity: 1,
 };

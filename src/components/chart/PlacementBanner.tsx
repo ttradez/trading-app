@@ -3,11 +3,11 @@ import { View, Text, StyleSheet } from 'react-native';
 import { colors, fontSize, fontWeight, radius, spacing } from '../../theme';
 import { useDrawingsStore } from '../../store/drawingsStore';
 
-// RESET on 2026-05-11. The placement banner shell is preserved so it
-// can light up again the moment a tool registers a label here. Tools
-// will add their entries (e.g. trendline: 'PLACING TRENDLINE') as they
-// come back online. While this map is empty, the banner never renders.
-const BANNER_LABELS: Partial<Record<string, string>> = {};
+// Tools opt in to the placement banner by registering their label here.
+// More tools light this up as each one ships its placement pass.
+const BANNER_LABELS: Partial<Record<string, string>> = {
+  horizontal_line: 'PLACING HORIZONTAL LINE',
+};
 
 /**
  * Top-of-chart banner shown while a v1-shipped drawing tool is active, so

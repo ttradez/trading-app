@@ -57,9 +57,8 @@ const persistFavorites = (favs: Set<DrawingType>) => {
 export const useDrawingsStore = create<DrawingsState>((set, get) => ({
   drawings: [],
   activeTool: 'cursor_cross',
-  // Favorites — empty post-reset. As drawing tools come back online,
-  // they can be added here as sensible defaults, or left to user opt-in.
-  favorites: new Set<DrawingType>(),
+  // Default favorites — populated as drawing tools come back online.
+  favorites: new Set<DrawingType>(['horizontal_line']),
   selectedId: null,
   settingsOpen: false,
   pendingPoints: [],

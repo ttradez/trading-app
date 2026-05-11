@@ -3,7 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { SessionCandle, SessionPosition } from '../../store/sessionStore';
 import { useDrawingsStore } from '../../store/drawingsStore';
-import { TOOL_BY_ID, DEFAULT_STYLE, Drawing, DrawingType } from '../../types/drawings';
+import { TOOL_BY_ID, DEFAULT_STYLE, HLINE_DEFAULT_STYLE, Drawing, DrawingType } from '../../types/drawings';
 
 export interface ChartTheme {
   background:    string;
@@ -373,13 +373,36 @@ function buildHTML(t: ChartTheme): string {
     // remains testable. As tools come back online, each appends its own
     // SVG elements here per drawing in drawingsList — see the backup tag
     // 'drawings-before-reset' for prior implementations.
+    const W = window.innerWidth;
     drawingsList.forEach((d) => {
       if (d.hidden) return;
       const isSel = d.id === drawingSelectedId;
       const stroke = d.style.color;
+      const sw = d.style.lineWidth || 1;
+      const strokeOp = (d.style.strokeOpacity == null) ? 1 : d.style.strokeOpacity;
+      const dash = dashFor(d.style.lineStyle);
 
-      // Per-tool element building goes here (currently empty — no tools).
       const elements = [];
+
+      // ── horizontal_line (step 1: placement + render only) ────────────────
+      // TRADINGVIEW_REFERENCE.md §2 — extends right only from the anchor.
+      // Anchor before view → render from left edge. Anchor after view →
+      // skip rendering entirely (line hasn't started yet from POV).
+      // No hit area, no selection, no handle — those come in later steps.
+      if (d.type === 'horizontal_line') {
+        const y = series.priceToCoordinate(d.points[0].price);
+        if (y == null) return;
+        const xRaw = chart.timeScale().timeToCoordinate(d.points[0].time);
+        if (xRaw == null) return;
+        if (xRaw > W) return;
+        const startX = Math.max(0, xRaw);
+        elements.push(svg('line', {
+          x1: startX, y1: y, x2: W, y2: y,
+          stroke, 'stroke-width': sw, 'stroke-dasharray': dash || '',
+          'stroke-opacity': strokeOp,
+          'pointer-events': 'none',
+        }));
+      }
 
       // Wrap each drawing in a <g> with data-drawing-id so body-drag's
       // transform-translate pattern keeps working without changes when
@@ -1473,9 +1496,10 @@ export default function TradingChart({ candles, positions, theme = DEFAULT_CHART
     const points = [...pendingPoints, { time, price }];
     if (points.length >= def.pointsRequired) {
       const id = `dr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-      // RESET: per-tool default styles will return alongside each tool's
-      // implementation. For now everything new uses the generic DEFAULT_STYLE.
-      addDrawing({ id, type: tool, points, style: { ...DEFAULT_STYLE } });
+      // Per-tool default style. Tools that haven't shipped a default yet
+      // fall through to DEFAULT_STYLE.
+      const baseStyle = tool === 'horizontal_line' ? HLINE_DEFAULT_STYLE : DEFAULT_STYLE;
+      addDrawing({ id, type: tool, points, style: { ...baseStyle } });
       resetPending();
       // TradingView default: tool always exits after one placement and the
       // chart returns to normal pan/zoom mode.
