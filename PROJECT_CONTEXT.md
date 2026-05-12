@@ -86,6 +86,10 @@ Auto-popup on trade close. Auto-fills: symbol, direction, entry/exit, size, SL/T
   Research / planning notes will live in **`docs/DRAWING_LIBRARY_RESEARCH.md`** (user is adding).
 
   **While waiting for approval:** pivot to OTHER features — Lovable landing page deploy, news (Forex Factory), trade card, Firebase, ToS / Privacy, logo, etc. No drawing-related work until the library is in hand.
+- **Onboarding rebuild — IN PROGRESS (2026-05-12).** Replacing the current `AccountSetup` / `Login` / `FeatureTour` flow with a 12-screen sequence informed by retention research. Source of truth: **`docs/ONBOARDING_RETENTION_RESEARCH.md`** (user is adding). Building one screen at a time, smoke-testing each before moving on.
+  - **Screen 1 (Logo splash) — shipped.** `src/screens/OnboardingSplashScreen.tsx`. 1.5 s branded splash with a 300 ms logo fade-in; auto-advances to screen 2; not skippable (per research D1).
+  - **Screen 2 (Premise) — placeholder.** `src/screens/OnboardingPremiseScreen.tsx`. Real content lands in the next prompt.
+  - **Dev flag:** `FORCE_ONBOARDING_FLOW` at the top of `App.tsx` (currently `true`). When true, the app skips the loading splash / disclaimer / auth gates entirely and boots straight into the onboarding stack. Flip to `false` before shipping. Original `AccountSetup` / `Login` / `FeatureTour` / disclaimer wiring is untouched.
 - **Firebase setup** — bundle ID `com.pockettrade.app` (iOS + Android), Expo managed workflow, pure-JS firebase v12.12.1 (NOT @react-native-firebase). Six EXPO_PUBLIC_FIREBASE_* env vars in `.env` still empty awaiting console values. Walkthrough being conducted in Claude Remote with screenshots.
 
 ### ABANDONED

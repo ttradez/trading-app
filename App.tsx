@@ -22,6 +22,8 @@ import LeaderboardScreen  from './src/screens/LeaderboardScreen';
 import JournalScreen      from './src/screens/JournalScreen';
 import ChallengesScreen   from './src/screens/ChallengesScreen';
 import DisclaimerScreen   from './src/screens/DisclaimerScreen';
+import OnboardingSplashScreen  from './src/screens/OnboardingSplashScreen';
+import OnboardingPremiseScreen from './src/screens/OnboardingPremiseScreen';
 
 // ── DEV FLAG ─────────────────────────────────────────────────────────────────
 // Set TRUE while iterating on onboarding (welcome / sign-up / feature-tour).
@@ -147,6 +149,26 @@ export default function App() {
     await AsyncStorage.setItem(DISCLAIMER_KEY, '1');
     setDisclaimerAccepted(true);
   };
+
+  // FORCE_ONBOARDING_FLOW short-circuit: boot straight into the new
+  // onboarding stack (splash → premise → …). Skips the loading splash,
+  // disclaimer gate, and auth-state gate so reload-Expo lands us on
+  // OnboardingSplashScreen immediately. Existing screens are untouched.
+  if (FORCE_ONBOARDING_FLOW) {
+    return (
+      <SafeAreaProvider>
+        <NavigationContainer>
+          <Stack.Navigator
+            initialRouteName="OnboardingSplash"
+            screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0A0E1A' } }}
+          >
+            <Stack.Screen name="OnboardingSplash"  component={OnboardingSplashScreen} />
+            <Stack.Screen name="OnboardingPremise" component={OnboardingPremiseScreen} />
+          </Stack.Navigator>
+        </NavigationContainer>
+      </SafeAreaProvider>
+    );
+  }
 
   if (!isReady || disclaimerAccepted === null) {
     return <SafeAreaProvider><LoadingSplash /></SafeAreaProvider>;

@@ -5,6 +5,49 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-12 — Onboarding screen 1: logo splash + FORCE_ONBOARDING_FLOW boot-into-onboarding
+
+Kicking off the 12-screen onboarding rebuild. Source of truth for design
+decisions: `docs/ONBOARDING_RETENTION_RESEARCH.md` (user is dropping the
+file in next).
+
+### What shipped
+- **`src/screens/OnboardingSplashScreen.tsx`** — full-screen `#0A0E1A`
+  background, centered `assets/logo.png` (240×240, contain), 300 ms
+  fade-in via `Animated.Value`, auto-advances to `OnboardingPremise`
+  after 1500 ms total. No skip button (per research D1).
+- **`src/screens/OnboardingPremiseScreen.tsx`** — placeholder "Screen 2
+  placeholder" with the same dark `#0A0E1A` background. Real content in
+  the next prompt.
+- **`App.tsx`** — extended the existing `FORCE_ONBOARDING_FLOW` dev flag
+  (added in `9c4116f`). When true, the App component now short-circuits
+  BEFORE the loading-splash / disclaimer / auth gates and returns an
+  onboarding-only stack with `initialRouteName: 'OnboardingSplash'`.
+  Reload Expo Go → splash → 1.5 s → premise placeholder. With the flag
+  false, the existing flow (loading splash + disclaimer + auth gates +
+  `AccountSetup` / `Login` / `FeatureTour` / `MainTabs`) is unchanged.
+
+### Flag location
+[`App.tsx`](App.tsx) line 31:
+```ts
+const FORCE_ONBOARDING_FLOW = true;
+```
+
+### Out of scope (deliberate)
+- Screen 2 content (placeholder only)
+- Other onboarding screens (next prompts)
+- Real logo asset creation (using existing `assets/logo.png`)
+- Sound / complex animations / analytics events
+
+### Files touched
+- `src/screens/OnboardingSplashScreen.tsx` (new)
+- `src/screens/OnboardingPremiseScreen.tsx` (new)
+- `App.tsx` (FORCE_ONBOARDING_FLOW short-circuit + 2 imports)
+- `PROJECT_CONTEXT.md`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-12 — Add FORCE_ONBOARDING_FLOW dev flag to bypass auto-login
 
 Onboarding work needs the welcome / sign-up / feature-tour screens
