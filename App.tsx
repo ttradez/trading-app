@@ -4,7 +4,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -22,6 +22,14 @@ import LeaderboardScreen  from './src/screens/LeaderboardScreen';
 import JournalScreen      from './src/screens/JournalScreen';
 import ChallengesScreen   from './src/screens/ChallengesScreen';
 import DisclaimerScreen   from './src/screens/DisclaimerScreen';
+
+// ── DEV FLAG ─────────────────────────────────────────────────────────────────
+// Set TRUE while iterating on onboarding (welcome / sign-up / feature-tour).
+// When true, any persisted Firebase auth session is signed out on mount so the
+// app always boots into the onboarding flow instead of auto-routing to home.
+// Flip back to FALSE before shipping so returning users skip onboarding.
+const FORCE_ONBOARDING_FLOW = true;
+// ─────────────────────────────────────────────────────────────────────────────
 
 const Stack = createNativeStackNavigator();
 const Tab   = createBottomTabNavigator();
@@ -101,6 +109,16 @@ export default function App() {
 
     const unsub = onAuthStateChanged(auth, (user) => {
       clearTimeout(aTimeout);
+
+      // FORCE_ONBOARDING_FLOW: if Firebase emitted a persisted user, sign
+      // them out so the next emission lands in the !user branch below and
+      // the app boots into the onboarding stack. Bypass only — auto-login
+      // wiring is otherwise untouched.
+      if (FORCE_ONBOARDING_FLOW && user) {
+        signOut(auth).catch(() => {});
+        return;
+      }
+
       if (!user) {
         setAuthed(false);
         setReady();

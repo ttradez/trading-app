@@ -5,6 +5,36 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-12 — Add FORCE_ONBOARDING_FLOW dev flag to bypass auto-login
+
+Onboarding work needs the welcome / sign-up / feature-tour screens
+visible, but Firebase's AsyncStorage persistence (configured in
+`src/services/firebase.ts` via `getReactNativePersistence`) auto-signs
+returning users back in on app launch, routing them straight to
+`MainTabs`.
+
+### Implementation
+Single boolean at the top of [App.tsx](App.tsx) — `FORCE_ONBOARDING_FLOW`,
+defaulting to `true`. Inside the existing `onAuthStateChanged` listener,
+when the flag is true and Firebase emits a persisted user, we call
+`signOut(auth)` and return early — the second emission fires with
+`user=null`, falls into the existing `!user` branch, and the app boots
+into the onboarding stack (`AccountSetup` / `Login` / `FeatureTour`).
+
+No deletion / refactor of the auto-login path. With the flag set
+`false`, the listener runs exactly as before.
+
+### Files touched
+- `App.tsx` — flag constant (lines 31–37 area) + signOut import + 6-line
+  interception inside the auth listener.
+- `WORK_LOG.md`
+
+### Flip when shipping
+Toggle `FORCE_ONBOARDING_FLOW = false` in `App.tsx` to restore normal
+auto-login behavior for returning users.
+
+---
+
 ## 2026-05-12 — TradingView Advanced Charts application SUBMITTED
 
 Application went in today. Now in TradingView's 3–10 business day
