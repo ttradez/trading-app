@@ -5,6 +5,55 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-12 — Onboarding screen 2: The Premise
+
+Per `docs/ONBOARDING_RETENTION_RESEARCH.md` §D2 (fear-naming / trust-
+building) — be honest about how hard trading is. Competitors won't say
+this; we do.
+
+### What shipped
+- **`src/screens/OnboardingPremiseScreen.tsx`** — was the "Screen 2
+  placeholder"; now the real screen:
+  - Pure black `#000000` bg (brand-locked).
+  - Headline (bold 34px, line-height 41, letter-spacing -0.5):
+    *"95% of new traders blow their account in their first year."*
+  - Body (regular 19px, line-height 27, white at 0.85 opacity for
+    hierarchy beneath the bold headline):
+    *"You're not weak for being nervous. You're smart."*
+    *"Pocket Trade is where you fail 1,000 times — without losing a dollar."*
+  - Text block vertically centered with 32 px horizontal padding.
+  - 400 ms fade-in via `Animated.Value` on mount. No other motion.
+  - Single gold CTA pinned to the bottom (24 px gutters, 56 px tall,
+    12 px radius, `#FFB800` bg, `#000000` bold 17px text, "I'm in").
+  - Safe-area-aware bottom padding via `useSafeAreaInsets()`.
+  - `Haptics.impactAsync(Light)` on press (expo-haptics already in deps).
+  - `accessibilityRole="button"` + `accessibilityLabel="I'm in"`.
+- **`src/screens/OnboardingArchetypeScreen.tsx`** (new) — placeholder
+  "Screen 3 placeholder" on pure black, white bold. Lands here on tap
+  of "I'm in".
+- **`App.tsx`** — added `OnboardingArchetype` to the imports and the
+  `FORCE_ONBOARDING_FLOW` stack. Set `gestureEnabled: false` on both
+  `OnboardingPremise` and `OnboardingArchetype` so iOS edge-swipe can't
+  retreat through the funnel (the user's first real choice is "I'm in"
+  — they don't get to undo it via gesture).
+
+### Out of scope (deliberate)
+- Screen 3 logic beyond the placeholder.
+- Skip button (this screen is mandatory).
+- Localization, analytics events.
+
+### Verified
+- Type-check clean.
+- Flow wired: splash → premise → archetype-placeholder.
+
+### Files touched
+- `src/screens/OnboardingPremiseScreen.tsx` (rewritten)
+- `src/screens/OnboardingArchetypeScreen.tsx` (new)
+- `App.tsx`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-12 — Brand standard: pure black backgrounds + white bold text + clean sans-serif
 
 User feedback after screen-1 smoke test: app backgrounds are **pure
