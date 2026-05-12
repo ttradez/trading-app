@@ -5,6 +5,59 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-12 — Pause custom drawing work — switching to TradingView Charting Library
+
+**Decision:** retire the custom SVG drawing system. User has applied for
+the **TradingView Charting Library** (3-10 business days for approval)
+and will use its built-in drawing tools instead.
+
+### Why
+The custom system kept failing on the surface area we needed:
+- Tap-anywhere placement broken (could only place on candles)
+- Drawings couldn't be tapped + dragged
+- No double-tap → settings panel
+- The full rebuild from spec (`docs/TRADINGVIEW_REFERENCE.md`) was on
+  course but each step introduced new regressions. Cumulative ROI of
+  keeping the homegrown system below the cost of swapping to a vetted
+  library purpose-built for this.
+
+### Snapshots
+- **`pre-charting-library-switch`** — current state, immediately before
+  the switch. Recover with `git checkout pre-charting-library-switch`.
+- **`drawings-before-reset`** — pre-reset implementations (trendline +
+  horizontal_line TradingView-parity v1 etc.).
+- **`feature/klinechart-spike`** branch — earlier attempted swap to
+  KLineChart Pro, parked.
+
+DO NOT delete any of those — they may inform the new-library migration.
+
+### What's preserved in code
+The custom drawing files stay on disk (no deletion yet) until the new
+library is in hand and we can verify the migration plan. Specifically:
+- `src/types/drawings.ts`
+- `src/store/drawingsStore.ts`
+- `src/components/chart/TradingChart.tsx` (the SVG-overlay + touch
+  dispatcher portions)
+- `src/components/chart/DrawingFavoritesBar.tsx`
+- `src/components/chart/DrawingSettingsModal.tsx`
+- `src/components/chart/DrawingToolbar.tsx`
+- `src/components/chart/MagnetToggle.tsx`
+- `docs/TRADINGVIEW_REFERENCE.md`
+- `docs/MOBILE_DRAG_RESEARCH.md`
+- `docs/BLOCK_17_DRAWING_TOOLS_SPEC.md`
+- `docs/DRAWING_TOOLS_AUDIT.md`
+
+### While waiting for approval
+Pivoting to: news data source, trade card polish, Firebase walkthrough,
+ToS / Privacy markdown, logo placeholder, beta test plan. No
+drawing-related work.
+
+### Files touched (this commit)
+- `PROJECT_CONTEXT.md`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-11 — Step 1.5 follow-ups: revert z-order + remove banner
 
 User reported "can't place a drawing now" and "banner comes off the top
