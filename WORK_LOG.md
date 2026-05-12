@@ -5,6 +5,70 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-12 — Quiz V2: 6 questions, 4 options each, quasi-ipsative scoring with adjacency
+
+V1 had two problems: (1) on-the-nose questions self-aware traders
+could game, (2) binary scoring biased the result to Scalper /
+Position — Day Trader and Swing Trader almost never won. V2 swaps in
+indirect scenario questions and a uniform adjacency-weighted score
+matrix so middle archetypes can win. Full rationale:
+`docs/QUIZ_V2_RESEARCH.md`.
+
+### What changed
+
+**`src/store/onboardingStore.ts`**
+- `ArchetypeAnswer`: `'A' | 'B'` → **`'A' | 'B' | 'C' | 'D'`**.
+- Everything else unchanged (still in-memory only; no Firebase).
+
+**`src/screens/OnboardingArchetypeScreen.tsx`** (rewritten)
+- **6 questions**, 4 options each. All copy verbatim from the prompt.
+- `OPTION_SCORES` is **uniform across every question** — option order
+  is locked A→Scalper, D→Position, with B/C awarding adjacency points:
+    - **A:** Scalper +2, Day Trader +1
+    - **B:** Scalper +1, Day Trader +2, Swing Trader +1
+    - **C:** Day Trader +1, Swing Trader +2, Position Trader +1
+    - **D:** Swing Trader +1, Position Trader +2
+- **Tie-break** (`computeArchetype`):
+    1. If the user's Q1 answer scored exactly one of the tied
+       archetypes, that one wins.
+    2. Else fall to long-horizon priority
+       `['position_trader', 'swing_trader', 'day_trader', 'scalper']`
+       — first match in the tied set wins.
+- **Progress dots** are now 6 segments (was 4); `QUESTION X OF 6`.
+- **Answer cards** shrunk to fit 4 stacked: `minHeight: 76`,
+  `paddingVertical: 12`, font 16/22, gaps 10 px. `minHeight` (vs fixed
+  height) lets longer option text wrap to 2-3 lines without cropping.
+  Same dark surface / 1 px subtle border / gold-on-tap highlight as V1.
+- **Reveal label**: `YOU ARE A` → **`YOUR CLOSEST MATCH`**.
+- **Personality copy refined** (Scalper / Day / Swing / Position) per
+  spec, verbatim.
+
+### Scoring verified mentally
+- All-B → Day Trader wins (scalper 6, day 12, swing 6). ✓
+- All-A → Scalper. All-C → Swing. All-D → Position.
+- 3A+3D → tied scalper/position; Q1=A scored scalper → Scalper wins.
+- 3B+3C → tied day/swing; Q1=B scored both → fallback long-horizon
+  → Swing wins.
+
+### Out of scope (deliberate)
+- Screens 1, 2, 4 untouched (no flow regression).
+- No new dependencies.
+- No "retake quiz" — forward-only.
+- Visual chart preview question (Q5 from research's 18-candidate
+  pool) deferred.
+
+### Files touched
+- `src/store/onboardingStore.ts` (answer-type widening)
+- `src/screens/OnboardingArchetypeScreen.tsx` (rewritten)
+- `WORK_LOG.md`
+
+### Flow wired
+Splash → Premise → tap "I'm in" → Q1/6 → tap → fade → Q2 … Q6 →
+reveal ("YOUR CLOSEST MATCH" + archetype + new copy) → Continue →
+"Screen 4 placeholder".
+
+---
+
 ## 2026-05-12 — Onboarding screen 3: Trader Archetype Quiz with 4 questions and reveal
 
 First interactive screen of the rebuild. 4 binary questions → reveal

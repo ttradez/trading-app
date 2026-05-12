@@ -13,7 +13,7 @@ export type Archetype =
   | 'swing_trader'
   | 'position_trader';
 
-export type ArchetypeAnswer = 'A' | 'B';
+export type ArchetypeAnswer = 'A' | 'B' | 'C' | 'D';
 
 interface OnboardingState {
   /** Result of the archetype quiz (screen 3). null until set. */

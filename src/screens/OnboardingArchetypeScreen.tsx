@@ -7,17 +7,26 @@ import * as Haptics from 'expo-haptics';
 import { useOnboardingStore, Archetype, ArchetypeAnswer } from '../store/onboardingStore';
 
 /**
- * Onboarding screen 3 — Trader Archetype Quiz.
+ * Onboarding screen 3 — Trader Archetype Quiz V2.
  *
- * Single screen, internal state. 4 binary questions advance through
- * a fade transition, then a reveal screen names the user's archetype
- * and gives a 2-sentence personality description.
+ * Single screen, internal state. 6 binary-ish questions, each with 4
+ * answer options (one per archetype), advance through a fade
+ * transition; then a reveal screen names the user's closest match.
  *
- * Scoring: each question's A/B answer awards 1-2 points across the
- * four archetypes. After Q4 we sum the totals and pick the highest;
- * ties resolve via TIE_PRIORITY (most generally-applicable wins).
- *
- * Per docs/ONBOARDING_RETENTION_RESEARCH.md (locked flow + Q6 #2).
+ * V2 changes from V1 (see docs/QUIZ_V2_RESEARCH.md):
+ *  - 6 questions instead of 4.
+ *  - 4 options per question (was 2). Question copy is indirect /
+ *    scenario-based; option order is the same A→Scalper, D→Position
+ *    every question so we can apply a UNIFORM score matrix.
+ *  - Quasi-ipsative scoring with adjacency weighting (B awards
+ *    Scalper+1/Day+2/Swing+1; C awards Day+1/Swing+2/Position+1).
+ *    Day/Swing can actually win now — V1's binary scoring biased the
+ *    result to Scalper/Position.
+ *  - New tie-break: archetype scored by Q1's answer wins; if still
+ *    tied, longer-horizon archetype wins (Position > Swing > Day >
+ *    Scalper).
+ *  - Reveal label: "YOUR CLOSEST MATCH" (was "YOU ARE A").
+ *  - Refined personality copy.
  */
 
 const BG          = '#000000';
@@ -27,48 +36,84 @@ const CARD_BORDER = '#1F1F1F';
 
 // ── Quiz content ────────────────────────────────────────────────────────────
 
-type Scores = Partial<Record<Archetype, number>>;
-
 interface Question {
   headline: string;
-  a: { label: string; scores: Scores };
-  b: { label: string; scores: Scores };
+  options: [string, string, string, string]; // A, B, C, D
 }
 
 const QUESTIONS: Question[] = [
   {
-    headline: 'How long would you hold a winning trade?',
-    a: { label: 'Minutes',        scores: { scalper: 2, day_trader: 1 } },
-    b: { label: 'Days or weeks',  scores: { swing_trader: 1, position_trader: 2 } },
+    headline: "You're up 0.5R on a trade and the move is still going strong. What do you do?",
+    options: [
+      "Take it now — you don't argue with a winner in front of you.",
+      'Scale half off, let the rest run.',
+      'Let it run with a trailing stop, the move just started.',
+      'Stick to the original plan. I sized it for the full target.',
+    ],
   },
   {
-    headline: 'How many trades a day feels right?',
-    a: { label: 'Ten or more',    scores: { scalper: 2, day_trader: 1 } },
-    b: { label: 'One or two',     scores: { swing_trader: 1, position_trader: 2 } },
+    headline: "A trade you took two days ago is finally moving. You're not at your screen. What's the right call?",
+    options: [
+      "I shouldn't have a 2-day-old trade open in the first place.",
+      "Phone alert — I'll check at lunch and decide then.",
+      'Let the plan run. I set this up not to need babysitting.',
+      "Honestly? I'd already forgotten about it. That's normal for me.",
+    ],
   },
   {
-    headline: 'What do you trust more?',
-    a: { label: 'Just the chart',                  scores: { scalper: 1, day_trader: 2 } },
-    b: { label: 'Charts plus the news cycle',      scores: { swing_trader: 2, position_trader: 1 } },
+    headline: "Pick the show you'd binge first.",
+    options: [
+      'A 22-minute sitcom — fast, light, done.',
+      'A 1-hour procedural — case opens and closes in one episode.',
+      'An 8-episode prestige drama — full arc, satisfying.',
+      "A 5-season slow-burn epic — I'm in for the long haul.",
+    ],
   },
   {
-    headline: "What's your edge?",
-    a: { label: 'Speed and pattern recognition',  scores: { scalper: 2, day_trader: 1 } },
-    b: { label: 'Patience and conviction',         scores: { swing_trader: 1, position_trader: 2 } },
+    headline: 'Which compliment would mean more to you?',
+    options: ['Fast.', 'Sharp.', 'Patient.', 'Right.'],
+  },
+  {
+    headline: 'What time do you want to be done thinking about the market each day?',
+    options: [
+      'In and out within the first 90 minutes after open.',
+      "Done by dinner — I'll be at it open to close.",
+      'Check at lunch, again at the close, done.',
+      "I don't want to think about it during the day at all — set it and forget.",
+    ],
+  },
+  {
+    headline: 'How often do you want to make a trading decision?',
+    options: [
+      'Every few minutes — I want to be in the action.',
+      'A few times a day — pick my spots.',
+      'A few times a week — wait for the right setup.',
+      'A few times a month — high-conviction only.',
+    ],
   },
 ];
 
-// Tie-breaker: most generally-applicable archetype wins (locked).
-const TIE_PRIORITY: Archetype[] = ['day_trader', 'swing_trader', 'scalper', 'position_trader'];
+// Uniform scoring — applies to every question. Quasi-ipsative with
+// adjacency weighting: middle options award points to neighbors too,
+// so Day Trader and Swing Trader can actually win.
+const OPTION_SCORES: Record<ArchetypeAnswer, Partial<Record<Archetype, number>>> = {
+  A: { scalper: 2, day_trader: 1 },
+  B: { scalper: 1, day_trader: 2, swing_trader: 1 },
+  C: { day_trader: 1, swing_trader: 2, position_trader: 1 },
+  D: { swing_trader: 1, position_trader: 2 },
+};
+
+// Tiebreaker #2 — longer-horizon archetype wins (locked).
+const LONG_HORIZON: Archetype[] = ['position_trader', 'swing_trader', 'day_trader', 'scalper'];
 
 const ARCHETYPE_INFO: Record<Archetype, { name: string; description: string }> = {
   scalper: {
     name: 'Scalper',
-    description: 'You live in the moment. Quick decisions, tight risk, dozens of trades a day. Your edge is speed.',
+    description: 'You live in the moment. Quick decisions, tight risk, dozens of trades a day. Your edge is speed and pattern reflexes.',
   },
   day_trader: {
     name: 'Day Trader',
-    description: 'You read price action and act decisively. In and out within hours. Your edge is pattern recognition.',
+    description: 'You read price action and act decisively. In and out within hours. Your edge is reading the tape.',
   },
   swing_trader: {
     name: 'Swing Trader',
@@ -76,7 +121,7 @@ const ARCHETYPE_INFO: Record<Archetype, { name: string; description: string }> =
   },
   position_trader: {
     name: 'Position Trader',
-    description: 'You see the big picture. Hold positions for weeks or months. Your edge is conviction.',
+    description: 'You see the big picture and hold for weeks or months. Your edge is conviction and zoom-out perspective.',
   },
 };
 
@@ -84,21 +129,29 @@ function computeArchetype(answers: ArchetypeAnswer[]): Archetype {
   const totals: Record<Archetype, number> = {
     scalper: 0, day_trader: 0, swing_trader: 0, position_trader: 0,
   };
-  answers.forEach((ans, idx) => {
-    const opt = ans === 'A' ? QUESTIONS[idx].a : QUESTIONS[idx].b;
-    (Object.keys(opt.scores) as Archetype[]).forEach((k) => {
-      totals[k] += opt.scores[k] ?? 0;
+  answers.forEach((ans) => {
+    const pts = OPTION_SCORES[ans];
+    (Object.keys(pts) as Archetype[]).forEach((k) => {
+      totals[k] += pts[k] ?? 0;
     });
   });
-  let winner: Archetype = TIE_PRIORITY[0];
-  let winnerScore = totals[winner];
-  for (const a of TIE_PRIORITY) {
-    if (totals[a] > winnerScore) {
-      winner = a;
-      winnerScore = totals[a];
-    }
+
+  const max = Math.max(...Object.values(totals));
+  const tied = (Object.keys(totals) as Archetype[]).filter((k) => totals[k] === max);
+  if (tied.length === 1) return tied[0];
+
+  // Tiebreaker 1: archetypes that Q1's answer scored. If exactly one
+  // tied archetype is among them, it wins.
+  const q1Pts = OPTION_SCORES[answers[0]];
+  const q1Archetypes = Object.keys(q1Pts) as Archetype[];
+  const q1AndTied = tied.filter((a) => q1Archetypes.includes(a));
+  if (q1AndTied.length === 1) return q1AndTied[0];
+
+  // Tiebreaker 2: longer-horizon wins.
+  for (const a of LONG_HORIZON) {
+    if (tied.includes(a)) return a;
   }
-  return winner;
+  return tied[0]; // unreachable; satisfies the type-checker
 }
 
 // ── Subcomponents ───────────────────────────────────────────────────────────
@@ -145,17 +198,18 @@ interface Props {
 }
 
 const REVEAL_STEP = QUESTIONS.length; // step value when we're on the reveal view
+const OPTIONS: ArchetypeAnswer[] = ['A', 'B', 'C', 'D'];
 
 export default function OnboardingArchetypeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const setArchetype = useOnboardingStore((s) => s.setArchetype);
 
-  const [step, setStep]                 = useState(0);  // 0..3 = questions, 4 = reveal
+  const [step, setStep]                 = useState(0);  // 0..5 = questions, 6 = reveal
   const [answers, setAnswers]           = useState<ArchetypeAnswer[]>([]);
-  const [selected, setSelected]         = useState<'A' | 'B' | null>(null);
+  const [selected, setSelected]         = useState<ArchetypeAnswer | null>(null);
   const [archetype, setLocalArchetype]  = useState<Archetype | null>(null);
 
-  const opacity     = useRef(new Animated.Value(1)).current;
+  const opacity       = useRef(new Animated.Value(1)).current;
   const transitioning = useRef(false);
 
   const handleAnswer = (choice: ArchetypeAnswer) => {
@@ -205,9 +259,9 @@ export default function OnboardingArchetypeScreen({ navigation }: Props) {
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={BG} />
 
-      {/* Top: progress dots + counter — only shown during questions. */}
+      {/* Top: progress dots + counter — questions only. */}
       {!isReveal && (
-        <View style={[styles.top, { paddingTop: insets.top + 24 }]}>
+        <View style={[styles.top, { paddingTop: insets.top + 20 }]}>
           <ProgressDots step={step} total={QUESTIONS.length} />
           <Text style={styles.questionCounter}>
             QUESTION {step + 1} OF {QUESTIONS.length}
@@ -220,26 +274,23 @@ export default function OnboardingArchetypeScreen({ navigation }: Props) {
         {!isReveal && q && (
           <>
             <Text style={styles.questionHeadline}>{q.headline}</Text>
-            <View style={{ height: 32 }} />
-            <AnswerCard
-              label={q.a.label}
-              onPress={() => handleAnswer('A')}
-              highlighted={selected === 'A'}
-              disabled={selected !== null}
-            />
-            <View style={{ height: 16 }} />
-            <AnswerCard
-              label={q.b.label}
-              onPress={() => handleAnswer('B')}
-              highlighted={selected === 'B'}
-              disabled={selected !== null}
-            />
+            <View style={{ height: 20 }} />
+            {OPTIONS.map((opt, idx) => (
+              <View key={opt} style={idx > 0 ? { marginTop: 10 } : null}>
+                <AnswerCard
+                  label={q.options[idx]}
+                  onPress={() => handleAnswer(opt)}
+                  highlighted={selected === opt}
+                  disabled={selected !== null}
+                />
+              </View>
+            ))}
           </>
         )}
 
         {isReveal && info && (
           <View style={styles.revealBlock}>
-            <Text style={styles.revealLabel}>YOU ARE A</Text>
+            <Text style={styles.revealLabel}>YOUR CLOSEST MATCH</Text>
             <Text style={styles.revealName} allowFontScaling={false}>{info.name}</Text>
             <Text style={styles.revealDescription}>{info.description}</Text>
           </View>
@@ -275,19 +326,19 @@ const styles = StyleSheet.create({
   },
   progressRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
   },
   progressDot: {
-    width: 24,
+    width: 22,
     height: 4,
     borderRadius: 2,
   },
   progressDotFilled:   { backgroundColor: GOLD },
   progressDotUnfilled: { backgroundColor: 'rgba(255,255,255,0.3)' },
   questionCounter: {
-    marginTop: 16,
+    marginTop: 12,
     color: 'rgba(255,255,255,0.6)',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     letterSpacing: 1.5,
   },
@@ -295,30 +346,33 @@ const styles = StyleSheet.create({
   // Content area — vertically centered for both questions and reveal.
   content: {
     flex: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     justifyContent: 'center',
   },
 
   // Question view
   questionHeadline: {
     color: '#FFFFFF',
-    fontSize: 30,
+    fontSize: 22,
     fontWeight: '700',
-    lineHeight: 38,
-    letterSpacing: -0.4,
+    lineHeight: 29,
+    letterSpacing: -0.3,
     textAlign: 'center',
-    paddingHorizontal: 8, // breathing room beyond the 24px outer
+    paddingHorizontal: 8,
   },
 
+  // V2: smaller cards (4 stacked instead of 2). minHeight lets longer
+  // option text wrap to 2-3 lines without cropping.
   card: {
     backgroundColor: CARD_BG,
     borderColor: CARD_BORDER,
     borderWidth: 1,
     borderRadius: 16,
-    height: 120,
+    minHeight: 76,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
   cardActive: {
     borderColor: GOLD,
@@ -326,10 +380,10 @@ const styles = StyleSheet.create({
   },
   cardText: {
     color: '#FFFFFF',
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: '700',
     textAlign: 'center',
-    lineHeight: 26,
+    lineHeight: 22,
   },
 
   // Reveal view
@@ -357,12 +411,12 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '700',
-    lineHeight: 27,        // ~1.5×
+    lineHeight: 27,
     textAlign: 'center',
     maxWidth: '85%',
   },
 
-  // CTA (matches screen 2's "I'm in" button)
+  // CTA — matches screen 2's "I'm in" button.
   ctaWrap: {
     paddingHorizontal: 24,
     paddingTop: 16,
