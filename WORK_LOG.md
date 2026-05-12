@@ -5,6 +5,87 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-12 — Onboarding screen 3: Trader Archetype Quiz with 4 questions and reveal
+
+First interactive screen of the rebuild. 4 binary questions → reveal
+one of Scalper / Day Trader / Swing Trader / Position Trader. Result
+captured in the new onboarding store and used later (default chart
+timeframe + replay date range curation). Per
+`docs/ONBOARDING_RETENTION_RESEARCH.md` (locked flow + Q6 idea #2).
+
+### What shipped
+
+**`src/store/onboardingStore.ts`** (new)
+- Zustand store matching the existing `src/store/*` convention.
+- Fields: `archetype: Archetype | null`, `archetypeAnswers: ('A'|'B')[]`.
+- Actions: `setArchetype(archetype, answers)`, `reset()`.
+- **In-memory only.** Survives screen transitions; not persisted to
+  AsyncStorage / Firebase per the deferred-auth strategy — we migrate
+  everything captured during onboarding when the user signs up at
+  screen 11.
+
+**`src/screens/OnboardingArchetypeScreen.tsx`** (rewritten — was placeholder)
+- Single screen, internal `step` state advances through 4 question
+  views + a reveal view. No separate routes.
+- **Top band** (questions only): 4 progress dots (gold filled for
+  `i <= step`, white 30% for unfilled) + `QUESTION X OF 4` counter
+  (white 60%, 13 px, 1.5 letter-spacing).
+- **Question view**: headline (white bold 30 px), two answer cards
+  stacked. Cards: 120 px tall, `#0F0F0F` bg, 1 px `#1F1F1F` border,
+  16 px radius; white bold 20 px label centered. On tap → card border
+  briefly becomes gold (2 px), 180 ms fade-out, state advances,
+  220 ms fade-in. `transitioning` ref guards against double-taps.
+  Light haptic on each tap.
+- **Reveal view** (after Q4): `YOU ARE A` label (white 60%, 14 px,
+  letter-spacing 2) + huge gold (`#FFB800`) archetype name (52 px) +
+  personality description (white bold 18 px, line-height 27, max 85%
+  width). Bottom: full-width gold "Continue" CTA matching screen 2's
+  "I'm in" style.
+
+### Scoring + tie-break
+- Each question's A/B answer awards 1-2 points across the four
+  archetypes (spec exact values).
+- After Q4: sum totals; pick the highest.
+- Ties resolved by `TIE_PRIORITY: ['day_trader', 'swing_trader', 'scalper', 'position_trader']`
+  — Day Trader > Swing > Scalper > Position (most generally-applicable
+  wins). The function iterates this list and only overwrites the
+  winner on strictly-greater score, so earlier entries win ties.
+
+### Personality copy
+Per spec, verbatim:
+- **Scalper:** "You live in the moment. Quick decisions, tight risk, dozens of trades a day. Your edge is speed."
+- **Day Trader:** "You read price action and act decisively. In and out within hours. Your edge is pattern recognition."
+- **Swing Trader:** "You wait for the right setup, then ride it for days. Patience is your weapon. Your edge is timing."
+- **Position Trader:** "You see the big picture. Hold positions for weeks or months. Your edge is conviction."
+
+### Other touches
+- `src/screens/OnboardingIdentityScreen.tsx` (new) — placeholder
+  "Screen 4 placeholder", pure black bg, white bold text. Lands here
+  on tap of Continue.
+- `App.tsx` — `OnboardingIdentity` imported + added to the
+  `FORCE_ONBOARDING_FLOW` stack with `gestureEnabled: false` (matching
+  Premise + Archetype — no backwards swipe through the funnel).
+
+### Out of scope (deliberate)
+- Real swipe gestures on the answer cards (buttons only for v1).
+- Firebase persistence (in-memory store only).
+- A "back / retake the quiz" affordance (forward-only for v1).
+- Audio / particle effects on the reveal.
+- Screen 4 beyond the placeholder.
+
+### Files touched
+- `src/store/onboardingStore.ts` (new)
+- `src/screens/OnboardingArchetypeScreen.tsx` (rewritten)
+- `src/screens/OnboardingIdentityScreen.tsx` (new)
+- `App.tsx`
+- `WORK_LOG.md`
+
+### Flow wired end-to-end
+Splash → Premise (with tick-up + bearish row) → tap "I'm in" → Q1 →
+Q2 → Q3 → Q4 → archetype reveal → tap Continue → "Screen 4 placeholder".
+
+---
+
 ## 2026-05-12 — Onboarding screen 2: center content + replace lone candle with bearish row
 
 Two tweaks per user feedback after the visual-upgrade smoke test.
