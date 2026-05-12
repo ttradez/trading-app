@@ -5,6 +5,38 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-12 — TradingView Advanced Charts application SUBMITTED
+
+Application went in today. Now in TradingView's 3–10 business day
+review queue.
+
+### Submission details (for reference if TradingView reaches out)
+- Product: **TradingView Advanced Charts** (private GitHub repo access)
+- Signatory: **Zachary James Titus**
+- Contact email: **ben@sitesbyben.ca**
+- Website URL submitted: **https://pockettrade.sitesbyben.ca**
+
+### Critical follow-up
+The submitted URL must actually load when TradingView reviews —
+**user is building the landing page on Lovable now** and will deploy
+to the `pockettrade.sitesbyben.ca` subdomain. If TradingView hits a
+404 / parked page when they review, the application may be rejected.
+
+### Status flip in PROJECT_CONTEXT.md
+"application pending submission" → "application SUBMITTED — awaiting
+3–10 business day approval response."
+
+### While waiting
+Next task picks from: deploy Lovable site, start News button
+(Forex Factory), or another non-drawings feature. Drawing-related work
+stays paused.
+
+### Files touched
+- `PROJECT_CONTEXT.md`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-12 — Pause custom drawing work — switching to TradingView Charting Library
 
 **Decision:** retire the custom SVG drawing system. User has applied for

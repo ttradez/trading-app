@@ -73,13 +73,19 @@ Auto-popup on trade close. Auto-fills: symbol, direction, entry/exit, size, SL/T
 - fetch_kaggle_intraday.py wired correctly: KAGGLE_MAP only has clean_SPY.csv→ES, clean_QQQ.csv→NQ; resamples to 5m/15m/30m/1h/4h.
 
 ### IN FLIGHT
-- **Drawing tools: DEPRECATED — switching to TradingView Charting Library (2026-05-12).** The custom SVG drawing system in `src/components/chart/TradingChart.tsx` + `src/store/drawingsStore.ts` + `src/components/chart/Drawing*.tsx` is being retired. User has applied for the **TradingView Charting Library** (private repo access, 3-10 business days to approval) and will use its built-in drawing tools instead of the homegrown SVG overlay. The custom system kept failing on the surface area we needed (tap-anywhere placement, body drag, double-tap-to-configure) — see the smoke-test issues logged 2026-05-12.
+- **Drawing tools: DEPRECATED — TradingView Advanced Charts application SUBMITTED 2026-05-12.** The custom SVG drawing system is retired in favor of TradingView's library. **Awaiting 3–10 business day approval response.**
 
-  Last working snapshot of the custom system is at the local git tag **`pre-charting-library-switch`**. Backup of the pre-reset implementations remains at **`drawings-before-reset`**. DO NOT delete either tag — they may inform the migration to the new library.
+  **Application details (for reference if TradingView reaches out):**
+  - Product: **TradingView Advanced Charts** (private repo access)
+  - Signatory: **Zachary James Titus**
+  - Contact email: **ben@sitesbyben.ca**
+  - Website submitted: **https://pockettrade.sitesbyben.ca** — must load when TradingView reviews. User is building the landing page on Lovable and will deploy it to that subdomain.
+
+  Last working snapshot of the custom system is at the local git tag **`pre-charting-library-switch`**. Backup of the pre-reset implementations remains at **`drawings-before-reset`**. DO NOT delete either tag.
 
   Research / planning notes will live in **`docs/DRAWING_LIBRARY_RESEARCH.md`** (user is adding).
 
-  **While waiting for approval:** pivot to OTHER features — news, trade card, Firebase, ToS / Privacy, logo, etc. No drawing-related work until the library is in hand.
+  **While waiting for approval:** pivot to OTHER features — Lovable landing page deploy, news (Forex Factory), trade card, Firebase, ToS / Privacy, logo, etc. No drawing-related work until the library is in hand.
 - **Firebase setup** — bundle ID `com.pockettrade.app` (iOS + Android), Expo managed workflow, pure-JS firebase v12.12.1 (NOT @react-native-firebase). Six EXPO_PUBLIC_FIREBASE_* env vars in `.env` still empty awaiting console values. Walkthrough being conducted in Claude Remote with screenshots.
 
 ### ABANDONED
