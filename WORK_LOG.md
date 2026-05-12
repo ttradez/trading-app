@@ -5,6 +5,46 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-12 — Onboarding screen 2: center content + replace lone candle with bearish row
+
+Two tweaks per user feedback after the visual-upgrade smoke test.
+
+### 1. Vertical centering
+- Removed the fixed 80 px `topSpacer` and added
+  `justifyContent: 'center'` to `styles.content`.
+- Hero "95%" + supporting headline + body block now centers in the
+  space ABOVE the CTA (the CTA lives outside the flex container so it
+  remains anchored at the bottom).
+- Result: balanced layout, no dead space below the body.
+
+### 2. Lone candle → bearish row
+Picked **option A (row)** — the additional code over the lone candle
+was small (one component, one prop), and the row reads as deliberate
+where a single candle read as a bug.
+
+- Deleted `CandleSilhouette` (single off-frame candle).
+- New `BearishCandleRow({ width })` — inline `react-native-svg`, 6
+  candles, heights `[44, 38, 32, 36, 26, 20]` (downtrend + one
+  retrace). Each candle: 18 px body + 6 px upper wick + 4 px lower
+  wick, brand red `#FF4757`.
+- Row width pulled from `useWindowDimensions()` so it spans full
+  screen on any device.
+- Positioned `position: absolute, bottom: 0, left/right: 0`; opacity
+  driven by `Animated.multiply(bgOpacity, 0.07)` (so the existing
+  300 ms fade-in on mount still works, and the resting opacity sits
+  in the 6-8% target band).
+- z-index layering: `candleRow` z 0, `content` z 1, `ctaWrap` z 2 (+
+  matching `elevation` for Android). The opaque gold button hides the
+  section of the row directly beneath it; the wick tips peek above
+  the button's top edge and to its sides.
+- `pointerEvents="none"` — pure decoration, never blocks the CTA.
+
+### Files touched
+- `src/screens/OnboardingPremiseScreen.tsx`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-12 — Onboarding screen 2: visual upgrade — hero 95% with tick-up + bg candle
 
 Visual upgrade to The Premise — copy unchanged, layout transformed.

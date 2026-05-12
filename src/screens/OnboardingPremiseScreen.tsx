@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, Pressable, Animated, Easing, StyleSheet, StatusBar,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Rect, Line } from 'react-native-svg';
@@ -37,20 +38,43 @@ interface Props {
   navigation: any;
 }
 
-function CandleSilhouette() {
-  // Stylized single candle (wick + body + wick) — partially clipped
-  // off-screen on the right, low-alpha red. ~150 px tall.
+// Subtle 6-candle bearish row — sits along the very bottom of the
+// screen behind the CTA. Heights stagger downward (with a small
+// retrace) so it reads as a sequence of bearish bars, not a chart.
+function BearishCandleRow({ width }: { width: number }) {
+  const HEIGHTS = [44, 38, 32, 36, 26, 20]; // mild downtrend + one retrace
+  const ROW_H   = 60;
+  const BODY_W  = 18;
+  const WICK_TOP = 6;
+  const WICK_BOT = 4;
+  const slotW = width / HEIGHTS.length;
   return (
-    <Svg width={150} height={170} viewBox="0 0 150 170">
-      <Line   x1={75} y1={8}   x2={75} y2={48}  stroke={RED} strokeWidth={2} />
-      <Rect   x={50} y={48}    width={50} height={84} fill={RED} />
-      <Line   x1={75} y1={132} x2={75} y2={162} stroke={RED} strokeWidth={2} />
+    <Svg width={width} height={ROW_H}>
+      {HEIGHTS.map((h, i) => {
+        const cx       = i * slotW + slotW / 2;
+        const bodyTop  = ROW_H - h;
+        const bodyH    = Math.max(h - (WICK_TOP + WICK_BOT), 4);
+        return (
+          <React.Fragment key={i}>
+            {/* upper wick */}
+            <Line x1={cx} y1={bodyTop - WICK_TOP} x2={cx} y2={bodyTop}
+                  stroke={RED} strokeWidth={1.5} />
+            {/* body */}
+            <Rect x={cx - BODY_W / 2} y={bodyTop} width={BODY_W} height={bodyH}
+                  fill={RED} />
+            {/* lower wick */}
+            <Line x1={cx} y1={bodyTop + bodyH} x2={cx} y2={bodyTop + bodyH + WICK_BOT}
+                  stroke={RED} strokeWidth={1.5} />
+          </React.Fragment>
+        );
+      })}
     </Svg>
   );
 }
 
 export default function OnboardingPremiseScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
+  const { width: screenW } = useWindowDimensions();
 
   const bgOpacity   = useRef(new Animated.Value(0)).current;
   const counterVal  = useRef(new Animated.Value(0)).current;
@@ -106,18 +130,18 @@ export default function OnboardingPremiseScreen({ navigation }: Props) {
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={BG} />
 
-      {/* Background candle — partially off-screen right, ~8% red. */}
+      {/* Background bearish candle row — sits along the bottom of the
+          screen behind the CTA, ~7% red. zIndex 0 keeps it under the
+          opaque gold button (CTA wrap has zIndex 2). */}
       <Animated.View
         pointerEvents="none"
-        style={[styles.bgCandleWrap, { opacity: Animated.multiply(bgOpacity, 0.08) }]}
+        style={[styles.candleRow, { opacity: Animated.multiply(bgOpacity, 0.07) }]}
       >
-        <CandleSilhouette />
+        <BearishCandleRow width={screenW} />
       </Animated.View>
 
-      {/* Foreground content */}
+      {/* Foreground content — vertically centered between top edge and CTA. */}
       <View style={styles.content}>
-        <View style={styles.topSpacer} />
-
         {/* Hero number — "95%" with tick-up */}
         <View style={styles.heroRow}>
           <Text style={styles.heroNumber} allowFontScaling={false}>
@@ -161,20 +185,27 @@ export default function OnboardingPremiseScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG },
 
-  // Background candle, "falling out of frame" bottom-right.
-  bgCandleWrap: {
+  // Subtle bearish candle row pinned to the very bottom edge, full
+  // width. Sits behind the CTA via z-index — the opaque gold button
+  // hides the section directly beneath it; wick tips visible above /
+  // beside the button.
+  candleRow: {
     position: 'absolute',
-    right: -30,
-    bottom: 110,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 0,
+    elevation: 0,
   },
 
   content: {
     flex: 1,
     paddingHorizontal: 32,
+    // Vertically center hero + supporting + body in the space above
+    // the CTA (which lives outside this flex container).
+    justifyContent: 'center',
+    zIndex: 1,
   },
-  // Push the hero toward the upper-third without depending on a
-  // percentage height (which can jump on small devices).
-  topSpacer: { height: 80 },
 
   heroRow: {
     flexDirection: 'row',
@@ -221,6 +252,9 @@ const styles = StyleSheet.create({
   ctaWrap: {
     paddingHorizontal: 24,
     paddingTop: 16,
+    // Keep the gold button above the absolutely-positioned candle row.
+    zIndex: 2,
+    elevation: 2,
   },
   cta: {
     backgroundColor: GOLD,
