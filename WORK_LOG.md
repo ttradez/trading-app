@@ -5,6 +5,52 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-12 — Onboarding screen 2: visual upgrade — hero 95% with tick-up + bg candle
+
+Visual upgrade to The Premise — copy unchanged, layout transformed.
+The "95%" becomes the visual anchor; everything else supports it.
+
+### What shipped (`src/screens/OnboardingPremiseScreen.tsx`)
+- **Hero number** — 150 px gold (`#FFB800`), bold, tabular-nums so the
+  width stays stable while counting. Animated tick-up from `0` to `95`
+  over **1200 ms** with `Easing.out(Easing.cubic)` after a **200 ms**
+  delay. The `%` sign renders static beside the number at 80 px.
+- **Supporting headline** — was the headline; now 23 px bold white,
+  centered: *"of new traders blow their account in their first year."*
+- **Body** (copy identical) — 17 px regular white 0.85, line-height 26
+  (~1.5×).
+- **Background candle silhouette** — inline `react-native-svg`
+  (`<Line>` wick + `<Rect>` body + `<Line>` wick), brand red
+  (`#FF4757`) at **8% opacity** via `Animated.multiply(bgOpacity, 0.08)`.
+  Positioned `right: -30, bottom: 110` so it reads as "falling out of
+  frame." `pointerEvents="none"` — it's texture, not a control.
+- **CTA** — unchanged ("I'm in", gold, 56 px, 12 px radius, light
+  haptic, safe-area-aware).
+
+### Entrance timeline (built with `Animated.parallel` + `Animated.sequence`)
+- **t=0** → candle fades in (300 ms).
+- **t=200 ms** → counter ticks 0 → 95 (1200 ms, ease-out cubic).
+- **t=1500 ms** → supporting headline + body fade in (350 ms).
+
+### Driver split
+- Candle opacity + text opacity → **native driver**.
+- Counter value → **JS driver** (its `addListener` updates `displayed`
+  state, which can't run on the native thread). The animations don't
+  conflict — `Animated.parallel` accepts a mix.
+
+### Dependencies
+No new packages. `react-native-svg` was already a dep (used by
+`DashboardCharts` + `DrawingFavoritesBar`). `expo-haptics` was already
+a dep.
+
+### Files touched
+- `src/screens/OnboardingPremiseScreen.tsx` (rewritten — was already
+  the real screen as of `c8bde16`; this layers in the hero + bg
+  candle + staggered timeline).
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-12 — Onboarding screen 2: The Premise
 
 Per `docs/ONBOARDING_RETENTION_RESEARCH.md` §D2 (fear-naming / trust-
