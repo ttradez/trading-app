@@ -36,12 +36,13 @@ Shows: rank badge, total trades, win rate, profit factor, expectancy, avg win, a
 
 Auto-popup on trade close. Auto-fills: symbol, direction, entry/exit, size, SL/TP, P&L, R-multiple, session date (revealed only here), news snapshot. User adds optional notes.
 
-## BRANDING
+## BRANDING — locked 2026-05-12
 
-- Dark theme: bg #0A0E1A, card #141B2D, border #1F2937
-- Gains green #00D395, losses red #FF4757, accent gold #FFB800
-- Text: white primary, #8B92A5 secondary
-- Font: SF Pro / Roboto, monospace for prices
+- **Backgrounds: pure black `#000000`** (locked — no navy, no dark blue). Card surface `#0F0F0F` for subtle lift on cards where black-on-black would lose depth; default border `#1F1F1F`.
+- **Text:** white `#FFFFFF`, **bold default** (`fontWeight: 700`). Secondary text `#9CA3AF`, tertiary `#6B7280`.
+- **Font:** clean modern sans-serif — **Inter preferred** (not yet bundled via `expo-font`; once loaded, swap `font.sans` / `font.sansBold` in `src/theme/index.ts`), **system fallback** otherwise (San Francisco on iOS, Roboto on Android).
+- **Accents (semantic):** gold `#FFB800`, gain green `#00D395`, loss red `#FF4757`. Used for buttons, BUY/SELL, P&L, candle up/down (`DEFAULT_CHART_THEME`).
+- **Monospace** (`SpaceMono-Regular` / `-Bold`) for ALL numbers: prices, P&L, percentages, balances.
 - Vibe: prop-firm-meets-Robinhood
 - Logo: placeholder "PT" gold on dark with candlestick
 

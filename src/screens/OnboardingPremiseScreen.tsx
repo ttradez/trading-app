@@ -8,7 +8,7 @@ import { View, Text, StyleSheet, StatusBar } from 'react-native';
  * splash auto-advances here cleanly.
  */
 
-const ONBOARDING_BG = '#0A0E1A';
+const ONBOARDING_BG = '#000000';
 
 export default function OnboardingPremiseScreen() {
   return (
@@ -29,7 +29,7 @@ const styles = StyleSheet.create({
   text: {
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',     // brand default: bold
     letterSpacing: 0.5,
   },
 });

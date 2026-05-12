@@ -34,11 +34,11 @@ export const DEFAULT_CHART_THEME: ChartTheme = {
   textColor:   '#c9d1d9',
   gridColor:   '#1a1a1a',
   borderColor: '#2a2a2a',
-  upColor:     '#22C55E',
-  downColor:   '#EF4444',
+  upColor:     '#00D395',  // brand gain green
+  downColor:   '#FF4757',  // brand loss red
   entryColor:  '#58a6ff',
-  slColor:     '#EF4444',
-  tpColor:     '#22C55E',
+  slColor:     '#FF4757',
+  tpColor:     '#00D395',
 };
 
 export const CHART_THEME_PRESETS: { name: string; theme: ChartTheme }[] = [
@@ -689,7 +689,7 @@ function buildHTML(t: ChartTheme): string {
       const sign = pnl >= 0 ? '+' : '-';
       const abs  = Math.abs(pnl);
       row.pnlText.textContent = sign + '$' + abs.toFixed(2);
-      row.pnlText.setAttribute('fill', pnl >= 0 ? '#22C55E' : '#EF4444');
+      row.pnlText.setAttribute('fill', pnl >= 0 ? '#00D395' : '#FF4757');
       row.pnlText.setAttribute('y', y);
       row.pnlText.setAttribute('opacity', '1');
       // Auto-size the black background box to wrap the current text width.

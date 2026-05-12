@@ -160,7 +160,7 @@ export default function App() {
         <NavigationContainer>
           <Stack.Navigator
             initialRouteName="OnboardingSplash"
-            screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0A0E1A' } }}
+            screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }}
           >
             <Stack.Screen name="OnboardingSplash"  component={OnboardingSplashScreen} />
             <Stack.Screen name="OnboardingPremise" component={OnboardingPremiseScreen} />

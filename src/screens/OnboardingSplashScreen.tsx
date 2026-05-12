@@ -9,7 +9,7 @@ import { View, Image, Animated, StyleSheet, StatusBar } from 'react-native';
  * fast to justify a skip button). Logo fades in over ~300 ms.
  */
 
-const ONBOARDING_BG = '#0A0E1A';   // Pocket Trade brand dark (per onboarding spec)
+const ONBOARDING_BG = '#000000';   // Pocket Trade brand — pure black (locked 2026-05-12)
 const SPLASH_DURATION_MS = 1500;
 const FADE_IN_MS = 300;
 

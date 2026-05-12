@@ -5,6 +5,66 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-12 — Brand standard: pure black backgrounds + white bold text + clean sans-serif
+
+User feedback after screen-1 smoke test: app backgrounds are **pure
+black `#000000`** (NOT navy `#0A0E1A`). Text is **white `#FFFFFF`,
+bold default**. Font is a **clean modern sans-serif (Inter preferred,
+system fallback)**. The brand accents (gold `#FFB800`, gain green
+`#00D395`, loss red `#FF4757`) are locked.
+
+PROJECT_CONTEXT.md had already documented the accent palette correctly
+but the code drifted (theme used `#D4AF37` / `#22C55E` / `#EF4444`).
+This commit makes code match doc, plus the navy → pure-black flip.
+
+### Token changes (`src/theme/index.ts`)
+- `gold: '#D4AF37'` → **`'#FFB800'`**
+- `green: '#22C55E'` → **`'#00D395'`**
+- `red: '#EF4444'` → **`'#FF4757'`**
+- `textInverse: '#0A0E1A'` → **`'#000000'`** (text-on-gold-buttons)
+- `rankMarketMaker: '#D4AF37'` → **`'#FFB800'`** (consistency with gold accent)
+- Font comment updated to mention Inter preference + system fallback.
+  `font.sans` / `font.sansBold` still resolve to `'System'` (San Francisco
+  on iOS, Roboto on Android) until Inter is bundled via `expo-font`.
+
+### Onboarding bg flipped to pure black
+- `src/screens/OnboardingSplashScreen.tsx`: `ONBOARDING_BG '#0A0E1A'` → `'#000000'`
+- `src/screens/OnboardingPremiseScreen.tsx`: same flip; placeholder text
+  bumped to `fontWeight: '700'` (brand default bold).
+- `App.tsx`: onboarding `contentStyle.backgroundColor '#0A0E1A'` → `'#000000'`
+- Logo now blends seamlessly with the app bg (no navy edge around the
+  logo card).
+
+### Chart semantic colors (`src/components/chart/TradingChart.tsx`)
+- `DEFAULT_CHART_THEME`: `upColor`, `downColor`, `slColor`, `tpColor`
+  swapped to brand greens/reds.
+- Inline pnl text fill: `#22C55E` / `#EF4444` → `#00D395` / `#FF4757`.
+
+### Out of scope (deliberately untouched)
+- `CHART_THEME_PRESETS` — user-pickable alt themes; not the brand default.
+- `ChartSettingsModal` / `DrawingSettingsModal` user-pickable swatch
+  palettes — these are intentional color choices, not brand tokens.
+- `JournalScreen` mood-tag colors and `utils/ranks.ts` rank colors —
+  semantic-but-narrow, not the brand-accent role. Leaving for now to
+  avoid scope creep; can sync in a follow-up if requested.
+- `theme/index.ts` `greenDim` / `redDim` / `goldDim` — companion dimmed
+  variants; values left as-is.
+
+### Verified
+- `grep -rn "#0A0E1A" src App.tsx` → no matches. Navy is gone from code.
+- Type-check clean.
+
+### Files touched
+- `src/theme/index.ts`
+- `src/components/chart/TradingChart.tsx`
+- `src/screens/OnboardingSplashScreen.tsx`
+- `src/screens/OnboardingPremiseScreen.tsx`
+- `App.tsx`
+- `PROJECT_CONTEXT.md`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-12 — Onboarding screen 1: logo splash + FORCE_ONBOARDING_FLOW boot-into-onboarding
 
 Kicking off the 12-screen onboarding rebuild. Source of truth for design

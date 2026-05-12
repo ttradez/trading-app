@@ -12,28 +12,28 @@ export const colors = {
   border:    '#1F1F1F',  // default border
   borderSubtle: '#2A2A2A',
 
-  // Brand
-  gold:      '#D4AF37',  // primary accent — buttons, active states, premium feel
+  // Brand accents — locked 2026-05-12
+  gold:      '#FFB800',  // primary accent — buttons, active states, premium feel
   goldDim:   '#8A6D14',  // pressed/disabled gold
 
   // Semantic
-  green:     '#22C55E',  // gains, BUY
+  green:     '#00D395',  // gains, BUY
   greenDim:  '#0E5C32',
-  red:       '#EF4444',  // losses, SELL
+  red:       '#FF4757',  // losses, SELL
   redDim:    '#7F1D1D',
 
-  // Text
+  // Text — white bold by default; backgrounds are pure black.
   textPrimary:   '#FFFFFF',
   textSecondary: '#9CA3AF',
   textTertiary:  '#6B7280',
-  textInverse:   '#0A0E1A',  // text on gold buttons
+  textInverse:   '#000000',  // text on gold buttons
 
   // Rank badges
   rankGambler:      '#6B7280',
   rankPaperHands:   '#F59E0B',
   rankSniper:       '#3B82F6',
   rankInsideTrader: '#A855F7',
-  rankMarketMaker:  '#D4AF37',
+  rankMarketMaker:  '#FFB800',
 } as const;
 
 export const radius = {
@@ -55,11 +55,14 @@ export const spacing = {
 } as const;
 
 export const font = {
-  // sans-serif system stack — clean UI text
-  sans:   'System',
+  // Sans-serif: Inter preferred when loaded, system default fallback
+  // (San Francisco on iOS, Roboto on Android — both modern sans-serifs).
+  // Inter isn't bundled via expo-font yet; switch these to 'Inter' /
+  // 'Inter-Bold' once the family is registered.
+  sans:     'System',
   sansBold: 'System',
-  // monospace — used for ALL numbers (prices, P&L, percentages, balances)
-  mono:    'SpaceMono-Regular',
+  // Monospace — used for ALL numbers (prices, P&L, percentages, balances).
+  mono:     'SpaceMono-Regular',
   monoBold: 'SpaceMono-Bold',
 } as const;
 
