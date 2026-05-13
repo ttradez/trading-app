@@ -5,6 +5,86 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-12 — Onboarding screen 4: Identity selection (Atomic Habits framing)
+
+Per `docs/ONBOARDING_RETENTION_RESEARCH.md`: identity-based habits beat
+outcome-based habits (Atomic Habits / James Clear) if the identity gets
+reinforced with small wins. The chosen identity also maps to a
+`goalCategory` that drives later coaching tips, push notification copy,
+and personalized challenges.
+
+### What shipped
+
+**`src/store/onboardingStore.ts`**
+- New types: `Identity` (`patient_sniper | process_machine | risk_surgeon | calm_operator | profit_compounder`), `GoalCategory` (`psychology | consistency | risk | profitability`).
+- New state fields: `identity: Identity | null`, `goalCategory: GoalCategory | null`.
+- New action: `setIdentity(identity, goalCategory)`.
+- `reset()` now clears the new fields too.
+
+**`src/screens/OnboardingIdentityScreen.tsx`** (rewritten from placeholder)
+- Pure-black bg. Headline "Who do you want to BECOME?" (32 px bold,
+  centered). Subheadline "Pick the identity you're working toward.
+  Not what you are today." (16 px, white 0.7, regular).
+- 5 identity cards stacked vertically inside a `ScrollView` so the
+  layout never clips on shorter devices.
+- Card visual states:
+  - Unselected: `#0F0F0F` bg, 1 px `#1F1F1F` border, 14 px radius.
+  - Selected: `#0A0A0A` bg, 2 px gold `#FFB800` border (paddings
+    compensated by 1 px so the layout doesn't jump as the border
+    grows).
+  - Pressed (un-selected only): subtle 0.85 opacity feedback.
+- Card body: title 21 px bold white, description 14 px white 0.7
+  regular. Internal padding 18 × 16 px.
+- Light haptic on each selection.
+- Mutual exclusion: tapping a different card swaps the selection.
+- CTA pinned at the bottom, safe-area-aware. **Disabled by default**
+  (`#2A2A2A` bg, text at 0.5 opacity, `disabled` Pressable). Becomes
+  full gold `#FFB800` once any card is selected. On tap → writes
+  `(identity, goalCategory)` to the store and navigates to
+  `OnboardingExperience`.
+- Entrance: full-content fade-in over 400 ms (`Animated.Value`).
+  Stagger-per-card was optional; skipped for v1 to keep the screen
+  responsive and minimal.
+
+**`src/screens/OnboardingExperienceScreen.tsx`** (new)
+- Placeholder "Screen 5 placeholder", pure black + white bold.
+
+**`App.tsx`**
+- `OnboardingExperience` imported and added to the
+  `FORCE_ONBOARDING_FLOW` stack with `gestureEnabled: false`.
+
+### Identity → goalCategory mapping (locked)
+- patient_sniper     → psychology
+- process_machine    → consistency
+- risk_surgeon       → risk
+- calm_operator      → psychology
+- profit_compounder  → profitability
+
+The mapping lives next to the card data in `IDENTITIES[]` — `setIdentity`
+is called with both values pulled from the chosen `IdentityOption`, so
+the mapping is enforced in one place.
+
+### Out of scope (deliberate)
+- No tooltip / explanation modal — card descriptions ARE the
+  explanation.
+- No Firebase persistence (local-only per deferred-auth strategy).
+- No retake / back button.
+- No icons / emojis on the cards.
+- Screens 1–3 untouched.
+
+### Files touched
+- `src/store/onboardingStore.ts`
+- `src/screens/OnboardingIdentityScreen.tsx` (rewritten)
+- `src/screens/OnboardingExperienceScreen.tsx` (new)
+- `App.tsx`
+- `WORK_LOG.md`
+
+### Flow wired
+Splash → Premise → Quiz → reveal → Continue → **Identity** (cards +
+gated CTA) → Continue → "Screen 5 placeholder".
+
+---
+
 ## 2026-05-12 — Premise copy: 90 days; Quiz: drop Q6 (decision frequency)
 
 Two small surgical updates.
