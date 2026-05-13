@@ -152,7 +152,7 @@ export default function OnboardingPremiseScreen({ navigation }: Props) {
 
         {/* Supporting headline */}
         <Animated.Text style={[styles.supporting, { opacity: textOpacity }]}>
-          of new traders blow their account in their first year.
+          of new traders blow their account in their first 90 days.
         </Animated.Text>
 
         {/* Body */}

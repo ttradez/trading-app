@@ -9,12 +9,13 @@ import { useOnboardingStore, Archetype, ArchetypeAnswer } from '../store/onboard
 /**
  * Onboarding screen 3 — Trader Archetype Quiz V2.
  *
- * Single screen, internal state. 6 binary-ish questions, each with 4
+ * Single screen, internal state. 5 binary-ish questions, each with 4
  * answer options (one per archetype), advance through a fade
  * transition; then a reveal screen names the user's closest match.
  *
  * V2 changes from V1 (see docs/QUIZ_V2_RESEARCH.md):
- *  - 6 questions instead of 4.
+ *  - 5 questions (was 4; briefly 6 — Q6 "decision frequency" dropped
+ *    as redundant with Q1 closure behaviour + Q5 session length).
  *  - 4 options per question (was 2). Question copy is indirect /
  *    scenario-based; option order is the same A→Scalper, D→Position
  *    every question so we can apply a UNIFORM score matrix.
@@ -80,15 +81,6 @@ const QUESTIONS: Question[] = [
       'All day during market hours, but done by evening.',
       'Check it briefly a couple of times during the day.',
       "I don't want to think about it during the day at all — set it and forget.",
-    ],
-  },
-  {
-    headline: 'How often do you want to make a trading decision?',
-    options: [
-      'Every few minutes — I want to be in the action.',
-      'A few times a day — pick my best moments.',
-      'A few times a week — wait for the right opportunity.',
-      "A few times a month — only when I'm really sure.",
     ],
   },
 ];
@@ -204,7 +196,7 @@ export default function OnboardingArchetypeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const setArchetype = useOnboardingStore((s) => s.setArchetype);
 
-  const [step, setStep]                 = useState(0);  // 0..5 = questions, 6 = reveal
+  const [step, setStep]                 = useState(0);  // 0..4 = questions, 5 = reveal
   const [answers, setAnswers]           = useState<ArchetypeAnswer[]>([]);
   const [selected, setSelected]         = useState<ArchetypeAnswer | null>(null);
   const [archetype, setLocalArchetype]  = useState<Archetype | null>(null);

@@ -5,6 +5,43 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-12 — Premise copy: 90 days; Quiz: drop Q6 (decision frequency)
+
+Two small surgical updates.
+
+### Change 1 — Premise supporting headline: "first year" → "first 90 days"
+- `src/screens/OnboardingPremiseScreen.tsx`
+- Same factual claim, more punchy framing. 95% hero number, body copy,
+  CTA, bearish candle row, all animations — unchanged.
+
+### Change 2 — Quiz drops to 5 questions
+- `src/screens/OnboardingArchetypeScreen.tsx`
+- Removed Q6 ("How often do you want to make a trading decision?") —
+  redundant with Q1 (closure behaviour implies pacing) and Q5
+  (session length).
+- Everything else auto-adjusts because the UI derives from
+  `QUESTIONS.length`: progress dots render 5 segments, counter reads
+  `QUESTION X OF 5`, `REVEAL_STEP = 5`, scoring loops 5 times.
+- `OPTION_SCORES` matrix, archetype mapping (A/B/C/D), tie-break logic
+  — all untouched.
+- File-top doc comment + the inline `step` comment updated to reflect
+  the new count (0..4 questions, 5 = reveal).
+
+### Scoring sanity (verified mentally)
+Max points per archetype is now 10 (was 12), but the bias remains
+balanced:
+- All-A: scalper 10, day 5 → **Scalper** ✓
+- All-B: scalper 5, day 10, swing 5 → **Day Trader** ✓
+- All-C: day 5, swing 10, position 5 → **Swing Trader** ✓
+- All-D: swing 5, position 10 → **Position Trader** ✓
+
+### Files touched
+- `src/screens/OnboardingPremiseScreen.tsx`
+- `src/screens/OnboardingArchetypeScreen.tsx`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-12 — Quiz V2: plain-language pass — remove trader jargon from Q1, Q5, Q6
 
 Copy-only update. V2 questions assumed familiarity with trader
