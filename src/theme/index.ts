@@ -28,11 +28,14 @@ export const colors = {
   textTertiary:  '#6B7280',
   textInverse:   '#000000',  // text on gold buttons
 
-  // Rank badges
-  rankGambler:      '#6B7280',
-  rankPaperHands:   '#F59E0B',
-  rankSniper:       '#3B82F6',
-  rankInsideTrader: '#A855F7',
+  // Rank badges — locked 2026-05-12. Progression goes from muted grey
+  // (lowest, Gambler) up through bronze, muted gold, to full brand
+  // gold (highest, Market Maker). Gambler intentionally has no
+  // sparkle — saves the flash for higher tiers.
+  rankGambler:      '#333333',
+  rankPaperHands:   '#888888',
+  rankSniper:       '#B87333',
+  rankInsideTrader: '#C0A062',
   rankMarketMaker:  '#FFB800',
 } as const;
 

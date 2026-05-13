@@ -5,6 +5,81 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-12 — Screen 7: live player card preview with starting rank (Gambler)
+
+Replaces the `gambler.` handle prefix with a visible **starting rank
+pill** + a live player-card preview that updates as the user types.
+The handle now feels like an identity moment instead of a form field.
+
+### What shipped
+
+**`src/components/onboarding/PlayerCardPreview.tsx`** (new, reusable)
+- Props: `rank?: Rank`, `displayName: string`, `handle: string`. Default
+  rank is `'gambler'`. Future screens can pass any of the 5 ranks.
+- Layout: full-width card, `#0F0F0F` bg, gold-tinted border
+  (`rgba(255, 184, 0, 0.2)`, 1 px, 14 px radius), 18 px padding,
+  minHeight 108. Inside, top-to-bottom:
+  1. Rank pill — `paddingHorizontal: 10 / paddingVertical: 4`, 6 px
+     radius, bg from `colors.rank*`. Today only `GAMBLER` (muted grey)
+     is wired.
+  2. Display name — 23 px bold white. Placeholder `Your Name` at
+     white 0.3 when empty.
+  3. `@handle` line — 15 px white 0.6. Placeholder `@your.handle` at
+     white 0.3 when empty.
+- `numberOfLines={1}` on both text rows so absurdly long inputs don't
+  blow up the card height.
+
+**`src/theme/index.ts`** — rank palette updated per the new ladder:
+- `rankGambler:      '#6B7280' → '#333333'` (muted grey)
+- `rankPaperHands:   '#F59E0B' → '#888888'` (silver-grey)
+- `rankSniper:       '#3B82F6' → '#B87333'` (bronze)
+- `rankInsideTrader: '#A855F7' → '#C0A062'` (muted gold)
+- `rankMarketMaker:  '#FFB800'` (unchanged — full brand gold)
+
+The progression now goes from muted grey at the bottom (Gambler) to
+full brand gold at the top (Market Maker). Gambler has no sparkle on
+purpose — saves the flash for higher tiers.
+
+**`src/screens/OnboardingTraderNameScreen.tsx`**
+- Inserted `<PlayerCardPreview rank="gambler" displayName handle />`
+  directly under the subheadline (`marginTop: 24`). Card values come
+  straight from the onboarding store and update on every keystroke.
+- Suggestion generator dropped the `gambler.` prefix and now weights
+  the separator:
+  - 60% none → `wolf42`
+  - 30% underscore → `fox_15`
+  - 10% period → `shark.88`
+  - Helper `pickSeparator()` returns `'' | '_' | '.'`. The 16-animal
+    pool is unchanged. All suggestions still satisfy
+    `isHandleValid` by construction (length, charset, no consecutive
+    separators, no leading/trailing separators).
+- Handle input placeholder: `gambler.your.name` → `your.handle` so
+  the input + the preview's @handle placeholder agree.
+
+### Out of scope (deliberate)
+- Crossfade animation between placeholder and live text — simple
+  conditional rendering + opacity. The text content swap is
+  effectively instant; if a true crossfade is wanted later we'd stack
+  two Text elements and animate opacities.
+- Continue button gating, validation, suggestions logic, keyboard
+  handling — all unchanged.
+- Screens 1-6 untouched.
+
+### Files touched
+- `src/components/onboarding/PlayerCardPreview.tsx` (new)
+- `src/screens/OnboardingTraderNameScreen.tsx`
+- `src/theme/index.ts`
+- `WORK_LOG.md`
+
+### Component location
+`src/components/onboarding/PlayerCardPreview.tsx` (new
+`onboarding` subfolder created — first screen-specific component
+moves us toward grouping by feature area). Reusable for later
+onboarding screens (e.g. the post-Commitment "confirm your trader"
+moment if we want one) plus the profile / leaderboard cards later.
+
+---
+
 ## 2026-05-12 — Onboarding screen 7: Trader name (handle + display name with auto-suggestions)
 
 Per `docs/ONBOARDING_RETENTION_RESEARCH.md` Q5 — two-field model

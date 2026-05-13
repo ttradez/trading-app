@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useOnboardingStore } from '../store/onboardingStore';
+import PlayerCardPreview from '../components/onboarding/PlayerCardPreview';
 
 /**
  * Onboarding screen 7 — Pick your trader name.
@@ -38,11 +39,20 @@ const ANIMALS = [
   'raven', 'viper', 'falcon', 'panther', 'eagle', 'cobra', 'jaguar', 'owl',
 ];
 
+/** Pick a separator with weighted probability:
+ *  60% none ("wolf42"), 30% underscore ("fox_15"), 10% period ("shark.88"). */
+function pickSeparator(): '' | '_' | '.' {
+  const r = Math.random();
+  if (r < 0.6) return '';
+  if (r < 0.9) return '_';
+  return '.';
+}
+
 function generateSuggestions(): string[] {
   const shuffled = [...ANIMALS].sort(() => Math.random() - 0.5).slice(0, 3);
   return shuffled.map((a) => {
-    const n = Math.floor(Math.random() * 90) + 10; // 10–99
-    return `gambler.${a}.${n}`;
+    const n = Math.floor(Math.random() * 90) + 10; // 10-99
+    return `${a}${pickSeparator()}${n}`;
   });
 }
 
@@ -144,8 +154,17 @@ export default function OnboardingTraderNameScreen({ navigation }: Props) {
                 This is how other traders will find you on the leaderboard.
               </Text>
 
+              {/* Live player-card preview — updates as the user types. */}
+              <View style={styles.previewWrap}>
+                <PlayerCardPreview
+                  rank="gambler"
+                  displayName={displayName}
+                  handle={handle}
+                />
+              </View>
+
               {/* HANDLE */}
-              <Text style={[styles.fieldLabel, { marginTop: 28 }]}>HANDLE</Text>
+              <Text style={[styles.fieldLabel, { marginTop: 24 }]}>HANDLE</Text>
               <View
                 style={[
                   styles.inputWrap,
@@ -158,7 +177,7 @@ export default function OnboardingTraderNameScreen({ navigation }: Props) {
                   onChangeText={onHandleChange}
                   onFocus={() => setHandleFocused(true)}
                   onBlur={() => setHandleFocused(false)}
-                  placeholder="gambler.your.name"
+                  placeholder="your.handle"
                   placeholderTextColor="rgba(255,255,255,0.3)"
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -312,6 +331,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: 4,
   },
+
+  previewWrap: { marginTop: 24 },
 
   fieldLabel: {
     color: 'rgba(255,255,255,0.6)',
