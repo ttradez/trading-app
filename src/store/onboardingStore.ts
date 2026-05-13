@@ -40,6 +40,10 @@ export type ExperienceLevel =
   | 'intermediate'
   | 'experienced';
 
+/** Whether the user's account size came from a preset chip or a
+ *  custom-entered value (screen 6). */
+export type AccountSizeType = 'preset' | 'custom';
+
 interface OnboardingState {
   /** Result of the archetype quiz (screen 3). null until set. */
   archetype: Archetype | null;
@@ -54,11 +58,20 @@ interface OnboardingState {
   /** Self-reported experience level (screen 5). null until set. */
   experienceLevel: ExperienceLevel | null;
 
+  /** Starting balance in USD (screen 6). Defaults to 50_000 — the most
+   *  common Combine size; teaches realistic position sizing. */
+  accountSize: number;
+  /** Whether `accountSize` came from a preset chip or custom entry. */
+  accountSizeType: AccountSizeType;
+
   setArchetype: (archetype: Archetype, answers: ArchetypeAnswer[]) => void;
   setIdentity: (identity: Identity, goalCategory: GoalCategory) => void;
   setExperienceLevel: (level: ExperienceLevel) => void;
+  setAccountSize: (size: number, type: AccountSizeType) => void;
   reset: () => void;
 }
+
+const DEFAULT_ACCOUNT_SIZE = 50_000;
 
 export const useOnboardingStore = create<OnboardingState>((set) => ({
   archetype: null,
@@ -66,6 +79,8 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
   identity: null,
   goalCategory: null,
   experienceLevel: null,
+  accountSize: DEFAULT_ACCOUNT_SIZE,
+  accountSizeType: 'preset',
 
   setArchetype: (archetype, answers) =>
     set({ archetype, archetypeAnswers: answers }),
@@ -76,11 +91,16 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
   setExperienceLevel: (experienceLevel) =>
     set({ experienceLevel }),
 
+  setAccountSize: (accountSize, accountSizeType) =>
+    set({ accountSize, accountSizeType }),
+
   reset: () => set({
     archetype: null,
     archetypeAnswers: [],
     identity: null,
     goalCategory: null,
     experienceLevel: null,
+    accountSize: DEFAULT_ACCOUNT_SIZE,
+    accountSizeType: 'preset',
   }),
 }));

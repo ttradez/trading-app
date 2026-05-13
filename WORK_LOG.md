@@ -5,6 +5,91 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-12 — Onboarding screen 6: Account size selection (chips + custom)
+
+Per `docs/ONBOARDING_RETENTION_RESEARCH.md` Q4 — prop-firm "evaluation
+account" framing, preset chips at Apex/Topstep canonical tiers ($10K /
+$25K / $50K / $100K / $150K). Default is $50K (most common Combine
+size; teaches realistic position sizing). "Custom" is a less-prominent
+text link so we don't nudge users into unrealistic numbers.
+
+### What shipped
+
+**`src/store/onboardingStore.ts`**
+- New type: `AccountSizeType` = `'preset' | 'custom'`.
+- New state fields (with sensible defaults so the user can advance
+  without interacting):
+  - `accountSize: number` — default `50_000`
+  - `accountSizeType: AccountSizeType` — default `'preset'`
+- New action: `setAccountSize(size, type)`.
+- `reset()` resets both fields back to the $50K / `'preset'` default.
+
+**`src/screens/OnboardingAccountSizeScreen.tsx`** (rewritten from placeholder)
+- Headline "Select your evaluation account" (31 px bold white,
+  centered) + subheadline ("This is your starting balance. You can
+  practice as much as you want with it — losses don't follow you
+  home.") at 15 px white 0.7.
+- 5 preset cards (`PRESETS` array; descriptions verbatim from spec).
+  Card style matches screens 4/5 — `#0F0F0F` bg / 1 px `#1F1F1F`
+  border / 14 px radius; selected adds 2 px gold border with 1 px
+  padding compensation so the layout never jumps.
+- Card body: dollar amount (25 px bold white, formatted via
+  `toLocaleString('en-US')`) over description (14 px white 0.7).
+- "Choose your own amount" link below the cards — white 0.6,
+  underlined, 15 px regular, centered.
+- **$50K pre-selected on mount** because the store's default is
+  already `{ accountSize: 50000, accountSizeType: 'preset' }` and the
+  card's selection state is derived from the store. CTA therefore
+  enabled immediately.
+- Custom modal: `Modal` + `KeyboardAvoidingView`, centered card. Title,
+  numeric `TextInput` (`keyboardType: 'number-pad'`, `autoFocus`,
+  pre-filled with current `accountSize`), validation (must be between
+  `$1,000` and `$500,000`), inline red error on invalid, Cancel +
+  Confirm buttons. Strips non-digit characters before parsing.
+- On Confirm with valid value: writes `(n, 'custom')` to the store,
+  dismisses the modal, deselects all preset cards (selection derives
+  from `accountSizeType === 'preset'`), and renders a gold pill above
+  the CTA: `Custom: $XXX,XXX selected`.
+- On Cancel / backdrop tap: dismisses without state change.
+- CTA always enabled (preset baseline). On tap → navigates to
+  `OnboardingTraderName`.
+- 400 ms fade-in on mount (same pattern as screens 4/5).
+
+**`src/screens/OnboardingTraderNameScreen.tsx`** (new)
+- Placeholder "Screen 7 placeholder", pure black + white bold.
+
+**`App.tsx`**
+- `OnboardingTraderName` imported and added to the
+  `FORCE_ONBOARDING_FLOW` stack with `gestureEnabled: false`.
+
+### Store confirmation
+Both `accountSize` (number) and `accountSizeType` (`'preset' | 'custom'`)
+are written to `onboardingStore` in a single `setAccountSize(size, type)`
+call:
+- Preset card tap → `setAccountSize(value, 'preset')`
+- Custom modal confirm → `setAccountSize(parsed, 'custom')`
+
+### Out of scope (deliberate)
+- No slider for the custom amount — numeric input only.
+- No USD/other-currency toggle.
+- No descriptive popup explaining "evaluation account" — subheadline
+  carries the explanation.
+- Screens 1–5 untouched.
+
+### Files touched
+- `src/store/onboardingStore.ts`
+- `src/screens/OnboardingAccountSizeScreen.tsx` (rewritten)
+- `src/screens/OnboardingTraderNameScreen.tsx` (new)
+- `App.tsx`
+- `WORK_LOG.md`
+
+### Flow wired
+Splash → Premise → Quiz → reveal → Continue → Identity → Continue →
+Experience → Continue → **Account size** ($50K pre-selected; tap a
+preset OR open custom modal) → Continue → "Screen 7 placeholder".
+
+---
+
 ## 2026-05-12 — Onboarding screen 5: Experience level
 
 Per `docs/ONBOARDING_RETENTION_RESEARCH.md`: calibration screen. The
