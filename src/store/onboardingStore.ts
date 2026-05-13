@@ -40,6 +40,14 @@ export type ExperienceLevel =
   | 'intermediate'
   | 'experienced';
 
+/** Daily commitment (screen 8) — sets the user's streak target and
+ *  (later) notification cadence. Middle option is the default per
+ *  Duolingo's aspirational-nudge playbook. */
+export type DailyCommitment =
+  | 'light'   // 3 sessions a week
+  | 'steady'  // 1 session a day
+  | 'pro';    // multiple sessions a day
+
 interface OnboardingState {
   /** Result of the archetype quiz (screen 3). null until set. */
   archetype: Archetype | null;
@@ -66,12 +74,17 @@ interface OnboardingState {
   handle: string;
   displayName: string;
 
+  /** Daily commitment (screen 8). Default `'steady'` — middle option
+   *  pre-selected per Duolingo's aspirational-nudge playbook. */
+  dailyCommitment: DailyCommitment;
+
   setArchetype: (archetype: Archetype, answers: ArchetypeAnswer[]) => void;
   setIdentity: (identity: Identity, goalCategory: GoalCategory) => void;
   setExperienceLevel: (level: ExperienceLevel) => void;
   setAccountSize: (size: number) => void;
   setHandle: (handle: string) => void;
   setDisplayName: (displayName: string) => void;
+  setDailyCommitment: (commitment: DailyCommitment) => void;
   reset: () => void;
 }
 
@@ -86,6 +99,7 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
   accountSize: DEFAULT_ACCOUNT_SIZE,
   handle: '',
   displayName: '',
+  dailyCommitment: 'steady',
 
   setArchetype: (archetype, answers) =>
     set({ archetype, archetypeAnswers: answers }),
@@ -105,6 +119,9 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
   setDisplayName: (displayName) =>
     set({ displayName }),
 
+  setDailyCommitment: (dailyCommitment) =>
+    set({ dailyCommitment }),
+
   reset: () => set({
     archetype: null,
     archetypeAnswers: [],
@@ -114,5 +131,6 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
     accountSize: DEFAULT_ACCOUNT_SIZE,
     handle: '',
     displayName: '',
+    dailyCommitment: 'steady',
   }),
 }));

@@ -5,6 +5,70 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-13 — Onboarding screen 8: Daily commitment (Light/Steady/Pro)
+
+Habit-anchor screen. The chosen cadence sets the user's streak
+target and (later) the cadence of any notifications. Middle option
+pre-selected per Duolingo — aspirational nudge; user can downgrade
+if it feels heavy.
+
+### What shipped
+
+**`src/store/onboardingStore.ts`**
+- New type: `DailyCommitment` = `'light' | 'steady' | 'pro'`.
+- New state field: `dailyCommitment: DailyCommitment` (default `'steady'`).
+- New action: `setDailyCommitment(commitment)`.
+- `reset()` restores `dailyCommitment` to `'steady'`.
+
+**`src/screens/OnboardingCommitmentScreen.tsx`** (rewritten from placeholder)
+- Headline "How often will you train?" + subheadline "Streaks build
+  skill. Pick a pace you'll actually stick to."
+- 3 cards (Light / Steady / Pro) with verbatim descriptions from
+  spec. Same card style as screens 4/5/6 (`#0F0F0F` bg / 1 px
+  `#1F1F1F` border / 14 px radius; selected adds 2 px gold border
+  with 1 px padding compensation).
+- Mutually-exclusive selection driven by store: card selected when
+  `dailyCommitment === opt.id`. Light haptic on each tap.
+- **Steady pre-selected** on mount because the store's default is
+  already `'steady'` — gold border visible immediately, CTA enabled
+  from the start. No extra mount-effect needed.
+- CTA always enabled. On tap → navigates to `OnboardingFirstTrade`
+  (no extra write to store; the latest selection is already there).
+- 400 ms fade-in via `Animated.Value`.
+
+**`src/screens/OnboardingFirstTradeScreen.tsx`** (new)
+- Placeholder "Screen 9 placeholder", pure black + white bold.
+
+**`App.tsx`**
+- `OnboardingFirstTrade` imported and added to the
+  `FORCE_ONBOARDING_FLOW` stack with `gestureEnabled: false`.
+
+### Store confirmation
+`setDailyCommitment(id)` fires on every card tap with `'light'`,
+`'steady'`, or `'pro'`. The CTA reads no extra state — store already
+holds the latest selection when Continue is tapped.
+
+### Out of scope (deliberate)
+- No notification-permission prompt (deferred to screen 12).
+- No streak-counter UI (post-onboarding).
+- No back button.
+- Screens 1-7 untouched.
+
+### Files touched
+- `src/store/onboardingStore.ts`
+- `src/screens/OnboardingCommitmentScreen.tsx` (rewritten)
+- `src/screens/OnboardingFirstTradeScreen.tsx` (new)
+- `App.tsx`
+- `WORK_LOG.md`
+
+### Flow wired
+Splash → Premise → Quiz → reveal → Continue → Identity → Continue
+→ Experience → Continue → Account size → Continue → Trader name →
+Continue → **Daily commitment** (Steady pre-selected) → Continue →
+"Screen 9 placeholder".
+
+---
+
 ## 2026-05-12 — RankBanner rewritten as pure SVG (no PNG asset)
 
 User feedback after seeing the PNG-based banners in the app: drop the
