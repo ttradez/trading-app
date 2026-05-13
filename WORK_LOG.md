@@ -5,6 +5,74 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-12 — RankBanner rewritten as pure SVG (no PNG asset)
+
+User feedback after seeing the PNG-based banners in the app: drop the
+image entirely and generate the banners in code so we can iterate on
+visuals without art assets. Pure-SVG, vibrant per-rank color, unique
+pattern per rank, clean outline.
+
+### What shipped
+
+**`src/theme/index.ts`** — rank palette updated to **vibrant**:
+- `rankGambler:      '#333333' → '#C0C0C0'` (silver)
+- `rankPaperHands:   '#888888' → '#00D395'` (brand green)
+- `rankSniper:       '#B87333' → '#3B82F6'` (electric blue)
+- `rankInsideTrader: '#C0A062' → '#A855F7'` (royal purple)
+- `rankMarketMaker:  '#FFB800'` (brand gold, unchanged)
+
+The earlier muted ladder was replaced — the artwork the user wants
+matched uses bright saturated identity colors per rank.
+
+**`src/components/RankBanner.tsx`** — rewritten from image-crop to
+pure SVG (`react-native-svg`):
+- ViewBox `1000 × 200` (5:1 aspect). On typical mobile widths
+  (340-390 px), the banner renders at 68-78 px tall — squarely in
+  the 60-80 px target the original prompt set.
+- Solid black banner background so it blends with the `#000000`
+  screen — only the vibrant elements (border / glyph / pattern /
+  label) pop.
+- 4 px rounded outline (18 px corner radius) stroked in the rank's
+  vibrant color.
+- **Per-rank pattern** (clipped to the rounded interior):
+  - **Gambler:** diagonal silver stripes at 8% opacity.
+  - **Paper Hands:** 10 ascending mini-candles in green at 18%.
+  - **Sniper:** 4 horizontal scan lines + a faint concentric
+    crosshair circle on the right.
+  - **Inside Trader:** jagged city-skyline silhouette along the
+    bottom edge at 22%.
+  - **Market Maker:** dot grid covering the whole banner at 28%.
+- **Per-rank glyph** on the left (100×100 SVG box):
+  - Gambler: classic spade `<Path>`.
+  - Paper Hands: three overlapping rotated quadrilaterals (crumpled
+    paper).
+  - Sniper: concentric circles + crosshair lines + center dot.
+  - Inside Trader: doorway rectangle + small figure silhouette.
+  - Market Maker: "M" monogram inside a circle.
+- Vertical divider line (50% opacity) between glyph and label.
+- Label rendered as `<SvgText>` with `letterSpacing={4}` on a
+  `<TSpan>` — works around `react-native-svg`'s top-level
+  `letterSpacing` quirks.
+- `showYouIndicator` still renders the "← YOU" label to the right
+  (unchanged).
+
+**Asset:** `assets/ranks/rank_banners.png` **deleted** — no longer
+needed. The image was only there for the crop approach.
+
+### Reusability
+API unchanged: `<RankBanner rank="gambler" showYouIndicator />` is
+all you need. Future screens (profile, leaderboard, achievements)
+drop it in and pass the rank — pattern + glyph + color all selected
+from the `DESIGN` map by rank id.
+
+### Files touched
+- `src/theme/index.ts`
+- `src/components/RankBanner.tsx`
+- `assets/ranks/rank_banners.png` (deleted)
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-12 — RankBanner artwork + screen 7 uses it on the player card
 
 Two-commit set. Replaces the text-based GAMBLER pill with the custom
