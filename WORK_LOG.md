@@ -5,6 +5,76 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-12 — RankBanner artwork + screen 7 uses it on the player card
+
+Two-commit set. Replaces the text-based GAMBLER pill with the custom
+banner artwork. Component is reusable for later profile / leaderboard
+/ achievement screens.
+
+### Commit 1 — `Add RankBanner component using custom artwork`
+- **Asset:** `assets/ranks/rank_banners.png` (1774 × 887 px, total
+  aspect 2:1; 5 banners stacked vertically). Copied from the user's
+  attached image.
+- **`src/components/RankBanner.tsx`** (new, reusable across the app).
+  Props: `{ rank: Rank, width?: number, showYouIndicator?: boolean }`.
+  - Per-banner aspect is **10:1** (1774 ÷ 177). The component crops
+    via `overflow: 'hidden'` on an outer container at `aspectRatio: 10`
+    (or fixed `width` if provided), with the source Image positioned
+    absolutely at `width: '100%'`, `aspectRatio: 2` (matching source),
+    and `top: '-N00%'` for rank index N — each `-100%` shifts the
+    image up by exactly one banner slice.
+  - No per-rank PNG files; cropping is purely runtime.
+  - When `showYouIndicator` is true, renders a 11 px bold letter-
+    spaced "← YOU" text to the right of the banner (8 px gap, white
+    at 0.6 opacity, vertically centered).
+  - `resizeMode: 'cover'` on the Image so the artwork stays sharp at
+    any scale.
+
+### Commit 2 — `Screen 7: use RankBanner on player card preview`
+- **`src/components/onboarding/PlayerCardPreview.tsx`** simplified:
+  - Removed the text-based GAMBLER pill (`rankPill` View + `rankText`
+    Text + `RANKS` mapping table).
+  - Removed the card's outer border / background / padding so the
+    banner's black blends into the screen's pure black with no
+    visible edge.
+  - Wraps `RankBanner` with `showYouIndicator={true}`; display name +
+    @handle render below as plain text on screen background.
+- No changes to screen 7 itself — `PlayerCardPreview` consumed the
+  same way; the player-card moment just looks different.
+
+### Note on banner height
+Source per-banner aspect is **10:1**, not the 5:1 the spec assumed.
+At a phone screen width of ~340-390 px (banner fills available width
+minus 24 px of side padding and the "← YOU" indicator slot), the
+banner height comes out around **28-34 px** — shorter than the
+prompt's 60-80 px target.
+
+Honoring aspect was the right call for v1 (artwork looks crisp, no
+distortion). If you want a taller banner, options are: (a) horizontally
+crop the source to lose the right-side imagery (banner becomes
+square-ish, just icon + label), (b) stretch vertically with
+`resizeMode: 'stretch'` (artwork distorts), or (c) reduce screen
+padding so the banner sits closer to the screen edges. Flag this in
+smoke test and I'll iterate.
+
+### Reusability
+`<RankBanner rank="gambler" />` — that's the whole API for a banner.
+Future screens (post-Commitment confirm, profile, leaderboard row,
+achievements) can drop it in and pass the rank. The 5-rank type is
+exported from the component for shared use.
+
+### Files touched
+- `assets/ranks/rank_banners.png` (new)
+- `src/components/RankBanner.tsx` (new)
+- `src/components/onboarding/PlayerCardPreview.tsx`
+- `WORK_LOG.md`
+
+### Commits
+- `47d4923` — Add RankBanner component using custom artwork
+- (this commit) — Screen 7: use RankBanner on player card preview
+
+---
+
 ## 2026-05-12 — Screen 7: live player card preview with starting rank (Gambler)
 
 Replaces the `gambler.` handle prefix with a visible **starting rank

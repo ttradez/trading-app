@@ -1,38 +1,21 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { colors } from '../../theme';
+import RankBanner, { Rank } from '../RankBanner';
 
 /**
  * Live player-card preview used on the trader-name screen (and
  * reusable on later screens that show the user's identity). Renders
- * the user's current rank pill, display name, and @handle — values
- * pulled from the onboarding store and updated in real time.
+ * the user's rank banner (custom artwork), display name, and @handle.
+ * Display name and handle update in real time as the user types in
+ * the trader-name inputs.
  *
- * Today only Gambler is wired up. The other ranks (Paper Hands /
- * Sniper / Inside Trader / Market Maker) are colored from
- * `colors.rank*` so future screens can simply pass their rank id.
+ * Today only Gambler is wired up. Pass other Rank ids on future
+ * screens (Paper Hands / Sniper / Inside Trader / Market Maker).
+ *
+ * No card border / background — the banner artwork's black blends
+ * straight into the screen's pure black so the rank reads as
+ * standalone, not boxed.
  */
-
-export type Rank =
-  | 'gambler'
-  | 'paper_hands'
-  | 'sniper'
-  | 'inside_trader'
-  | 'market_maker';
-
-interface RankInfo {
-  label: string;
-  bg: string;
-  textColor: string;
-}
-
-const RANKS: Record<Rank, RankInfo> = {
-  gambler:       { label: 'GAMBLER',       bg: colors.rankGambler,      textColor: '#FFFFFF' },
-  paper_hands:   { label: 'PAPER HANDS',   bg: colors.rankPaperHands,   textColor: '#FFFFFF' },
-  sniper:        { label: 'SNIPER',        bg: colors.rankSniper,       textColor: '#FFFFFF' },
-  inside_trader: { label: 'INSIDE TRADER', bg: colors.rankInsideTrader, textColor: '#000000' },
-  market_maker:  { label: 'MARKET MAKER',  bg: colors.rankMarketMaker,  textColor: '#000000' },
-};
 
 interface Props {
   rank?: Rank;
@@ -43,15 +26,13 @@ interface Props {
 export default function PlayerCardPreview({
   rank = 'gambler', displayName, handle,
 }: Props) {
-  const r = RANKS[rank];
   const isNameEmpty   = displayName.trim().length === 0;
   const isHandleEmpty = handle.trim().length === 0;
 
   return (
-    <View style={styles.card}>
-      <View style={[styles.rankPill, { backgroundColor: r.bg }]}>
-        <Text style={[styles.rankText, { color: r.textColor }]}>{r.label}</Text>
-      </View>
+    <View style={styles.wrap}>
+      <RankBanner rank={rank} showYouIndicator />
+
       <Text
         style={[styles.displayName, isNameEmpty && styles.placeholder]}
         numberOfLines={1}
@@ -69,29 +50,13 @@ export default function PlayerCardPreview({
 }
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: '#0F0F0F',
-    // Subtle gold-tinted border so the card reads as a player-card
-    // moment without competing with the gold CTA.
-    borderColor: 'rgba(255, 184, 0, 0.2)',
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 18,
-    minHeight: 108,
-  },
-  rankPill: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-    marginBottom: 12,
-  },
-  rankText: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.2,
+  // No bg / border / radius — banner artwork's black blends with the
+  // screen background; display name + handle float beneath.
+  wrap: {
+    width: '100%',
   },
   displayName: {
+    marginTop: 12,
     color: '#FFFFFF',
     fontSize: 23,
     fontWeight: '700',
