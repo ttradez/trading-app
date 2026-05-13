@@ -5,6 +5,107 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-12 — Onboarding screen 7: Trader name (handle + display name with auto-suggestions)
+
+Per `docs/ONBOARDING_RETENTION_RESEARCH.md` Q5 — two-field model
+modelled after Twitter / Discord. Handle is the unique URL /
+leaderboard identifier; display name is the friendlier name shown on
+profile cards. Auto-suggests 3 handles seeded with the user's current
+rank prefix ("gambler") + random animal + 2-digit number.
+
+**Uniqueness is deferred to signup (screen 11).** Here we only
+format-validate.
+
+### What shipped
+
+**`src/store/onboardingStore.ts`**
+- New state fields: `handle: string` (default `''`), `displayName: string` (default `''`).
+- New actions: `setHandle(handle)`, `setDisplayName(displayName)`.
+- `reset()` clears both. Each keystroke writes to the store, so the
+  inputs are fully store-controlled — the screen is the consumer, not
+  the owner.
+
+**`src/screens/OnboardingTraderNameScreen.tsx`** (rewritten from placeholder)
+- Headline "Pick your trader name" + subheadline.
+- **HANDLE field** (small-caps label, `#0F0F0F` bg, `#1F1F1F` border,
+  12 px radius, white bold 18 px text). Placeholder
+  `gambler.your.name`. Auto-correct + auto-capitalize OFF.
+  `selectionColor: gold`. On focus → border becomes 2 px gold with
+  1 px padding compensation so the layout doesn't jump. Green check
+  icon (`Ionicons checkmark-circle`, `#00D395`) appears at the right
+  end of the input when format is valid.
+  - Format validation (`isHandleValid`):
+    - length 3-20
+    - `^[a-z0-9._]+$`
+    - no leading/trailing `.` or `_`
+    - no consecutive `.` or `_`
+  - Error text `Invalid handle format` shows only AFTER the user has
+    typed at least one character (no nag on empty mount). Helper
+    text otherwise: `3-20 characters. Lowercase letters, numbers,
+    periods, and underscores only.`
+- **SUGGESTIONS section**:
+  - Label "SUGGESTIONS" + refresh `Ionicons refresh` button.
+  - 3 chips generated client-side from a 16-animal pool
+    (`wolf, hawk, fox, shark, bear, bull, tiger, lion, raven, viper,
+    falcon, panther, eagle, cobra, jaguar, owl`) + random 10-99 number.
+    Pattern: `gambler.<animal>.<num>`.
+  - Picks 3 unique animals per refresh (shuffles + slices 3).
+  - Tap chip → `setHandle(chip)` (store-driven; the input refreshes
+    automatically). Light haptic.
+  - Refresh icon → regenerate. Light haptic.
+- **DISPLAY NAME field** — same visual style as HANDLE. Placeholder
+  "What should we call you?". Auto-correct ON, auto-capitalize words.
+  Helper: `1-24 characters. This is what shows on your profile.`
+  Error `Too long` if > 24 chars (`maxLength` is set to 28 so the
+  error can actually appear). Green check on valid (1-24 chars).
+- **Continue button** disabled until BOTH fields format-valid (handle
+  passes `isHandleValid`, display name length 1-24). Disabled visual:
+  `#2A2A2A` bg, text at 0.5 opacity. Enabled visual: full gold. On
+  tap → `Keyboard.dismiss()` + navigate to `OnboardingCommitment`.
+- **Keyboard**:
+  - `KeyboardAvoidingView` wraps the screen (iOS padding behavior).
+  - `keyboardShouldPersistTaps="handled"` on the ScrollView so the
+    suggestion chips and refresh icon stay tappable while the keyboard
+    is open.
+  - `TouchableWithoutFeedback` on the scroll content dismisses the
+    keyboard on outer tap.
+- 400 ms fade-in on mount.
+
+**`src/screens/OnboardingCommitmentScreen.tsx`** (new)
+- Placeholder "Screen 8 placeholder", pure black + white bold.
+
+**`App.tsx`**
+- `OnboardingCommitment` imported and added to the
+  `FORCE_ONBOARDING_FLOW` stack with `gestureEnabled: false`.
+
+### Store confirmation
+Every keystroke writes to `onboardingStore.handle` / `displayName`.
+Suggestion taps go through the same `setHandle()`. The fields persist
+across screen transitions (in-memory only — survives navigation, not
+app reload).
+
+### Out of scope (deliberate)
+- Backend uniqueness check (deferred to signup).
+- Profanity filter (server-side at signup later).
+- Avatar / profile picture upload.
+- "Import from social" buttons.
+- Screens 1–6 untouched.
+
+### Files touched
+- `src/store/onboardingStore.ts`
+- `src/screens/OnboardingTraderNameScreen.tsx` (rewritten)
+- `src/screens/OnboardingCommitmentScreen.tsx` (new)
+- `App.tsx`
+- `WORK_LOG.md`
+
+### Flow wired
+Splash → Premise → Quiz → reveal → Continue → Identity → Continue →
+Experience → Continue → Account size → Continue → **Trader name**
+(handle + suggestions + display name; CTA gated) → Continue →
+"Screen 8 placeholder".
+
+---
+
 ## 2026-05-12 — Onboarding screen 6: Account size selection (5 preset tiers, $50K default)
 
 Rewrites the prior commit (`17818b6`) to drop the custom-amount option

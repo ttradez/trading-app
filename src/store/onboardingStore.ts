@@ -59,10 +59,19 @@ interface OnboardingState {
    *  5 prop-firm tiers (10/25/50/100/150K) — no custom entry. */
   accountSize: number;
 
+  /** Trader name (screen 7). `handle` is the unique handle used for
+   *  leaderboards / URLs (e.g. "gambler.wolf.42"); `displayName` is
+   *  the friendlier name shown on profile cards. Uniqueness check is
+   *  deferred to signup (screen 11); here we only format-validate. */
+  handle: string;
+  displayName: string;
+
   setArchetype: (archetype: Archetype, answers: ArchetypeAnswer[]) => void;
   setIdentity: (identity: Identity, goalCategory: GoalCategory) => void;
   setExperienceLevel: (level: ExperienceLevel) => void;
   setAccountSize: (size: number) => void;
+  setHandle: (handle: string) => void;
+  setDisplayName: (displayName: string) => void;
   reset: () => void;
 }
 
@@ -75,6 +84,8 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
   goalCategory: null,
   experienceLevel: null,
   accountSize: DEFAULT_ACCOUNT_SIZE,
+  handle: '',
+  displayName: '',
 
   setArchetype: (archetype, answers) =>
     set({ archetype, archetypeAnswers: answers }),
@@ -88,6 +99,12 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
   setAccountSize: (accountSize) =>
     set({ accountSize }),
 
+  setHandle: (handle) =>
+    set({ handle }),
+
+  setDisplayName: (displayName) =>
+    set({ displayName }),
+
   reset: () => set({
     archetype: null,
     archetypeAnswers: [],
@@ -95,5 +112,7 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
     goalCategory: null,
     experienceLevel: null,
     accountSize: DEFAULT_ACCOUNT_SIZE,
+    handle: '',
+    displayName: '',
   }),
 }));

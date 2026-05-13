@@ -1,35 +1,416 @@
-import React from 'react';
-import { View, Text, StyleSheet, StatusBar } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  View, Text, Pressable, Animated, StyleSheet, StatusBar, ScrollView,
+  TextInput, Keyboard, KeyboardAvoidingView, Platform, TouchableWithoutFeedback,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import { useOnboardingStore } from '../store/onboardingStore';
 
 /**
- * Onboarding screen 7 — Pick your trader name — PLACEHOLDER.
+ * Onboarding screen 7 — Pick your trader name.
  *
- * Real content lands in the next prompt (handle + display name).
- * For now just verifies Account Size → Continue navigates here cleanly.
+ * Per docs/ONBOARDING_RETENTION_RESEARCH.md Q5: two-field model
+ * (handle + display name) modelled after Twitter / Discord. Handle
+ * is the unique URL/leaderboard identifier; display name is friendlier
+ * and shown on profile cards.
+ *
+ * Uniqueness is DEFERRED to signup (screen 11) — here we only format-
+ * validate. If a handle collides on signup we'll prompt at that point.
  */
 
-const BG = '#000000';
+const BG          = '#000000';
+const GOLD        = '#FFB800';
+const GREEN       = '#00D395';
+const RED         = '#FF4757';
+const CARD_BG     = '#0F0F0F';
+const CARD_BORDER = '#1F1F1F';
+const CTA_DISABLED_BG = '#2A2A2A';
 
-export default function OnboardingTraderNameScreen() {
+const HANDLE_MIN = 3;
+const HANDLE_MAX = 20;
+const NAME_MIN = 1;
+const NAME_MAX = 24;
+
+const ANIMALS = [
+  'wolf', 'hawk', 'fox', 'shark', 'bear', 'bull', 'tiger', 'lion',
+  'raven', 'viper', 'falcon', 'panther', 'eagle', 'cobra', 'jaguar', 'owl',
+];
+
+function generateSuggestions(): string[] {
+  const shuffled = [...ANIMALS].sort(() => Math.random() - 0.5).slice(0, 3);
+  return shuffled.map((a) => {
+    const n = Math.floor(Math.random() * 90) + 10; // 10–99
+    return `gambler.${a}.${n}`;
+  });
+}
+
+// Format rules per spec — does NOT check uniqueness.
+function isHandleValid(h: string): boolean {
+  if (h.length < HANDLE_MIN || h.length > HANDLE_MAX) return false;
+  if (!/^[a-z0-9._]+$/.test(h)) return false;
+  if (/^[._]|[._]$/.test(h)) return false;       // no leading/trailing . or _
+  if (/[._]{2}/.test(h)) return false;           // no consecutive . or _
+  return true;
+}
+
+function isNameValid(n: string): boolean {
+  return n.length >= NAME_MIN && n.length <= NAME_MAX;
+}
+
+interface Props {
+  navigation: any;
+}
+
+export default function OnboardingTraderNameScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
+
+  const handle         = useOnboardingStore((s) => s.handle);
+  const displayName    = useOnboardingStore((s) => s.displayName);
+  const setHandle      = useOnboardingStore((s) => s.setHandle);
+  const setDisplayName = useOnboardingStore((s) => s.setDisplayName);
+
+  const [handleFocused, setHandleFocused] = useState(false);
+  const [nameFocused,   setNameFocused]   = useState(false);
+  const [suggestions,   setSuggestions]   = useState<string[]>(() => generateSuggestions());
+
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(opacity, {
+      toValue: 1,
+      duration: 400,
+      useNativeDriver: true,
+    }).start();
+    // mount-once fade-in
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleValid = useMemo(() => isHandleValid(handle), [handle]);
+  const nameValid   = useMemo(() => isNameValid(displayName), [displayName]);
+  const ctaEnabled  = handleValid && nameValid;
+
+  // Don't nag with red error text while the user is still typing from
+  // empty — only show after they've typed at least one character.
+  const handleHasInput = handle.length > 0;
+  const nameTooLong = displayName.length > NAME_MAX;
+
+  const onHandleChange = (t: string) => {
+    // Don't auto-correct or auto-cap — let users type what they typed.
+    setHandle(t);
+  };
+
+  const onNameChange = (t: string) => setDisplayName(t);
+
+  const refreshSuggestions = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setSuggestions(generateSuggestions());
+  };
+
+  const applySuggestion = (s: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setHandle(s);
+  };
+
+  const handleContinue = () => {
+    if (!ctaEnabled) return;
+    Keyboard.dismiss();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    navigation.navigate('OnboardingCommitment');
+  };
+
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={BG} />
-      <Text style={styles.text}>Screen 7 placeholder</Text>
+
+      <KeyboardAvoidingView
+        style={styles.kav}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <Animated.View style={[styles.fader, { opacity }]}>
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+            <ScrollView
+              style={styles.scroll}
+              contentContainerStyle={[
+                styles.scrollContent,
+                { paddingTop: insets.top + 24 },
+              ]}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={styles.headline}>Pick your trader name</Text>
+              <Text style={styles.subheadline}>
+                This is how other traders will find you on the leaderboard.
+              </Text>
+
+              {/* HANDLE */}
+              <Text style={[styles.fieldLabel, { marginTop: 28 }]}>HANDLE</Text>
+              <View
+                style={[
+                  styles.inputWrap,
+                  handleFocused && styles.inputWrapFocused,
+                ]}
+              >
+                <TextInput
+                  style={styles.input}
+                  value={handle}
+                  onChangeText={onHandleChange}
+                  onFocus={() => setHandleFocused(true)}
+                  onBlur={() => setHandleFocused(false)}
+                  placeholder="gambler.your.name"
+                  placeholderTextColor="rgba(255,255,255,0.3)"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="off"
+                  spellCheck={false}
+                  keyboardType="default"
+                  maxLength={HANDLE_MAX}
+                  selectionColor={GOLD}
+                  returnKeyType="next"
+                />
+                {handleValid && (
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={22}
+                    color={GREEN}
+                    style={styles.inputAdornment}
+                  />
+                )}
+              </View>
+              {handleHasInput && !handleValid ? (
+                <Text style={styles.errorText}>Invalid handle format</Text>
+              ) : (
+                <Text style={styles.helperText}>
+                  3-20 characters. Lowercase letters, numbers, periods, and underscores only.
+                </Text>
+              )}
+
+              {/* SUGGESTIONS */}
+              <View style={styles.suggestionsHeader}>
+                <Text style={styles.fieldLabel}>SUGGESTIONS</Text>
+                <Pressable
+                  onPress={refreshSuggestions}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Refresh suggestions"
+                  style={({ pressed }) => [styles.refreshBtn, pressed && { opacity: 0.6 }]}
+                >
+                  <Ionicons name="refresh" size={16} color="rgba(255,255,255,0.6)" />
+                </Pressable>
+              </View>
+              <View style={styles.suggestionsRow}>
+                {suggestions.map((s) => (
+                  <Pressable
+                    key={s}
+                    onPress={() => applySuggestion(s)}
+                    style={({ pressed }) => [
+                      styles.suggestionChip,
+                      pressed && { opacity: 0.7 },
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Use suggestion ${s}`}
+                  >
+                    <Text style={styles.suggestionText}>{s}</Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              {/* DISPLAY NAME */}
+              <Text style={[styles.fieldLabel, { marginTop: 24 }]}>DISPLAY NAME</Text>
+              <View
+                style={[
+                  styles.inputWrap,
+                  nameFocused && styles.inputWrapFocused,
+                ]}
+              >
+                <TextInput
+                  style={styles.input}
+                  value={displayName}
+                  onChangeText={onNameChange}
+                  onFocus={() => setNameFocused(true)}
+                  onBlur={() => setNameFocused(false)}
+                  placeholder="What should we call you?"
+                  placeholderTextColor="rgba(255,255,255,0.3)"
+                  autoCapitalize="words"
+                  autoCorrect={true}
+                  maxLength={NAME_MAX + 4 /* allow brief overflow so the "Too long" error can show */}
+                  selectionColor={GOLD}
+                  returnKeyType="done"
+                  onSubmitEditing={Keyboard.dismiss}
+                />
+                {nameValid && (
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={22}
+                    color={GREEN}
+                    style={styles.inputAdornment}
+                  />
+                )}
+              </View>
+              {nameTooLong ? (
+                <Text style={styles.errorText}>Too long</Text>
+              ) : (
+                <Text style={styles.helperText}>
+                  1-24 characters. This is what shows on your profile.
+                </Text>
+              )}
+            </ScrollView>
+          </TouchableWithoutFeedback>
+        </Animated.View>
+
+        <View style={[styles.ctaWrap, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+          <Pressable
+            onPress={handleContinue}
+            disabled={!ctaEnabled}
+            style={({ pressed }) => [
+              styles.cta,
+              !ctaEnabled && styles.ctaDisabled,
+              ctaEnabled && pressed && styles.ctaPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Continue"
+            accessibilityState={{ disabled: !ctaEnabled }}
+          >
+            <Text style={[styles.ctaText, !ctaEnabled && styles.ctaTextDisabled]}>
+              Continue
+            </Text>
+          </Pressable>
+        </View>
+      </KeyboardAvoidingView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
+  root: { flex: 1, backgroundColor: BG },
+  kav:  { flex: 1 },
+  fader: { flex: 1 },
+
+  scroll: { flex: 1 },
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+  },
+
+  headline: {
+    color: '#FFFFFF',
+    fontSize: 32,
+    fontWeight: '700',
+    lineHeight: 39,
+    letterSpacing: -0.5,
+    textAlign: 'center',
+    paddingHorizontal: 8,
+  },
+  subheadline: {
+    marginTop: 12,
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 15,
+    fontWeight: '400',
+    lineHeight: 21,
+    textAlign: 'center',
+    paddingHorizontal: 4,
+  },
+
+  fieldLabel: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    marginBottom: 8,
+  },
+
+  inputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: CARD_BG,
+    borderColor: CARD_BORDER,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+  },
+  inputWrapFocused: {
+    borderColor: GOLD,
+    borderWidth: 2,
+    paddingHorizontal: 15,
+  },
+  input: {
     flex: 1,
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
+    paddingVertical: 14,
+  },
+  inputAdornment: { marginLeft: 8 },
+
+  helperText: {
+    marginTop: 8,
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 12,
+    fontWeight: '400',
+    lineHeight: 17,
+  },
+  errorText: {
+    marginTop: 8,
+    color: RED,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+
+  suggestionsHeader: {
+    marginTop: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  refreshBtn: {
+    width: 32,
+    height: 24,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    // pull up so the icon aligns with the label baseline
+    marginBottom: 8,
+  },
+  suggestionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  suggestionChip: {
+    backgroundColor: CARD_BG,
+    borderColor: CARD_BORDER,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  suggestionText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '400',
+  },
+
+  ctaWrap: {
+    paddingHorizontal: 24,
+    paddingTop: 12,
     backgroundColor: BG,
+  },
+  cta: {
+    backgroundColor: GOLD,
+    height: 56,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  text: {
-    color: '#FFFFFF',
-    fontSize: 16,
+  ctaDisabled: { backgroundColor: CTA_DISABLED_BG },
+  ctaPressed: { opacity: 0.85 },
+  ctaText: {
+    color: '#000000',
+    fontSize: 17,
     fontWeight: '700',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
+  ctaTextDisabled: { color: 'rgba(255,255,255,0.5)' },
 });
