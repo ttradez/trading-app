@@ -5,6 +5,63 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-12 — Onboarding screen 5: Experience level
+
+Per `docs/ONBOARDING_RETENTION_RESEARCH.md`: calibration screen. The
+captured `experienceLevel` drives later personalization — first
+replay difficulty, default contract size, and tooltip frequency.
+
+Structurally identical to screen 4 (identity): headline + scroll-area
+of selectable cards + bottom-anchored gated CTA + 400 ms fade-in. Card
+visuals locked to the screen-4 pattern (unselected `#0F0F0F` bg / 1 px
+`#1F1F1F` border / 14 px radius; selected `#0A0A0A` bg / 2 px gold
+`#FFB800` border with 1 px padding compensation so the layout doesn't
+jump on selection).
+
+### What shipped
+
+**`src/store/onboardingStore.ts`**
+- New type: `ExperienceLevel` = `'never' | 'beginner' | 'intermediate' | 'experienced'`.
+- New state field: `experienceLevel: ExperienceLevel | null` (default `null`).
+- New action: `setExperienceLevel(level)`.
+- `reset()` now clears the new field too.
+
+**`src/screens/OnboardingExperienceScreen.tsx`** (rewritten from placeholder)
+- Headline "How long have you been trading?" (32 px bold white, centered).
+- 4 cards: Never traded / Beginner / Intermediate / Experienced — title
+  21 px bold, description 14 px white 0.7. Card descriptions verbatim
+  from spec.
+- Mutually-exclusive selection, light haptic on each tap.
+- CTA disabled (`#2A2A2A` bg, text 0.5 opacity) until selection; turns
+  full gold on selection. On tap → writes `experienceLevel` to the
+  store and navigates to `OnboardingAccountSize`.
+
+**`src/screens/OnboardingAccountSizeScreen.tsx`** (new)
+- Placeholder "Screen 6 placeholder", pure black + white bold.
+
+**`App.tsx`**
+- `OnboardingAccountSize` imported and added to the
+  `FORCE_ONBOARDING_FLOW` stack with `gestureEnabled: false`.
+
+### Out of scope (deliberate)
+- Screens 1–4 untouched.
+- No icons / emojis on cards.
+- No Firebase persistence (local-only per deferred-auth strategy).
+- No back button.
+
+### Files touched
+- `src/store/onboardingStore.ts`
+- `src/screens/OnboardingExperienceScreen.tsx` (rewritten)
+- `src/screens/OnboardingAccountSizeScreen.tsx` (new)
+- `App.tsx`
+- `WORK_LOG.md`
+
+### Flow wired
+Splash → Premise → Quiz → reveal → Continue → Identity → Continue →
+**Experience** (4 cards, gated CTA) → Continue → "Screen 6 placeholder".
+
+---
+
 ## 2026-05-12 — Onboarding screen 4: Identity selection (Atomic Habits framing)
 
 Per `docs/ONBOARDING_RETENTION_RESEARCH.md`: identity-based habits beat

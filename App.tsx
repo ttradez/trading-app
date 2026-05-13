@@ -27,6 +27,7 @@ import OnboardingPremiseScreen   from './src/screens/OnboardingPremiseScreen';
 import OnboardingArchetypeScreen from './src/screens/OnboardingArchetypeScreen';
 import OnboardingIdentityScreen   from './src/screens/OnboardingIdentityScreen';
 import OnboardingExperienceScreen from './src/screens/OnboardingExperienceScreen';
+import OnboardingAccountSizeScreen from './src/screens/OnboardingAccountSizeScreen';
 
 // ── DEV FLAG ─────────────────────────────────────────────────────────────────
 // Set TRUE while iterating on onboarding (welcome / sign-up / feature-tour).
@@ -169,7 +170,8 @@ export default function App() {
             <Stack.Screen name="OnboardingPremise"   component={OnboardingPremiseScreen}   options={{ gestureEnabled: false }} />
             <Stack.Screen name="OnboardingArchetype" component={OnboardingArchetypeScreen} options={{ gestureEnabled: false }} />
             <Stack.Screen name="OnboardingIdentity"   component={OnboardingIdentityScreen}   options={{ gestureEnabled: false }} />
-            <Stack.Screen name="OnboardingExperience" component={OnboardingExperienceScreen} options={{ gestureEnabled: false }} />
+            <Stack.Screen name="OnboardingExperience"  component={OnboardingExperienceScreen}  options={{ gestureEnabled: false }} />
+            <Stack.Screen name="OnboardingAccountSize" component={OnboardingAccountSizeScreen} options={{ gestureEnabled: false }} />
           </Stack.Navigator>
         </NavigationContainer>
       </SafeAreaProvider>

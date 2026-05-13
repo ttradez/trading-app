@@ -32,6 +32,14 @@ export type GoalCategory =
   | 'risk'
   | 'profitability';
 
+/** Experience level from screen 5. Drives first-replay difficulty,
+ *  default contract size, and tooltip frequency. */
+export type ExperienceLevel =
+  | 'never'
+  | 'beginner'
+  | 'intermediate'
+  | 'experienced';
+
 interface OnboardingState {
   /** Result of the archetype quiz (screen 3). null until set. */
   archetype: Archetype | null;
@@ -43,8 +51,12 @@ interface OnboardingState {
   /** Goal category that the chosen identity maps to. null until set. */
   goalCategory: GoalCategory | null;
 
+  /** Self-reported experience level (screen 5). null until set. */
+  experienceLevel: ExperienceLevel | null;
+
   setArchetype: (archetype: Archetype, answers: ArchetypeAnswer[]) => void;
   setIdentity: (identity: Identity, goalCategory: GoalCategory) => void;
+  setExperienceLevel: (level: ExperienceLevel) => void;
   reset: () => void;
 }
 
@@ -53,6 +65,7 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
   archetypeAnswers: [],
   identity: null,
   goalCategory: null,
+  experienceLevel: null,
 
   setArchetype: (archetype, answers) =>
     set({ archetype, archetypeAnswers: answers }),
@@ -60,10 +73,14 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
   setIdentity: (identity, goalCategory) =>
     set({ identity, goalCategory }),
 
+  setExperienceLevel: (experienceLevel) =>
+    set({ experienceLevel }),
+
   reset: () => set({
     archetype: null,
     archetypeAnswers: [],
     identity: null,
     goalCategory: null,
+    experienceLevel: null,
   }),
 }));
