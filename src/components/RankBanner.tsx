@@ -251,9 +251,18 @@ interface Props {
   width?: number;
   /** Render a small "← YOU" label to the right of the banner. */
   showYouIndicator?: boolean;
+  /** Show a small gold "UP NEXT" pill in the top-right corner. Used
+   *  on screens (e.g. the rank-reveal screen 10) where one rank is
+   *  highlighted as the immediate next goal. */
+  upNext?: boolean;
+  /** Render the whole banner at 0.5 opacity — signals "future rank,
+   *  not yet earned" on rank-progression screens. */
+  locked?: boolean;
 }
 
-export default function RankBanner({ rank, width, showYouIndicator = false }: Props) {
+export default function RankBanner({
+  rank, width, showYouIndicator = false, upNext = false, locked = false,
+}: Props) {
   const d = DESIGN[rank];
 
   const cropperStyle: ViewStyle = width
@@ -263,7 +272,7 @@ export default function RankBanner({ rank, width, showYouIndicator = false }: Pr
   const clipId = `clip-${rank}`;
 
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, locked && styles.rowLocked]}>
       <View style={cropperStyle}>
         <Svg
           width="100%"
@@ -333,6 +342,13 @@ export default function RankBanner({ rank, width, showYouIndicator = false }: Pr
             strokeWidth={BORDER_W}
           />
         </Svg>
+
+        {/* UP NEXT pill — gold text on dark muted bg, top-right. */}
+        {upNext && (
+          <View style={styles.upNextPill}>
+            <Text style={styles.upNextText}>UP NEXT</Text>
+          </View>
+        )}
       </View>
 
       {showYouIndicator && <Text style={styles.youText}>← YOU</Text>}
@@ -345,11 +361,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  rowLocked: {
+    opacity: 0.5,
+  },
   youText: {
     marginLeft: 8,
     color: 'rgba(255,255,255,0.6)',
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1.5,
+  },
+  upNextPill: {
+    position: 'absolute',
+    top: 8,
+    right: 10,
+    backgroundColor: '#1A1A1A',
+    borderColor: '#2A2A2A',
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  upNextText: {
+    color: '#FFB800',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1.2,
   },
 });
