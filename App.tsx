@@ -31,6 +31,7 @@ import OnboardingAccountSizeScreen from './src/screens/OnboardingAccountSizeScre
 import OnboardingTraderNameScreen  from './src/screens/OnboardingTraderNameScreen';
 import OnboardingCommitmentScreen  from './src/screens/OnboardingCommitmentScreen';
 import OnboardingFirstTradeScreen  from './src/screens/OnboardingFirstTradeScreen';
+import OnboardingRankRevealScreen  from './src/screens/OnboardingRankRevealScreen';
 
 // ── DEV FLAG ─────────────────────────────────────────────────────────────────
 // Set TRUE while iterating on onboarding (welcome / sign-up / feature-tour).
@@ -178,6 +179,7 @@ export default function App() {
             <Stack.Screen name="OnboardingTraderName"  component={OnboardingTraderNameScreen}  options={{ gestureEnabled: false }} />
             <Stack.Screen name="OnboardingCommitment"  component={OnboardingCommitmentScreen}  options={{ gestureEnabled: false }} />
             <Stack.Screen name="OnboardingFirstTrade"  component={OnboardingFirstTradeScreen}  options={{ gestureEnabled: false }} />
+            <Stack.Screen name="OnboardingRankReveal"  component={OnboardingRankRevealScreen}  options={{ gestureEnabled: false }} />
           </Stack.Navigator>
         </NavigationContainer>
       </SafeAreaProvider>

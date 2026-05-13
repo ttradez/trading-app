@@ -5,6 +5,122 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-13 — Screen 9 — First Trade activation event
+
+THE highest-leverage retention screen per
+`docs/ONBOARDING_RETENTION_RESEARCH.md`. Required, can't-fail first
+trade with a positive badge for every outcome.
+
+### What shipped
+
+**`src/store/onboardingStore.ts`**
+- New types: `FirstTradeAction` (`'buy' | 'sell'`),
+  `FirstTradeBadge` (`'first_strike' | 'first_blood' | 'first_step'`),
+  `FirstTradeResult` (action, entryPrice, exitPrice, pnl, badge).
+- New state field: `firstTrade: FirstTradeResult | null`.
+- New action: `setFirstTrade(result)`. `reset()` clears it.
+
+**`src/components/onboarding/OnboardingMiniChart.tsx`** (new, ~150 lines)
+- SVG candlestick component. Slides a 20-bar window across the
+  hardcoded 33-bar dataset so the current bar always sits near the
+  right edge. Up/down candle colors `#00D395` / `#FF4757`.
+- Optional `entryPrice` renders a dashed horizontal line, colored
+  green/red to match the trade direction.
+- Uses `onLayout` for actual pixel width — works in any flex layout.
+- **Not the production TradingChart.** Rationale captured in
+  `PROJECT_CONTEXT.md`: TradingChart is a heavy WebView with deep
+  coupling to `sessionStore` / `positions` / `currentPrice` /
+  backend endpoints, and will be replaced wholesale by TradingView
+  Advanced Charts when the application is approved. Plumbing an
+  onboarding-only flow through it would have spent more effort
+  wiring + disabling than the inheritance was worth.
+
+**`src/screens/OnboardingFirstTradeScreen.tsx`** (rewritten from placeholder)
+- Four internal phases on a single screen — no extra routes:
+  - **intro:** "Your first trade" overlay + 3-paragraph body + gold
+    "Show me the chart" CTA. 300 ms fade-in.
+  - **awaiting_trade:** chart visible (33 bars, paused at bar 29),
+    pulsing tooltip "Tap BUY or SELL to place your first paper
+    trade", large `BUY` (green) + `SELL` (red) buttons.
+  - **awaiting_advance:** tooltip shifts to "Tap NEXT BAR to advance
+    time and see what happens", gold `NEXT BAR · N LEFT` button.
+    Three taps total; small entry-badge pill shows
+    `BUY|SELL @ 11500` once the trade is placed; the dashed entry
+    line follows it on the chart.
+  - **result:** "RESULT" label, big bold badge (`FIRST STRIKE` gold
+    / `FIRST BLOOD` red / `FIRST STEP` gold), `±$XXX.XX` P&L line,
+    badge-specific body copy verbatim from spec, gold Continue CTA.
+- **Curated dataset:** NQ 2022-09-13 (CPI day). 30 pre-event chop
+  bars (11,490-11,520) + 3 advance bars dropping cleanly to 11,470.
+  Hand-crafted 5-minute OHLC; deterministic so every user sees the
+  same chart. Entry @ 11,500, exit @ 11,470, NQ point value $20 →
+  `±$600` P&L either direction.
+- Symbol/date header (NQ · 2022-09-13 · 5m) at the top during chart
+  phases — gives the screen the "real data" feel even though the
+  candles are hand-crafted.
+- Light haptic on every tap (medium on BUY/SELL).
+- 650 ms delay between the third NEXT BAR tap and the result
+  overlay, so the final candle visibly paints before the modal.
+
+**`src/screens/OnboardingRankRevealScreen.tsx`** (new)
+- Placeholder "Screen 10 placeholder", pure black + white bold.
+
+**`App.tsx`**
+- `OnboardingRankReveal` imported and added to the
+  `FORCE_ONBOARDING_FLOW` stack with `gestureEnabled: false`.
+
+**`PROJECT_CONTEXT.md`**
+- "Onboarding rebuild" bullet updated to reflect screens 1–9
+  shipped + the OnboardingMiniChart rationale.
+
+### Store confirmation
+After phase `result`, `useOnboardingStore.getState().firstTrade` is
+`{ action, entryPrice: 11500, exitPrice: 11470, pnl: ±600, badge }`.
+Screen 10 will read this to drive the rank progress bar movement.
+
+### Locked dataset specifics
+- File: hardcoded `CANDLES` array in `OnboardingFirstTradeScreen.tsx`.
+- Entry bar index: 29 (close = 11,500).
+- Final bar index: 32 (close = 11,470).
+- Point value × contracts: $20 × 1 = $20/point.
+- ±$600 P&L is non-trivial without being absurd on a $50K default
+  account (1.2% loss / gain). Mirrors a realistic CPI-day NQ move.
+
+### Out of scope (deliberate)
+- No "Try again" / retake option.
+- No leaderboard / social share.
+- No archetype/identity-adaptive date selection — hardcoded for v1.
+- No real backend data fetch — bundled candles only (keeps
+  onboarding offline-resilient).
+- Screens 1-8 untouched.
+
+### Architectural flag
+- The mini-chart is intentionally a sibling to TradingChart, not a
+  replacement. When TradingView Advanced Charts replaces the
+  production chart, this onboarding component can stay as-is OR be
+  swapped for a similarly-locked TradingView config — either way no
+  rip-out of session/backend plumbing needed.
+
+### Files touched
+- `src/store/onboardingStore.ts`
+- `src/components/onboarding/OnboardingMiniChart.tsx` (new)
+- `src/screens/OnboardingFirstTradeScreen.tsx` (rewritten)
+- `src/screens/OnboardingRankRevealScreen.tsx` (new)
+- `App.tsx`
+- `PROJECT_CONTEXT.md`
+- `WORK_LOG.md`
+
+### Flow wired
+Splash → Premise → Quiz → reveal → Identity → Experience → Account
+size → Trader name → Daily commitment → **First Trade**:
+- intro → tap CTA →
+- chart + tooltip on BUY/SELL → tap BUY or SELL →
+- chart + tooltip on NEXT BAR → 3 taps →
+- result overlay (FIRST STRIKE / FIRST BLOOD / FIRST STEP) → tap
+  Continue → "Screen 10 placeholder".
+
+---
+
 ## 2026-05-13 — Onboarding screen 8: Daily commitment (Light/Steady/Pro)
 
 Habit-anchor screen. The chosen cadence sets the user's streak

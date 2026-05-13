@@ -48,6 +48,23 @@ export type DailyCommitment =
   | 'steady'  // 1 session a day
   | 'pro';    // multiple sessions a day
 
+/** First-trade direction (screen 9). */
+export type FirstTradeAction = 'buy' | 'sell';
+
+/** Badge awarded after the first trade. CAN'T FAIL — every outcome
+ *  earns a positive badge. */
+export type FirstTradeBadge = 'first_strike' | 'first_blood' | 'first_step';
+
+/** Captured first-trade result (screen 9). null until the user
+ *  completes the trade. */
+export interface FirstTradeResult {
+  action: FirstTradeAction;
+  entryPrice: number;
+  exitPrice: number;
+  pnl: number;
+  badge: FirstTradeBadge;
+}
+
 interface OnboardingState {
   /** Result of the archetype quiz (screen 3). null until set. */
   archetype: Archetype | null;
@@ -78,6 +95,11 @@ interface OnboardingState {
    *  pre-selected per Duolingo's aspirational-nudge playbook. */
   dailyCommitment: DailyCommitment;
 
+  /** First-trade result (screen 9). null until the user completes
+   *  the activation trade. Used by screen 10 to drive the rank
+   *  progress bar movement. */
+  firstTrade: FirstTradeResult | null;
+
   setArchetype: (archetype: Archetype, answers: ArchetypeAnswer[]) => void;
   setIdentity: (identity: Identity, goalCategory: GoalCategory) => void;
   setExperienceLevel: (level: ExperienceLevel) => void;
@@ -85,6 +107,7 @@ interface OnboardingState {
   setHandle: (handle: string) => void;
   setDisplayName: (displayName: string) => void;
   setDailyCommitment: (commitment: DailyCommitment) => void;
+  setFirstTrade: (result: FirstTradeResult) => void;
   reset: () => void;
 }
 
@@ -100,6 +123,7 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
   handle: '',
   displayName: '',
   dailyCommitment: 'steady',
+  firstTrade: null,
 
   setArchetype: (archetype, answers) =>
     set({ archetype, archetypeAnswers: answers }),
@@ -122,6 +146,9 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
   setDailyCommitment: (dailyCommitment) =>
     set({ dailyCommitment }),
 
+  setFirstTrade: (firstTrade) =>
+    set({ firstTrade }),
+
   reset: () => set({
     archetype: null,
     archetypeAnswers: [],
@@ -132,5 +159,6 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
     handle: '',
     displayName: '',
     dailyCommitment: 'steady',
+    firstTrade: null,
   }),
 }));
