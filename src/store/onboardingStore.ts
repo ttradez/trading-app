@@ -40,10 +40,6 @@ export type ExperienceLevel =
   | 'intermediate'
   | 'experienced';
 
-/** Whether the user's account size came from a preset chip or a
- *  custom-entered value (screen 6). */
-export type AccountSizeType = 'preset' | 'custom';
-
 interface OnboardingState {
   /** Result of the archetype quiz (screen 3). null until set. */
   archetype: Archetype | null;
@@ -59,15 +55,14 @@ interface OnboardingState {
   experienceLevel: ExperienceLevel | null;
 
   /** Starting balance in USD (screen 6). Defaults to 50_000 — the most
-   *  common Combine size; teaches realistic position sizing. */
+   *  common Combine size; teaches realistic position sizing. One of the
+   *  5 prop-firm tiers (10/25/50/100/150K) — no custom entry. */
   accountSize: number;
-  /** Whether `accountSize` came from a preset chip or custom entry. */
-  accountSizeType: AccountSizeType;
 
   setArchetype: (archetype: Archetype, answers: ArchetypeAnswer[]) => void;
   setIdentity: (identity: Identity, goalCategory: GoalCategory) => void;
   setExperienceLevel: (level: ExperienceLevel) => void;
-  setAccountSize: (size: number, type: AccountSizeType) => void;
+  setAccountSize: (size: number) => void;
   reset: () => void;
 }
 
@@ -80,7 +75,6 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
   goalCategory: null,
   experienceLevel: null,
   accountSize: DEFAULT_ACCOUNT_SIZE,
-  accountSizeType: 'preset',
 
   setArchetype: (archetype, answers) =>
     set({ archetype, archetypeAnswers: answers }),
@@ -91,8 +85,8 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
   setExperienceLevel: (experienceLevel) =>
     set({ experienceLevel }),
 
-  setAccountSize: (accountSize, accountSizeType) =>
-    set({ accountSize, accountSizeType }),
+  setAccountSize: (accountSize) =>
+    set({ accountSize }),
 
   reset: () => set({
     archetype: null,
@@ -101,6 +95,5 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
     goalCategory: null,
     experienceLevel: null,
     accountSize: DEFAULT_ACCOUNT_SIZE,
-    accountSizeType: 'preset',
   }),
 }));

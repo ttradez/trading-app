@@ -5,6 +5,65 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-12 — Onboarding screen 6: Account size selection (5 preset tiers, $50K default)
+
+Rewrites the prior commit (`17818b6`) to drop the custom-amount option
+entirely. Choices stay constrained to the 5 prop-firm tiers so users
+can't pick an unrealistic number ($999K etc.). Default remains $50K.
+
+### Removed from the prior shipment
+- `AccountSizeType` type.
+- `accountSizeType` field on `OnboardingState`.
+- `setAccountSize(size, type)` two-arg signature.
+- Custom-amount modal (with `KeyboardAvoidingView`, numeric input,
+  validation, inline error, Cancel/Confirm buttons).
+- "Choose your own amount" link below the cards.
+- "Custom: $XXX,XXX selected" gold pill above the CTA.
+- Local state for `customOpen` / `customInput` / `customError`.
+
+### What ships now
+
+**`src/store/onboardingStore.ts`**
+- `accountSize: number` — default `50_000`, one of the 5 prop-firm
+  tiers (10/25/50/100/150K). No type/source flag.
+- `setAccountSize(size: number)` — one-arg setter.
+- `reset()` restores `accountSize` to the $50K default.
+
+**`src/screens/OnboardingAccountSizeScreen.tsx`** (rewritten)
+- Headline "Select your evaluation account" + subheadline.
+- 5 preset cards (same `#0F0F0F` / `#1F1F1F` / 14 px-radius pattern;
+  selected → 2 px gold border with 1 px padding compensation).
+- $50K pre-selected on mount because the store's default is already
+  `50_000` and the card's selection state derives from
+  `accountSize === opt.value`.
+- CTA always enabled (a value is always selected). Tap → writes
+  nothing extra (value already in store); navigates to
+  `OnboardingTraderName`.
+- 400 ms fade-in on mount.
+
+### Store confirmation
+`setAccountSize(value)` is called on every preset tap with one of the
+5 canonical numbers. The CTA reads no extra state — it just navigates,
+since the store already holds the latest selection.
+
+### Out of scope (deliberate, per the new spec)
+- No custom-amount input (deleted from prior commit).
+- No currency toggle.
+- No "evaluation account" explainer popup — subheadline carries it.
+- Screens 1–5 untouched.
+
+### Files touched
+- `src/store/onboardingStore.ts`
+- `src/screens/OnboardingAccountSizeScreen.tsx`
+- `WORK_LOG.md`
+
+### Flow wired
+Splash → Premise → Quiz → reveal → Continue → Identity → Continue →
+Experience → Continue → **Account size** ($50K pre-selected; tap any
+preset to change) → Continue → "Screen 7 placeholder".
+
+---
+
 ## 2026-05-12 — Onboarding screen 6: Account size selection (chips + custom)
 
 Per `docs/ONBOARDING_RETENTION_RESEARCH.md` Q4 — prop-firm "evaluation
