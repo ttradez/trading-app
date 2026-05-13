@@ -43,12 +43,12 @@ interface Question {
 
 const QUESTIONS: Question[] = [
   {
-    headline: "You're up 0.5R on a trade and the move is still going strong. What do you do?",
+    headline: "You're winning on a trade and the price is still moving your way. What do you do?",
     options: [
-      "Take it now — you don't argue with a winner in front of you.",
-      'Scale half off, let the rest run.',
-      'Let it run with a trailing stop, the move just started.',
-      'Stick to the original plan. I sized it for the full target.',
+      "Take the profit now — you don't argue with a winner in front of you.",
+      'Take half the profit now, let the rest keep running.',
+      "Let it ride. The move just started — I'll move my safety stop up as it goes.",
+      'Stick to the plan. I picked my target before I entered.',
     ],
   },
   {
@@ -76,9 +76,9 @@ const QUESTIONS: Question[] = [
   {
     headline: 'What time do you want to be done thinking about the market each day?',
     options: [
-      'In and out within the first 90 minutes after open.',
-      "Done by dinner — I'll be at it open to close.",
-      'Check at lunch, again at the close, done.',
+      "Just the first hour or two — I'm in and out fast.",
+      'All day during market hours, but done by evening.',
+      'Check it briefly a couple of times during the day.',
       "I don't want to think about it during the day at all — set it and forget.",
     ],
   },
@@ -86,9 +86,9 @@ const QUESTIONS: Question[] = [
     headline: 'How often do you want to make a trading decision?',
     options: [
       'Every few minutes — I want to be in the action.',
-      'A few times a day — pick my spots.',
-      'A few times a week — wait for the right setup.',
-      'A few times a month — high-conviction only.',
+      'A few times a day — pick my best moments.',
+      'A few times a week — wait for the right opportunity.',
+      "A few times a month — only when I'm really sure.",
     ],
   },
 ];

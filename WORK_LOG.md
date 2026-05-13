@@ -5,6 +5,63 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-12 — Quiz V2: plain-language pass — remove trader jargon from Q1, Q5, Q6
+
+Copy-only update. V2 questions assumed familiarity with trader
+vocabulary (0.5R, trailing stop, high-conviction, "market open" /
+"close" implying intraday calendar). Target users include aspiring
+traders who've never placed a trade — rewriting to read naturally
+without prior knowledge.
+
+### Untouched (locked)
+- Scoring matrix (`OPTION_SCORES`) — same uniform adjacency-weighted
+  matrix applied identically to every question.
+- Archetype mapping per option (A/B/C/D → Scalper / Day / Swing /
+  Position).
+- Tie-break rule (Q1-scored ∩ tied, then long-horizon priority).
+- Reveal screen copy ("YOUR CLOSEST MATCH" + personality descriptions).
+- Progress dots, card sizing, fade transitions — all unchanged.
+
+### Copy changes (verbatim from spec)
+**Q1** — text + all 4 options rewritten:
+- Headline: "0.5R … move is still going strong" → "winning on a trade
+  and the price is still moving your way".
+- A: "you don't argue with a winner" — added "Take the profit now".
+- B: "Scale half off, let the rest run" → "Take half the profit now,
+  let the rest keep running".
+- C: "trailing stop" → "safety stop" + explanatory framing.
+- D: "I sized it for the full target" → "I picked my target before I
+  entered".
+
+**Q5** — headline kept; options A/B/C rewritten:
+- A: "90 minutes after open" → "first hour or two — I'm in and out
+  fast".
+- B: "open to close" → "All day during market hours, but done by
+  evening".
+- C: "Check at lunch, again at the close" → "Check it briefly a
+  couple of times during the day".
+- D unchanged.
+
+**Q6** — headline kept; options B/C/D rewritten:
+- B: "pick my spots" → "pick my best moments".
+- C: "wait for the right setup" → "wait for the right opportunity".
+- D: "high-conviction only" → "only when I'm really sure".
+- A unchanged.
+
+**Q2, Q3, Q4** — fully unchanged (already plain).
+
+### Scoring sanity (unchanged from previous commit)
+- All-A → Scalper; all-B → Day Trader; all-C → Swing; all-D →
+  Position. The matrix wasn't touched, just the prompts and option
+  labels users see.
+
+### Files touched
+- `src/screens/OnboardingArchetypeScreen.tsx` (QUESTIONS array
+  literals only)
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-12 — Quiz V2: 6 questions, 4 options each, quasi-ipsative scoring with adjacency
 
 V1 had two problems: (1) on-the-nose questions self-aware traders
