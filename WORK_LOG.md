@@ -5,6 +5,93 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-14 — Rank Reveal: weighted YOU-indicator drop-in + re-sequenced entrance animation
+
+Per `docs/ONBOARDING_AUDIT.md`, the Rank Reveal screen was the
+second-strongest screen in the flow. One upgrade requested: the
+"← YOU" indicator should *drop* into the Gambler row with weight
+(a "thunk") instead of just fading in with the banner, and the
+progress bar should fill **after** the user "arrives" so the
+choreography reads as cause-and-effect (you land → your progress
+shows).
+
+Animation library: React Native's built-in `Animated` — no new
+deps. Native driver for all transforms / opacities; the JS driver
+is only used for the progress-bar width (RN can't run width
+animations on the native thread).
+
+### Re-sequenced timeline
+
+Everything is parallelized with explicit delays so each step
+hands off cleanly. Total runtime ≈ **2.45 s**.
+
+| Step | Element | Start | Duration |
+|---|---|---:|---:|
+| a | Headline + subheadline | 0 ms | 280 ms |
+| b | Gambler banner — opacity + scale (0.94 → 1) | 320 ms | 280 ms |
+| c | "← YOU" — quick fade (90 ms) + spring drop | 640 ms | spring |
+|   | **Medium haptic fires at first zero-crossing (≈ 790 ms)** | 790 ms | — |
+| d | Progress bar — track fades in (120 ms) + fill 0 % → 10 % | 790 ms | 500 ms |
+| e | "10 % toward Paper Hands" label | 1330 ms | 220 ms |
+| f | Paper Hands → Sniper → Inside Trader → Market Maker (100 ms cascade) | 1550 ms | 220 ms each |
+| g | Continue button | 2210 ms | 240 ms |
+
+Trim-friendly: every `T_*` / `D_*` constant lives at the top of
+the file so timing can be re-balanced without hunting through
+the animation block.
+
+### YOU-indicator drop-in (the "thunk")
+
+The audit specifically called this out, so it's the most
+considered part of the file:
+
+- The Gambler row is now composed manually on the screen — a
+  flex-row of `<RankBanner rank="gambler">` (no
+  `showYouIndicator`) + an `<Animated.View>` wrapping the
+  `"← YOU"` text. This lets the YOU label animate independently
+  of the banner. `RankBanner` itself is **untouched**.
+- The YOU label starts at `translateY: -18 px` + `opacity: 0`,
+  then animates:
+  - opacity 0 → 1 over 90 ms (so the label appears just as it
+    starts dropping, not invisibly during the fall)
+  - `Animated.spring(youY, { toValue: 0, tension: 120,
+    friction: 7, useNativeDriver: true })` — tuned to a sharp
+    drop with a small overshoot and a fast settle. Higher
+    friction made the drop feel soft; lower friction wobbled.
+- A `setTimeout` fires `Haptics.impactAsync(Medium)` at
+  `T_YOU + 150 ms` — the empirical first zero-crossing of the
+  spring. `Animated.spring` callbacks only fire at *settle*, so
+  using them for the haptic would be too late by ~300 ms.
+- The `setTimeout` is captured and cleared in the effect's
+  cleanup so a fast back-navigation doesn't ping the haptic
+  motor after the screen is gone.
+
+### Progress block
+
+Previously the progress bar started filling at 400 ms while the
+Gambler banner was still fading in — premature, given the
+"you've arrived" reading the audit wanted. Now the track and
+fill don't start animating until the YOU indicator has landed,
+and the "10 % toward Paper Hands" caption fades in only after
+the fill completes. The label moved from a sibling fade-in to a
+nested `Animated.Text` inside the progress block so its opacity
+drives independently of the track wrapper's.
+
+### Out of scope (deliberate)
+
+- `RankBanner.tsx` untouched — no signature change, all other
+  consumers still work.
+- No content, copy, color, or layout changes.
+- `handleContinue` still navigates to `OnboardingPlanSummary`.
+- No new dependency — pure RN `Animated`.
+
+### Files touched
+
+- `src/screens/OnboardingRankRevealScreen.tsx`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-14 — Screen 7: live player card preview + archetype-based handle suggestions
 
 Two `docs/ONBOARDING_AUDIT.md` items on the Trader Name screen:
