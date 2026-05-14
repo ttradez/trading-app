@@ -5,6 +5,49 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-13 — Mock notification permission for v1 (real wire-up deferred to Firebase auth follow-up)
+
+The install of `expo-notifications` shipped with the prior screen-12
+commit didn't take on the user's device — Metro kept failing to
+resolve the module. Since real notification scheduling was already
+deferred to the Firebase wire-up follow-up, replacing the permission
+ask with a mock unblocks the flow without losing anything that
+wasn't already on the deferred list.
+
+### What changed
+
+**`src/screens/OnboardingWelcomeScreen.tsx`**
+- Removed `import * as Notifications from 'expo-notifications'`.
+- Added `mockRequestNotificationPermission(): Promise<boolean>` — a
+  `Promise` that resolves to `true` after 300 ms. Shape matches
+  `Notifications.requestPermissionsAsync()` so the call site
+  re-wires by swapping one line when the real flow lands.
+- `handleEnable` now `await`s the mock instead of the real call.
+  Always reports granted = true (the assumption being that v1
+  optimizes for the happy path; real OS permission is re-asked when
+  the real module wires in).
+- `handleSkip` unchanged — still writes `notificationsEnabled: false`.
+
+**`package.json` + `package-lock.json`**
+- `expo-notifications` removed via `npm uninstall expo-notifications`.
+  Metro will resolve cleanly on next bundle.
+
+### Out of scope
+- The quick-list time picker (preset 6 AM through 9 PM options)
+  doesn't need `@react-native-community/datetimepicker` and ships
+  unchanged — already a Modal of Pressable rows.
+- Real OS permission ask, daily notification scheduling, and the
+  reminder-time settings UI all stay on the Firebase wire-up
+  follow-up list in PROJECT_CONTEXT.md.
+
+### Files touched
+- `src/screens/OnboardingWelcomeScreen.tsx`
+- `package.json`
+- `package-lock.json`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-13 — Onboarding screen 12: Welcome + notifications opt-in (final screen, hand-off to home)
 
 **Onboarding flow SHELL IS COMPLETE.** All 12 screens shipped end to

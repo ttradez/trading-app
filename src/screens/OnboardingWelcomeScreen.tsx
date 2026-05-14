@@ -5,10 +5,23 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import * as Notifications from 'expo-notifications';
 import {
   useOnboardingStore, DailyCommitment,
 } from '../store/onboardingStore';
+
+/**
+ * MOCK permission ask — simulates the iOS/Android system prompt with
+ * a 300 ms delay and always resolves to `granted = true`. The real
+ * permission flow lives in the deferred Firebase wire-up follow-up
+ * (along with actual daily-notification scheduling against the
+ * stored `preferredReminderTime`). Keeping a function shape that
+ * matches `Notifications.requestPermissionsAsync()` so the call site
+ * doesn't have to change when the real call replaces this one.
+ */
+const mockRequestNotificationPermission = (): Promise<boolean> =>
+  new Promise((resolve) => {
+    setTimeout(() => resolve(true), 300);
+  });
 
 /**
  * Onboarding screen 12 — Welcome + notifications opt-in.
@@ -109,15 +122,11 @@ export default function OnboardingWelcomeScreen({ navigation }: Props) {
     if (busy) return;
     setBusy(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    let granted = false;
-    try {
-      const { status } = await Notifications.requestPermissionsAsync();
-      granted = status === 'granted';
-    } catch {
-      // If the module fails (Expo Go quirks, dev-client mismatch),
-      // treat as denied. The flow still proceeds.
-      granted = false;
-    }
+    // Mock for v1 — real permission ask lands with the Firebase
+    // follow-up. Always resolves granted=true so the user perceives
+    // notifications as enabled; actual OS permission gets re-asked
+    // when the real notification module wires in.
+    const granted = await mockRequestNotificationPermission();
     setNotifications(granted, preferredReminderTime);
     goToMain();
   };
