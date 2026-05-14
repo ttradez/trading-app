@@ -110,6 +110,18 @@ interface OnboardingState {
   authMethod: AuthMethod | null;
   isAuthed: boolean;
 
+  /** Notification preferences from screen 12. `notificationsEnabled`
+   *  reflects the OS permission grant; `preferredReminderTime` is in
+   *  HH:MM 24-hour format (e.g. '09:00'). */
+  notificationsEnabled: boolean;
+  preferredReminderTime: string;
+
+  /** Set true on screen 12 to signal the whole onboarding flow is
+   *  done. Routing-guard logic that hides onboarding for completed
+   *  users is a follow-up — for now FORCE_ONBOARDING_FLOW still
+   *  triggers it on every relaunch. */
+  onboardingComplete: boolean;
+
   setArchetype: (archetype: Archetype, answers: ArchetypeAnswer[]) => void;
   setIdentity: (identity: Identity, goalCategory: GoalCategory) => void;
   setExperienceLevel: (level: ExperienceLevel) => void;
@@ -119,10 +131,14 @@ interface OnboardingState {
   setDailyCommitment: (commitment: DailyCommitment) => void;
   setFirstTrade: (result: FirstTradeResult) => void;
   setAuth: (method: AuthMethod) => void;
+  setNotifications: (enabled: boolean, preferredReminderTime: string) => void;
+  setOnboardingComplete: (complete: boolean) => void;
   reset: () => void;
 }
 
 const DEFAULT_ACCOUNT_SIZE = 50_000;
+
+const DEFAULT_REMINDER_TIME = '09:00';
 
 export const useOnboardingStore = create<OnboardingState>((set) => ({
   archetype: null,
@@ -137,6 +153,9 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
   firstTrade: null,
   authMethod: null,
   isAuthed: false,
+  notificationsEnabled: false,
+  preferredReminderTime: DEFAULT_REMINDER_TIME,
+  onboardingComplete: false,
 
   setArchetype: (archetype, answers) =>
     set({ archetype, archetypeAnswers: answers }),
@@ -165,6 +184,12 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
   setAuth: (authMethod) =>
     set({ authMethod, isAuthed: true }),
 
+  setNotifications: (notificationsEnabled, preferredReminderTime) =>
+    set({ notificationsEnabled, preferredReminderTime }),
+
+  setOnboardingComplete: (onboardingComplete) =>
+    set({ onboardingComplete }),
+
   reset: () => set({
     archetype: null,
     archetypeAnswers: [],
@@ -178,5 +203,8 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
     firstTrade: null,
     authMethod: null,
     isAuthed: false,
+    notificationsEnabled: false,
+    preferredReminderTime: DEFAULT_REMINDER_TIME,
+    onboardingComplete: false,
   }),
 }));

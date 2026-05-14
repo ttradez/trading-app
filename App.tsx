@@ -184,6 +184,11 @@ export default function App() {
             <Stack.Screen name="OnboardingRankReveal"  component={OnboardingRankRevealScreen}  options={{ gestureEnabled: false }} />
             <Stack.Screen name="OnboardingAuth"        component={OnboardingAuthScreen}        options={{ gestureEnabled: false }} />
             <Stack.Screen name="OnboardingWelcome"     component={OnboardingWelcomeScreen}     options={{ gestureEnabled: false }} />
+            {/* Hand-off destination: when screen 12 calls
+                navigation.reset({ routes: [{ name: 'Main' }] }) the
+                user lands on the bottom-tab navigator and can't
+                navigate back into onboarding. */}
+            <Stack.Screen name="Main"                  component={MainTabs}                    options={{ gestureEnabled: false }} />
           </Stack.Navigator>
         </NavigationContainer>
       </SafeAreaProvider>

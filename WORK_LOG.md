@@ -5,6 +5,120 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-13 — Onboarding screen 12: Welcome + notifications opt-in (final screen, hand-off to home)
+
+**Onboarding flow SHELL IS COMPLETE.** All 12 screens shipped end to
+end. This commit finishes the loop by adding the welcome screen and
+the navigation hand-off back to the main app's `MainTabs`.
+
+Per `docs/ONBOARDING_RETENTION_RESEARCH.md` the notification opt-in
+goes HERE — user has just experienced value (first trade + badge +
+rank reveal), is motivated, and hasn't left the app. Optimal moment.
+Framed against the daily-commitment promise the user made on screen
+8, not as a generic OS prompt.
+
+### What shipped
+
+**`expo-notifications` installed** via `npx expo install
+expo-notifications`. Bundled in Expo Go for local notifications +
+permission flow; full remote push would need a dev-client rebuild.
+
+**`src/store/onboardingStore.ts`**
+- New state fields: `notificationsEnabled: boolean` (default
+  `false`), `preferredReminderTime: string` HH:MM 24h (default
+  `'09:00'`), `onboardingComplete: boolean` (default `false`).
+- New actions: `setNotifications(enabled, time)`,
+  `setOnboardingComplete(complete)`. `reset()` clears all three.
+
+**`src/screens/OnboardingWelcomeScreen.tsx`** (rewritten from placeholder)
+- "You're in." headline (38 px 800 bold, centered, tight letter
+  spacing -0.8).
+- Subheadline interpolates `dailyCommitment` via a `COMMITMENT_PHRASE`
+  map: light → "three days a week" / steady → "every day" / pro →
+  "every day, sometimes twice".
+- Notification card: small-caps `DAILY TRAINING REMINDER` label,
+  big 24 px tabular-nums time display (`9:00 AM` by default), gold
+  underlined "Change time" link, body copy "We'll send one
+  notification a day at your chosen time…".
+- **Time picker:** quick-list modal (`Modal` + 9 preset times in a
+  `Pressable` list). Selected option highlighted with gold border +
+  gold text. Tap to pick → modal closes, card updates. Avoids
+  `@react-native-community/datetimepicker` which isn't bundled in
+  Expo Go.
+- **"Enable reminders and enter"** — gold CTA. Tap →
+  `Haptics.Medium` → `await Notifications.requestPermissionsAsync()`
+  (wrapped in try/catch so a module hiccup doesn't break the flow)
+  → `setNotifications(granted, preferredReminderTime)` →
+  `setOnboardingComplete(true)` →
+  `navigation.reset({ index: 0, routes: [{ name: 'Main' }] })`.
+- **"Skip reminders for now"** — small white-50% underlined link
+  below the CTA. Skips the permission request,
+  `setNotifications(false, preferredReminderTime)`, same
+  reset-to-Main hand-off.
+- Either button marks `onboardingComplete: true` and clears the
+  navigation stack so the user can't navigate back into onboarding.
+- Staggered fade-ins: headline (t=0) → subheadline (t=200) → card
+  (t=400) → buttons (t=600), each 320 ms native-driver opacity.
+
+**`App.tsx`**
+- Registered `<Stack.Screen name="Main" component={MainTabs} />`
+  inside the `FORCE_ONBOARDING_FLOW` stack so the screen-12
+  `navigation.reset` has a valid destination. `MainTabs` is the
+  existing bottom-tab navigator defined in `App.tsx`.
+
+**`PROJECT_CONTEXT.md`**
+- Onboarding bullet rewritten: all 12 screens shipped. Follow-up
+  task list spelled out:
+  1. Real Firebase auth wire-up (replace screen-11 mock).
+  2. Notification scheduling logic (screen 12 only requests
+     permission; actual cron-style daily firing isn't wired).
+  3. Onboarding-complete routing guard (skip the flow on relaunch
+     when `onboardingComplete: true` and `FORCE_ONBOARDING_FLOW:
+     false`).
+  4. Backend save of the captured onboarding payload.
+
+### Final onboardingStore shape (after the full flow)
+```ts
+{
+  archetype, archetypeAnswers,
+  identity, goalCategory,
+  experienceLevel,
+  accountSize,
+  handle, displayName,
+  dailyCommitment,
+  firstTrade: { action, entryPrice, exitPrice, pnl, badge },
+  authMethod, isAuthed: true,
+  notificationsEnabled, preferredReminderTime,
+  onboardingComplete: true,
+}
+```
+All fields populated by the time the user lands on `MainTabs`.
+
+### Out of scope (deferred to follow-ups)
+- Real notification scheduling (just permission grant + stored
+  preferred time for now).
+- Settings UI for changing the reminder time post-onboarding.
+- Backend save of onboarding data.
+- Routing guard that skips onboarding on subsequent launches.
+- Confetti / celebratory motion beyond the simple fade-in.
+- Screens 1-11 untouched.
+
+### Files touched
+- `src/store/onboardingStore.ts`
+- `src/screens/OnboardingWelcomeScreen.tsx` (rewritten)
+- `App.tsx` (Main route added to onboarding stack)
+- `package.json` + `package-lock.json` (`expo-notifications` added)
+- `PROJECT_CONTEXT.md`
+- `WORK_LOG.md`
+
+### Flow wired end-to-end
+Splash → Premise → Quiz → reveal → Identity → Experience → Account
+size → Trader name → Daily commitment → First Trade → result →
+Rank reveal → Auth (mock) → **Welcome** (notification opt-in +
+either CTA) → `MainTabs` (existing bottom-tab home screen).
+
+---
+
 ## 2026-05-13 — Onboarding screen 11: Auth UI shell (mock auth, real Firebase integration deferred)
 
 Per `docs/ONBOARDING_RETENTION_RESEARCH.md` the single
