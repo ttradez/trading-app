@@ -6,7 +6,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useOnboardingStore } from '../store/onboardingStore';
+import { useOnboardingStore, Archetype } from '../store/onboardingStore';
 import PlayerCardPreview from '../components/onboarding/PlayerCardPreview';
 
 /**
@@ -34,12 +34,41 @@ const HANDLE_MAX = 20;
 const NAME_MIN = 1;
 const NAME_MAX = 24;
 
-const ANIMALS = [
+/** Archetype-tied suggestion pools — 8 per archetype, all
+ *  pre-validated against `isHandleValid` (lowercase, periods + letters
+ *  + digits, 3-20 chars, no leading/trailing/consecutive separators).
+ *  Per audit: handles should reflect *who the user just typed as*,
+ *  not generic animal-noun chaff. The refresh button shuffles 3 out
+ *  of the pool, so each tap shows a different cut. */
+const ARCHETYPE_SUGGESTIONS: Record<Archetype, string[]> = {
+  scalper: [
+    'scalp.07', 'tick.hunter', 'fast.hands', 'quick.draw',
+    'blade.runner', 'micro.moves', 'knife.edge', 'in.n.out',
+  ],
+  day_trader: [
+    'tape.reader', 'intraday.ace', 'price.action', 'the.close',
+    'session.07', 'chart.eyes', 'day.grind', 'market.hours',
+  ],
+  swing_trader: [
+    'trend.rider', 'swing.state', 'multi.day', 'wave.rider',
+    'the.swing', 'hold.steady', 'trend.07', 'swing.king',
+  ],
+  position_trader: [
+    'big.picture', 'long.game', 'the.thesis', 'conviction',
+    'macro.mind', 'long.haul', 'position.07', 'slow.steady',
+  ],
+};
+
+/** Generic fallback pool used if `archetype` is somehow null on entry
+ *  (shouldn't happen — quiz runs before this screen — but keep the
+ *  fallback so the chips never render empty). Reuses the prior
+ *  animal+number pattern as a safety net. */
+const FALLBACK_ANIMALS = [
   'wolf', 'hawk', 'fox', 'shark', 'bear', 'bull', 'tiger', 'lion',
   'raven', 'viper', 'falcon', 'panther', 'eagle', 'cobra', 'jaguar', 'owl',
 ];
 
-/** Pick a separator with weighted probability:
+/** Pick a separator with weighted probability for the fallback pool:
  *  60% none ("wolf42"), 30% underscore ("fox_15"), 10% period ("shark.88"). */
 function pickSeparator(): '' | '_' | '.' {
   const r = Math.random();
@@ -48,12 +77,22 @@ function pickSeparator(): '' | '_' | '.' {
   return '.';
 }
 
-function generateSuggestions(): string[] {
-  const shuffled = [...ANIMALS].sort(() => Math.random() - 0.5).slice(0, 3);
+function generateFallbackSuggestions(): string[] {
+  const shuffled = [...FALLBACK_ANIMALS].sort(() => Math.random() - 0.5).slice(0, 3);
   return shuffled.map((a) => {
     const n = Math.floor(Math.random() * 90) + 10; // 10-99
     return `${a}${pickSeparator()}${n}`;
   });
+}
+
+function generateSuggestions(archetype: Archetype | null): string[] {
+  if (!archetype) return generateFallbackSuggestions();
+  // Defensively filter against the validation rules — pools are
+  // hand-curated to satisfy them, but the filter keeps this honest
+  // if anyone ever extends a pool without re-checking.
+  const pool = ARCHETYPE_SUGGESTIONS[archetype].filter(isHandleValid);
+  if (pool.length < 3) return generateFallbackSuggestions();
+  return [...pool].sort(() => Math.random() - 0.5).slice(0, 3);
 }
 
 // Format rules per spec — does NOT check uniqueness.
@@ -78,12 +117,13 @@ export default function OnboardingTraderNameScreen({ navigation }: Props) {
 
   const handle         = useOnboardingStore((s) => s.handle);
   const displayName    = useOnboardingStore((s) => s.displayName);
+  const archetype      = useOnboardingStore((s) => s.archetype);
   const setHandle      = useOnboardingStore((s) => s.setHandle);
   const setDisplayName = useOnboardingStore((s) => s.setDisplayName);
 
   const [handleFocused, setHandleFocused] = useState(false);
   const [nameFocused,   setNameFocused]   = useState(false);
-  const [suggestions,   setSuggestions]   = useState<string[]>(() => generateSuggestions());
+  const [suggestions,   setSuggestions]   = useState<string[]>(() => generateSuggestions(archetype));
 
   const opacity = useRef(new Animated.Value(0)).current;
 
@@ -115,7 +155,7 @@ export default function OnboardingTraderNameScreen({ navigation }: Props) {
 
   const refreshSuggestions = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    setSuggestions(generateSuggestions());
+    setSuggestions(generateSuggestions(archetype));
   };
 
   const applySuggestion = (s: string) => {

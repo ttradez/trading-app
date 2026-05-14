@@ -5,6 +5,96 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-14 — Screen 7: live player card preview + archetype-based handle suggestions
+
+Two `docs/ONBOARDING_AUDIT.md` items on the Trader Name screen:
+(1) the player-card preview wasn't reading as live; (2) the
+handle suggestions ignored the archetype the user had just been
+typed as.
+
+### Change 1 — live player card preview (verified, no code change)
+
+`PlayerCardPreview` was *already* prop-driven (`displayName`,
+`handle`, optional `badge`, optional `rank`) and the Trader Name
+screen *already* fed it the live store values. Trace:
+
+```tsx
+<PlayerCardPreview
+  rank="gambler"
+  displayName={displayName}  // from useOnboardingStore((s) => s.displayName)
+  handle={handle}            // from useOnboardingStore((s) => s.handle)
+/>
+```
+
+Each `TextInput` writes through to the store on every keystroke
+(`onChangeText: (t) => setDisplayName(t)` / `setHandle(t)`),
+which re-renders the screen with the new value and re-renders
+`PlayerCardPreview` with the new prop. Empty values fall back to
+the existing grey placeholder strings inside the preview itself
+(`'Your Name'` / `'@your.handle'`).
+
+The audit's "static template" complaint appears to predate the
+current implementation. Verified by re-reading
+`PlayerCardPreview.tsx` + `OnboardingTraderNameScreen.tsx`:
+nothing to change on screen 7's wiring or the component itself.
+
+Other consumers (confirmed by grep):
+- `OnboardingAuthScreen` — also feeds the stored values; the
+  saved name + handle appear on the auth recap card with the
+  optional `firstTrade.badge`.
+- `OnboardingRankRevealScreen` — *does NOT* use
+  `PlayerCardPreview` (it uses `RankBanner` directly). The audit
+  brief listed it as a consumer; not the case in the current
+  code. Mentioned only so the next reader doesn't go looking.
+
+Net: PlayerCardPreview stays prop-driven, no signature change,
+no behavior change on Auth.
+
+### Change 2 — archetype-tied handle suggestions
+
+The 3-chip suggestions row + refresh button now pulls from a pool
+keyed on `onboardingStore.archetype`. Pools are 8 handles each,
+all of which already satisfy `isHandleValid` (lowercase
+letters / digits / periods, 3-20 chars, no leading/trailing/
+consecutive separators) but are filtered through that predicate
+defensively at sample time so the validation rule remains the
+source of truth.
+
+| Archetype | Pool |
+|---|---|
+| Scalper | `scalp.07`, `tick.hunter`, `fast.hands`, `quick.draw`, `blade.runner`, `micro.moves`, `knife.edge`, `in.n.out` |
+| Day Trader | `tape.reader`, `intraday.ace`, `price.action`, `the.close`, `session.07`, `chart.eyes`, `day.grind`, `market.hours` |
+| Swing Trader | `trend.rider`, `swing.state`, `multi.day`, `wave.rider`, `the.swing`, `hold.steady`, `trend.07`, `swing.king` |
+| Position Trader | `big.picture`, `long.game`, `the.thesis`, `conviction`, `macro.mind`, `long.haul`, `position.07`, `slow.steady` |
+
+`generateSuggestions(archetype)` shuffles the 8-entry pool and
+takes 3. The refresh button calls it again with the same
+archetype — each tap shows a different cut (~6.7% chance of
+matching the previous set with 8-pick-3 shuffles; the user
+sees rotation).
+
+Fallback: if `archetype` is `null` (shouldn't happen — the
+archetype quiz runs before this screen — but the type allows
+it), the old generic animal+number generator runs so the chip
+row is never empty. The fallback also fires if a pool ever fails
+the validity filter and drops below 3 entries.
+
+### Files touched
+
+- `src/screens/OnboardingTraderNameScreen.tsx` (suggestion pools +
+  archetype plumbing into `generateSuggestions`)
+- `WORK_LOG.md`
+
+### Out of scope (deliberate)
+
+- No change to `PlayerCardPreview.tsx` — already prop-driven.
+- No change to `OnboardingAuthScreen.tsx` — already feeds props
+  from store correctly.
+- Headline, subheadline, field labels, helper text,
+  `isHandleValid` rules, Continue behavior all untouched.
+
+---
+
 ## 2026-05-14 — Onboarding: add Plan Summary screen between Rank Reveal and Auth
 
 Per `docs/ONBOARDING_AUDIT.md`: 10 screens of user input followed
