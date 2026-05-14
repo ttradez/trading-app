@@ -3,6 +3,7 @@ import {
   View, Text, Pressable, Animated, StyleSheet, StatusBar, ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import {
   useOnboardingStore, Identity, GoalCategory,
@@ -11,11 +12,21 @@ import {
 /**
  * Onboarding screen 4 — Identity selection (Atomic Habits framing).
  *
- * Per docs/ONBOARDING_RETENTION_RESEARCH.md: highest-leverage retention
- * move per James Clear — identity-based habits beat outcome-based
- * habits if the identity gets reinforced with small wins. The chosen
- * identity also maps to a goal category that drives later coaching
- * tips, push copy, and personalized challenges.
+ * Per docs/ONBOARDING_AUDIT.md: the audit flagged this screen as the
+ * worst scannability problem in the flow — 5 prose cards required
+ * scrolling, and grey multi-line descriptions made at-a-glance
+ * differentiation nearly impossible. This rebuild trades the prose
+ * for an accordion pattern:
+ *
+ *   collapsed = gold icon + bold name + 3-6 word trait line
+ *   selected  = gold border + full description revealed beneath
+ *
+ * At most one card is ever expanded — selection and expansion are
+ * unified, so tapping any card both selects it and reveals its
+ * description while collapsing the previous one.
+ *
+ * No new dependency: `MaterialCommunityIcons` is bundled in
+ * `@expo/vector-icons`, which is already in the project.
  */
 
 const BG          = '#000000';
@@ -25,43 +36,60 @@ const CARD_BG_SEL = '#0A0A0A';
 const CARD_BORDER = '#1F1F1F';
 const CTA_DISABLED_BG = '#2A2A2A';
 
+type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+
 interface IdentityOption {
   id: Identity;
   title: string;
+  /** Punchy 3-6 word trait shown in the collapsed card. */
+  trait: string;
+  /** Full description shown only when this card is selected (expanded). */
   description: string;
   goal: GoalCategory;
+  /** MaterialCommunityIcons glyph name. */
+  icon: IconName;
 }
 
 const IDENTITIES: IdentityOption[] = [
   {
     id: 'patient_sniper',
     title: 'The Patient Sniper',
+    trait: 'Waits. Strikes. Wins.',
     description: "You wait for A+ setups. Most of the day, you're not in a trade. When you strike, it counts.",
     goal: 'psychology',
+    icon: 'crosshairs',
   },
   {
     id: 'process_machine',
     title: 'The Process Machine',
+    trait: 'Same setup. Same size. Every time.',
     description: 'Same setup, same size, same risk, every time. Your edge is showing up exactly the same way every day.',
     goal: 'consistency',
+    icon: 'cog',
   },
   {
     id: 'risk_surgeon',
     title: 'The Risk Surgeon',
+    trait: 'Tight stops. Never bleeds out.',
     description: 'You manage risk like a surgeon manages a scalpel. Tight stops, exact sizing, never bleeds out.',
     goal: 'risk',
+    icon: 'pulse',
   },
   {
     id: 'calm_operator',
     title: 'The Calm Operator',
+    trait: 'Steady nerves when others panic.',
     description: "Losses don't shake you. Wins don't inflate you. Your edge is steady nerves when everyone else is panicking.",
     goal: 'psychology',
+    icon: 'waves',
   },
   {
     id: 'profit_compounder',
     title: 'The Profit Compounder',
+    trait: 'Slow gains. Heavy compound.',
     description: 'You play the long game. Steady gains, reinvested. Your edge is patience with capital growth.',
     goal: 'profitability',
+    icon: 'trending-up',
   },
 ];
 
@@ -82,10 +110,24 @@ function IdentityCard({
       ]}
       accessibilityRole="button"
       accessibilityLabel={option.title}
+      accessibilityHint={option.trait}
       accessibilityState={{ selected }}
     >
-      <Text style={styles.cardTitle}>{option.title}</Text>
-      <Text style={styles.cardDescription}>{option.description}</Text>
+      <View style={styles.cardRow}>
+        <MaterialCommunityIcons
+          name={option.icon}
+          size={26}
+          color={GOLD}
+          style={styles.icon}
+        />
+        <View style={styles.textBlock}>
+          <Text style={styles.cardTitle}>{option.title}</Text>
+          <Text style={styles.cardTrait}>{option.trait}</Text>
+          {selected && (
+            <Text style={styles.cardDescription}>{option.description}</Text>
+          )}
+        </View>
+      </View>
     </Pressable>
   );
 }
@@ -123,6 +165,7 @@ export default function OnboardingIdentityScreen({ navigation }: Props) {
   };
 
   const ctaEnabled = selectedId !== null;
+  const ctaLabel = ctaEnabled ? 'Continue' : 'Pick a path to continue';
 
   return (
     <View style={styles.root}>
@@ -157,7 +200,9 @@ export default function OnboardingIdentityScreen({ navigation }: Props) {
         </ScrollView>
       </Animated.View>
 
-      {/* CTA — anchored at bottom, gated by selection. */}
+      {/* CTA — anchored at bottom, gated by selection. Label flips
+          from "Pick a path to continue" → "Continue" to give the
+          disabled state explicit guidance. */}
       <View style={[styles.ctaWrap, { paddingBottom: Math.max(insets.bottom, 16) }]}>
         <Pressable
           onPress={handleContinue}
@@ -168,11 +213,11 @@ export default function OnboardingIdentityScreen({ navigation }: Props) {
             ctaEnabled && pressed && styles.ctaPressed,
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Continue"
+          accessibilityLabel={ctaLabel}
           accessibilityState={{ disabled: !ctaEnabled }}
         >
           <Text style={[styles.ctaText, !ctaEnabled && styles.ctaTextDisabled]}>
-            Continue
+            {ctaLabel}
           </Text>
         </Pressable>
       </View>
@@ -210,36 +255,58 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
 
-  cards: { marginTop: 28 },
-  cardGap: { marginTop: 12 },
+  cards: { marginTop: 24 },
+  cardGap: { marginTop: 10 },
 
   card: {
     backgroundColor: CARD_BG,
     borderColor: CARD_BORDER,
     borderWidth: 1,
     borderRadius: 14,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
   },
   cardSelected: {
     backgroundColor: CARD_BG_SEL,
     borderColor: GOLD,
     borderWidth: 2,
-    // Compensate paddings so the layout doesn't jump when border grows
-    paddingHorizontal: 17,
-    paddingVertical: 15,
+    // Compensate paddings so the layout doesn't jump on selection.
+    paddingHorizontal: 13,
+    paddingVertical: 13,
   },
   cardPressed: { opacity: 0.85 },
+
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  icon: {
+    marginRight: 12,
+    // Nudge the icon down slightly so it lines up with the title's
+    // cap-height instead of its line-box top.
+    marginTop: 1,
+  },
+  textBlock: {
+    flex: 1,
+  },
   cardTitle: {
     color: '#FFFFFF',
-    fontSize: 21,
+    fontSize: 18,
     fontWeight: '700',
     letterSpacing: -0.2,
-    lineHeight: 26,
+    lineHeight: 22,
+  },
+  cardTrait: {
+    marginTop: 2,
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 13,
+    fontWeight: '500',
+    letterSpacing: 0.1,
+    lineHeight: 17,
   },
   cardDescription: {
-    marginTop: 6,
-    color: 'rgba(255,255,255,0.7)',
+    marginTop: 10,
+    color: 'rgba(255,255,255,0.78)',
     fontSize: 14,
     fontWeight: '400',
     lineHeight: 20,

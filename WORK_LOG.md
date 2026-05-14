@@ -5,6 +5,84 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-13 — Identity Selection: accordion cards + gold icons + scannable traits + Continue label
+
+Four audit fixes from `docs/ONBOARDING_AUDIT.md` on screen 4
+(Identity Selection). Same store contract, same navigation —
+visual rebuild only.
+
+### Change 1 — Accordion cards
+- Collapsed (default for all 5 cards): gold icon (left, 26 px) +
+  bold archetype name + one-line trait beneath. Hides the full
+  description.
+- Selected = expanded: same card gains the 2 px gold border AND
+  reveals its full description below the trait. All other cards
+  collapse back to the one-liner.
+- Selection and expansion are unified — at most one card is ever
+  expanded, no separate "tap to expand" affordance to confuse.
+- All 5 collapsed cards now fit on iPhone-SE-class screens without
+  scrolling (collapsed ≈ 65 px each, 5 + 4 gaps + headline +
+  subheadline + CTA fits in ~605 px). ScrollView kept for safety.
+
+### Change 2 — One-line traits (3-6 words, staccato)
+- Patient Sniper → *"Waits. Strikes. Wins."*
+- Process Machine → *"Same setup. Same size. Every time."*
+- Risk Surgeon → *"Tight stops. Never bleeds out."*
+- Calm Operator → *"Steady nerves when others panic."*
+- Profit Compounder → *"Slow gains. Heavy compound."* (newly
+  written to match the rhythm of the others; derived from the
+  existing full description's "patience with capital growth"
+  framing.)
+
+Full descriptions stay verbatim — they show in the expanded state
+when the card is selected.
+
+### Change 3 — Per-archetype gold icons
+No `lucide-react-native` in the project. Used
+**`MaterialCommunityIcons`** from the already-installed
+`@expo/vector-icons` — bundled with the SDK, no new dep. MCI was
+chosen over Feather (also bundled) because Feather doesn't have a
+`waves` glyph; MCI hits all 5 directly. Icons rendered at 26 px,
+gold `#FFB800`, left of the text block with 12 px right-margin and a
+1 px `marginTop` nudge to line up with the title's cap-height.
+
+| Archetype | MCI icon |
+|---|---|
+| Patient Sniper | `crosshairs` |
+| Process Machine | `cog` |
+| Risk Surgeon | `pulse` |
+| Calm Operator | `waves` |
+| Profit Compounder | `trending-up` |
+
+(For "Risk Surgeon" the audit suggested a medical/precision icon.
+`pulse` — the heart-rate squiggle — conveys "tracking vitals,
+doesn't bleed out" better than a literal scalpel would on a 26 px
+target.)
+
+### Change 4 — Continue button label
+- Disabled (no card selected): label reads *"Pick a path to
+  continue"* with the muted `#2A2A2A` bg + 0.5-opacity white text.
+- Enabled (card selected): label reads *"Continue"* with full gold.
+- `accessibilityLabel` updates in lockstep with the visible label.
+- Single `ctaLabel` const computed off `ctaEnabled`; no duplicated
+  text in the JSX.
+
+### Out of scope (deliberate)
+- Headline "Who do you want to BECOME?" + subheadline unchanged.
+- `onboardingStore.identity` + `goalCategory` mapping unchanged —
+  selection still saves the same values it did before.
+- No accordion expand/collapse animation (instant render swap;
+  ScrollView handles any overflow). Add LayoutAnimation later if
+  the swap feels too abrupt.
+- No other screens touched.
+- No new dependencies.
+
+### Files touched
+- `src/screens/OnboardingIdentityScreen.tsx` (rewritten)
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-13 — Screen 12: forgiveness streak copy + drop 3+hr chip + link to Screen 8 commitment
 
 Three audit fixes from `docs/ONBOARDING_AUDIT.md`, all on the
