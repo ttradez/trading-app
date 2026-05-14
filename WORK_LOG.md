@@ -5,6 +5,100 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-13 — Archetype reveal: rarity stat + sigil icon + trait bars + 'This is me' CTA
+
+Four audit fixes from `docs/ONBOARDING_AUDIT.md` on the
+archetype-quiz reveal screen. The reveal is the moment the app
+tells the user "this is who you are" — used to be text-only; now
+carries the visual + statistical weight to match its narrative
+role. All new data lives in the existing `ARCHETYPE_INFO` config so
+nothing's scattered.
+
+### Change 1 — Rarity stat (computed, not fabricated)
+Ran the existing `computeArchetype` scoring across all 4⁵ = 1024
+possible answer paths to derive each archetype's natural quiz
+distribution:
+
+| Archetype | Paths | Rarity |
+|---|---:|---:|
+| Scalper | 136 | **13%** |
+| Day Trader | 376 | **37%** |
+| Swing Trader | 298 | **29%** |
+| Position Trader | 214 | **21%** |
+
+Sum = 100%. Hardcoded onto `ARCHETYPE_INFO[*].rarity` with an
+inline comment showing the derivation; the script that produced
+the numbers is in this commit's transcript so anyone can re-run
+when scoring changes. Live user-based rarity is a future swap once
+we have a population to count.
+
+Rendered as: *"13% of traders match Scalper"* (white 0.6, 13 px,
+600 weight, just below the archetype name).
+
+### Change 2 — Gold sigil icon (above the name)
+No `lucide-react-native` in the project (`@expo/vector-icons` is
+the icon dep). Used `MaterialCommunityIcons` to match the Identity
+screen pattern shipped earlier today.
+
+| Archetype | MCI glyph |
+|---|---|
+| Scalper | `lightning-bolt` |
+| Day Trader | `clock-outline` |
+| Swing Trader | `chart-line-variant` |
+| Position Trader | `anchor` |
+
+All 40 px, gold `#FFB800`, centered between the eyebrow label and
+the archetype name with `marginTop: 14`. All 4 glyphs are
+visually distinct.
+
+### Change 3 — 3-trait bar visual
+New `TraitBar` subcomponent: 11 px uppercase label, `#1F1F1F`
+6 px track with `borderRadius: 3` + `overflow: hidden`, gold fill
+animating from `0%` → `value%` over 500 ms with
+`Easing.out(Easing.cubic)`. JS driver (width interpolation can't
+run on the native thread). Mount-once `useEffect` kicks the
+animation. Three bars stacked with `gap: 12`, staggered by 0 /
+80 / 160 ms so they cascade.
+
+Trait values stored on `ARCHETYPE_INFO[*].traits`, 0-100 axis,
+exact spec values:
+
+| Archetype | Tempo | Patience | Conviction |
+|---|---:|---:|---:|
+| Scalper | 95 | 15 | 30 |
+| Day Trader | 75 | 40 | 50 |
+| Swing Trader | 40 | 75 | 70 |
+| Position Trader | 15 | 95 | 90 |
+
+### Change 4 — CTA label
+*"Continue"* → *"This is me"*. Gold style + behaviour unchanged.
+`accessibilityLabel` updated to match.
+
+### Layout (top → bottom)
+1. `YOUR CLOSEST MATCH` eyebrow (unchanged)
+2. Gold sigil icon (new, 40 px)
+3. Archetype name (50 px gold, was 52 — tightened by 2 px to
+   accommodate the icon above without overflowing on smaller
+   phones)
+4. Rarity line (new)
+5. Description (unchanged copy, tightened from 18→17 px to
+   make room for the new elements below)
+6. Trait bars (new)
+7. "This is me" CTA (relabelled)
+
+### Out of scope (deliberate)
+- Quiz questions + scoring logic untouched — only read by the
+  rarity computation.
+- Archetype names + descriptions unchanged.
+- No other screens touched.
+- No new dependencies (uses already-installed `@expo/vector-icons`).
+
+### Files touched
+- `src/screens/OnboardingArchetypeScreen.tsx`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-13 — Identity Selection: accordion cards + gold icons + scannable traits + Continue label
 
 Four audit fixes from `docs/ONBOARDING_AUDIT.md` on screen 4

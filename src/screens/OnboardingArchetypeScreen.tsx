@@ -1,10 +1,13 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, Pressable, Animated, StyleSheet, StatusBar,
+  View, Text, Pressable, Animated, Easing, StyleSheet, StatusBar,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useOnboardingStore, Archetype, ArchetypeAnswer } from '../store/onboardingStore';
+
+type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 
 /**
  * Onboarding screen 3 — Trader Archetype Quiz V2.
@@ -98,22 +101,59 @@ const OPTION_SCORES: Record<ArchetypeAnswer, Partial<Record<Archetype, number>>>
 // Tiebreaker #2 — longer-horizon archetype wins (locked).
 const LONG_HORIZON: Archetype[] = ['position_trader', 'swing_trader', 'day_trader', 'scalper'];
 
-const ARCHETYPE_INFO: Record<Archetype, { name: string; description: string }> = {
+/**
+ * Archetype config — name + description + sigil icon + rarity stat +
+ * trait values, all in one place.
+ *
+ * `rarity` is the % of users whose quiz answers resolve to this
+ * archetype, computed by running `computeArchetype` across all
+ * 4^5 = 1024 possible answer paths. Hardcoded here rather than
+ * re-simulated at runtime; can later be swapped for live user data
+ * once we have it. (Computation, for reference:
+ *   scalper          → 136/1024 ≈ 13%
+ *   day_trader       → 376/1024 ≈ 37%
+ *   swing_trader     → 298/1024 ≈ 29%
+ *   position_trader  → 214/1024 ≈ 21%)
+ *
+ * `traits` are TEMPO / PATIENCE / CONVICTION on a 0-100 axis. They
+ * drive the 3-bar visual on the reveal screen.
+ */
+interface ArchetypeInfo {
+  name: string;
+  description: string;
+  icon: IconName;
+  rarity: number;
+  traits: { tempo: number; patience: number; conviction: number };
+}
+
+const ARCHETYPE_INFO: Record<Archetype, ArchetypeInfo> = {
   scalper: {
     name: 'Scalper',
     description: 'You live in the moment. Quick decisions, tight risk, dozens of trades a day. Your edge is speed and pattern reflexes.',
+    icon: 'lightning-bolt',
+    rarity: 13,
+    traits: { tempo: 95, patience: 15, conviction: 30 },
   },
   day_trader: {
     name: 'Day Trader',
     description: 'You read price action and act decisively. In and out within hours. Your edge is reading the tape.',
+    icon: 'clock-outline',
+    rarity: 37,
+    traits: { tempo: 75, patience: 40, conviction: 50 },
   },
   swing_trader: {
     name: 'Swing Trader',
     description: 'You wait for the right setup, then ride it for days. Patience is your weapon. Your edge is timing.',
+    icon: 'chart-line-variant',
+    rarity: 29,
+    traits: { tempo: 40, patience: 75, conviction: 70 },
   },
   position_trader: {
     name: 'Position Trader',
     description: 'You see the big picture and hold for weeks or months. Your edge is conviction and zoom-out perspective.',
+    icon: 'anchor',
+    rarity: 21,
+    traits: { tempo: 15, patience: 95, conviction: 90 },
   },
 };
 
@@ -180,6 +220,36 @@ function AnswerCard({
     >
       <Text style={styles.cardText}>{label}</Text>
     </Pressable>
+  );
+}
+
+/** Animated horizontal trait bar — fill scales 0% → `value`% over
+ *  500 ms with ease-out cubic. Width interpolation requires the JS
+ *  driver. Used only on the reveal screen. */
+function TraitBar({ label, value, delay = 0 }: { label: string; value: number; delay?: number }) {
+  const fill = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(fill, {
+      toValue: 1,
+      duration: 500,
+      delay,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+    // mount-once
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const width = fill.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0%', `${value}%`],
+  });
+  return (
+    <View style={styles.trait}>
+      <Text style={styles.traitLabel}>{label}</Text>
+      <View style={styles.traitTrack}>
+        <Animated.View style={[styles.traitFill, { width }]} />
+      </View>
+    </View>
   );
 }
 
@@ -283,22 +353,36 @@ export default function OnboardingArchetypeScreen({ navigation }: Props) {
         {isReveal && info && (
           <View style={styles.revealBlock}>
             <Text style={styles.revealLabel}>YOUR CLOSEST MATCH</Text>
+            <MaterialCommunityIcons
+              name={info.icon}
+              size={40}
+              color={GOLD}
+              style={styles.revealSigil}
+            />
             <Text style={styles.revealName} allowFontScaling={false}>{info.name}</Text>
+            <Text style={styles.revealRarity}>
+              {info.rarity}% of traders match {info.name}
+            </Text>
             <Text style={styles.revealDescription}>{info.description}</Text>
+            <View style={styles.traitsBlock}>
+              <TraitBar label="TEMPO"      value={info.traits.tempo}      delay={0}   />
+              <TraitBar label="PATIENCE"   value={info.traits.patience}   delay={80}  />
+              <TraitBar label="CONVICTION" value={info.traits.conviction} delay={160} />
+            </View>
           </View>
         )}
       </Animated.View>
 
-      {/* Reveal CTA */}
+      {/* Reveal CTA — relabelled to "This is me" for identity reinforcement. */}
       {isReveal && (
         <View style={[styles.ctaWrap, { paddingBottom: Math.max(insets.bottom, 16) }]}>
           <Pressable
             onPress={handleContinue}
             style={({ pressed }) => [styles.cta, pressed && styles.ctaPressed]}
             accessibilityRole="button"
-            accessibilityLabel="Continue"
+            accessibilityLabel="This is me"
           >
-            <Text style={styles.ctaText}>Continue</Text>
+            <Text style={styles.ctaText}>This is me</Text>
           </Pressable>
         </View>
       )}
@@ -381,6 +465,7 @@ const styles = StyleSheet.create({
   // Reveal view
   revealBlock: {
     alignItems: 'center',
+    alignSelf: 'stretch',
   },
   revealLabel: {
     color: 'rgba(255,255,255,0.6)',
@@ -389,8 +474,11 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     textAlign: 'center',
   },
+  revealSigil: {
+    marginTop: 14,
+  },
   revealName: {
-    marginTop: 16,
+    marginTop: 8,
     color: GOLD,
     fontSize: 52,
     fontWeight: '700',
@@ -398,14 +486,51 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 60,
   },
-  revealDescription: {
-    marginTop: 24,
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '700',
-    lineHeight: 27,
+  revealRarity: {
+    marginTop: 8,
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.2,
     textAlign: 'center',
-    maxWidth: '85%',
+  },
+  revealDescription: {
+    marginTop: 20,
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
+    lineHeight: 25,
+    textAlign: 'center',
+    maxWidth: '90%',
+  },
+
+  // Trait bars below the description
+  traitsBlock: {
+    alignSelf: 'stretch',
+    marginTop: 26,
+    paddingHorizontal: 4,
+    gap: 12,
+  },
+  trait: {
+    alignSelf: 'stretch',
+  },
+  traitLabel: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    marginBottom: 6,
+  },
+  traitTrack: {
+    height: 6,
+    backgroundColor: '#1F1F1F',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  traitFill: {
+    height: '100%',
+    backgroundColor: GOLD,
+    borderRadius: 3,
   },
 
   // CTA — matches screen 2's "I'm in" button.
