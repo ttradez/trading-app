@@ -126,18 +126,14 @@ export default function OnboardingWelcomeScreen({ navigation }: Props) {
         <Animated.View style={[styles.card, { opacity: cardOp }]}>
           <Text style={styles.cardLabel}>DAILY TRAINING GOAL</Text>
 
-          <View style={styles.chipsGrid}>
-            {[0, 3].map((rowStart) => (
-              <View key={rowStart} style={styles.chipRow}>
-                {TIME_OPTIONS.slice(rowStart, rowStart + 3).map((opt) => (
-                  <TimeChip
-                    key={opt.value}
-                    option={opt}
-                    selected={dailyTimeGoalMinutes === opt.value}
-                    onPress={() => handleSelect(opt.value)}
-                  />
-                ))}
-              </View>
+          <View style={styles.chipsStack}>
+            {TIME_OPTIONS.map((opt) => (
+              <TimeChip
+                key={opt.value}
+                option={opt}
+                selected={dailyTimeGoalMinutes === opt.value}
+                onPress={() => handleSelect(opt.value)}
+              />
             ))}
           </View>
 
@@ -216,32 +212,25 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
 
-  // Chips — 2 rows of 3
-  chipsGrid: {
+  // Chips — single vertical stack, full-width
+  chipsStack: {
     marginTop: 14,
-    gap: 8,
-  },
-  chipRow: {
-    flexDirection: 'row',
-    gap: 8,
+    gap: 10,
   },
   chip: {
-    flex: 1,
+    height: 56,
     backgroundColor: CHIP_BG,
     borderColor: CHIP_BORDER,
     borderWidth: 1,
     borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
   chipSelected: {
     borderColor: GOLD,
     borderWidth: 2,
-    // Compensate so layout doesn't jump when border grows by 1 px.
-    paddingVertical: 11,
-    paddingHorizontal: 7,
+    // (height stays fixed; the extra 1 px of border is absorbed into
+    // the centered content area, so the row doesn't jump on selection.)
   },
   chipPressed: { opacity: 0.85 },
   chipText: {
