@@ -65,6 +65,11 @@ export interface FirstTradeResult {
   badge: FirstTradeBadge;
 }
 
+/** Auth method recorded on screen 11. v1 ships mock variants — real
+ *  Apple/Google/email Firebase wire-up is a follow-up. When real auth
+ *  lands, extend this union with the real method ids. */
+export type AuthMethod = 'mock-apple' | 'mock-google' | 'mock-email';
+
 interface OnboardingState {
   /** Result of the archetype quiz (screen 3). null until set. */
   archetype: Archetype | null;
@@ -100,6 +105,11 @@ interface OnboardingState {
    *  progress bar movement. */
   firstTrade: FirstTradeResult | null;
 
+  /** Auth captured on screen 11. v1: mock methods only — real
+   *  Firebase wire-up follows. */
+  authMethod: AuthMethod | null;
+  isAuthed: boolean;
+
   setArchetype: (archetype: Archetype, answers: ArchetypeAnswer[]) => void;
   setIdentity: (identity: Identity, goalCategory: GoalCategory) => void;
   setExperienceLevel: (level: ExperienceLevel) => void;
@@ -108,6 +118,7 @@ interface OnboardingState {
   setDisplayName: (displayName: string) => void;
   setDailyCommitment: (commitment: DailyCommitment) => void;
   setFirstTrade: (result: FirstTradeResult) => void;
+  setAuth: (method: AuthMethod) => void;
   reset: () => void;
 }
 
@@ -124,6 +135,8 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
   displayName: '',
   dailyCommitment: 'steady',
   firstTrade: null,
+  authMethod: null,
+  isAuthed: false,
 
   setArchetype: (archetype, answers) =>
     set({ archetype, archetypeAnswers: answers }),
@@ -149,6 +162,9 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
   setFirstTrade: (firstTrade) =>
     set({ firstTrade }),
 
+  setAuth: (authMethod) =>
+    set({ authMethod, isAuthed: true }),
+
   reset: () => set({
     archetype: null,
     archetypeAnswers: [],
@@ -160,5 +176,7 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
     displayName: '',
     dailyCommitment: 'steady',
     firstTrade: null,
+    authMethod: null,
+    isAuthed: false,
   }),
 }));

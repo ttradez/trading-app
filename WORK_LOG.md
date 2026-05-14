@@ -5,6 +5,123 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-13 — Onboarding screen 11: Auth UI shell (mock auth, real Firebase integration deferred)
+
+Per `docs/ONBOARDING_RETENTION_RESEARCH.md` the single
+highest-leverage retention move in the funnel — defer-auth lift
+(Duolingo +20% next-day retention). User has now invested 10
+screens of work, made a first trade, earned a badge. Auth is
+framed as "preserve what you built."
+
+**This commit ships the UI shell with MOCK auth.** Real Firebase /
+Apple SSO / Google SSO / email-password form is a follow-up prompt.
+
+### What shipped
+
+**`src/store/onboardingStore.ts`**
+- New type: `AuthMethod` = `'mock-apple' | 'mock-google' | 'mock-email'`.
+  Mock prefixes are intentional — when real Firebase lands the union
+  extends to include the real method ids and these mock values can
+  be removed in a single grep.
+- New state fields: `authMethod: AuthMethod | null` (default `null`),
+  `isAuthed: boolean` (default `false`).
+- New action: `setAuth(method)` — sets `authMethod` and flips
+  `isAuthed` to true in a single update.
+- `reset()` clears both back to defaults.
+
+**`src/components/onboarding/PlayerCardPreview.tsx`**
+- New optional `badge?: FirstTradeBadge | null` prop. Renders a
+  small black-on-color pill below `@handle` when set:
+  `FIRST STRIKE` / `FIRST STEP` → gold `#FFB800` bg, `FIRST BLOOD`
+  → red `#FF4757` bg. 11 px 900 bold black text, 1.4 letter-spacing,
+  `paddingHorizontal: 9 / paddingVertical: 4`, 5 px radius,
+  `alignSelf: flex-start` so it hugs the left edge.
+- New optional `showYouIndicator?: boolean` prop (default `true`).
+  Pass `false` on screen 11's recap so the banner reads as
+  read-only — the "← YOU" affordance is for screens where the user
+  is actively choosing their identity.
+- Backwards-compatible — existing call site on screen 7 doesn't pass
+  these props and gets the same visual as before.
+
+**`src/screens/OnboardingAuthScreen.tsx`** (rewritten from placeholder)
+- Headline "Save your progress" (32 px bold) + 3-sentence
+  subheadline (white 0.75 / 15 px / 1.5 line-height).
+- Recap: `<PlayerCardPreview rank="gambler" handle displayName
+  badge={firstTrade?.badge ?? null} showYouIndicator={false} />`
+  pulled live from the store. Below it, "Your trader name, rank,
+  and first badge are saved when you sign up." at white 0.5 / 13 px.
+- 3 auth buttons stacked with 12 px gaps:
+  - **Continue with Apple** — white bg, black text + `Ionicons logo-apple` 22 px.
+  - **Continue with Google** — white bg, black text + `Ionicons logo-google` 20 px.
+  - **Continue with email** — transparent bg, gold (`#FFB800`) 1.5 px
+    border, gold text + `Ionicons mail-outline` 20 px.
+- All 56 px tall, 12 px radius, 17 px 700 bold label.
+- Fine print: "By signing up you agree to our Terms of Service and
+  Privacy Policy." with the two phrases as `<Text onPress>` links
+  (white 0.8 underlined) that log to console for v1 — real link
+  destinations come with the ToS / Privacy pages.
+
+### Mock auth flow
+1. Tap any of the 3 buttons → `setLoading(true)` + medium haptic.
+2. ~500 ms `setTimeout` (mock latency so the spinner reads as a
+   real round-trip).
+3. `setAuth(method)` → store now has `{ authMethod, isAuthed: true }`.
+4. `navigation.navigate('OnboardingWelcome')`.
+5. Loading state intentionally not reset — the screen unmounts (or
+   stays hidden under the welcome route) before the user could see
+   the buttons re-enable.
+
+A `position: absolute` overlay with `ActivityIndicator size="large"
+color="#FFB800"` covers the screen while loading. `pointerEvents:
+auto` so the user can't accidentally tap the fine-print links
+during the spin.
+
+### Entrance animations
+Built-in `Animated`, no new deps. 3 per-element opacity values
+fading in with staggered delays:
+- t=0: headline + subheadline.
+- t=200: recap (player card + caption).
+- t=400: auth buttons + fine print.
+Each fade is 320 ms, native driver.
+
+### Other touches
+- `src/screens/OnboardingWelcomeScreen.tsx` (new) — placeholder for
+  screen 12 ("Welcome + notifications opt-in", the final onboarding
+  screen).
+- `App.tsx` — `OnboardingWelcome` imported and added to the
+  `FORCE_ONBOARDING_FLOW` stack with `gestureEnabled: false`.
+- `PROJECT_CONTEXT.md` — onboarding bullet updated to reflect
+  screens 1-11 shipped + the explicit "AUTH IS MOCKED" note so
+  future-us can't miss that real Firebase wire-up is still
+  outstanding.
+
+### Out of scope (deliberately deferred to follow-up)
+- Real Firebase auth.
+- Real Apple SignIn / Google SignIn SDK integration.
+- Email/password form UI + validation.
+- Terms of Service / Privacy Policy actual link destinations.
+- Account recovery / forgot password.
+- Profile picture upload.
+- Screens 1-10 untouched.
+
+### Files touched
+- `src/store/onboardingStore.ts`
+- `src/components/onboarding/PlayerCardPreview.tsx`
+- `src/screens/OnboardingAuthScreen.tsx` (rewritten)
+- `src/screens/OnboardingWelcomeScreen.tsx` (new)
+- `App.tsx`
+- `PROJECT_CONTEXT.md`
+- `WORK_LOG.md`
+
+### Flow wired
+Splash → Premise → Quiz → reveal → Identity → Experience → Account
+size → Trader name → Daily commitment → First Trade → result →
+Rank reveal → Continue → **Save your progress** (player card recap
++ 3 auth buttons) → tap any → 500 ms spinner → "Screen 12
+placeholder".
+
+---
+
 ## 2026-05-13 — Onboarding screen 10: Rank progression reveal
 
 Per `docs/ONBOARDING_RETENTION_RESEARCH.md` the "where you're going"
