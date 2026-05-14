@@ -110,11 +110,11 @@ interface OnboardingState {
   authMethod: AuthMethod | null;
   isAuthed: boolean;
 
-  /** Notification preferences from screen 12. `notificationsEnabled`
-   *  reflects the OS permission grant; `preferredReminderTime` is in
-   *  HH:MM 24-hour format (e.g. '09:00'). */
-  notificationsEnabled: boolean;
-  preferredReminderTime: string;
+  /** Daily training time goal in minutes (screen 12). User picks one
+   *  of 15 / 30 / 60 / 90 / 120 / 180. Drives the streak system —
+   *  hitting the goal in a day = +1 streak, missing = reset to 0.
+   *  Default 30. */
+  dailyTimeGoalMinutes: number;
 
   /** Set true on screen 12 to signal the whole onboarding flow is
    *  done. Routing-guard logic that hides onboarding for completed
@@ -131,14 +131,14 @@ interface OnboardingState {
   setDailyCommitment: (commitment: DailyCommitment) => void;
   setFirstTrade: (result: FirstTradeResult) => void;
   setAuth: (method: AuthMethod) => void;
-  setNotifications: (enabled: boolean, preferredReminderTime: string) => void;
+  setDailyTimeGoal: (minutes: number) => void;
   setOnboardingComplete: (complete: boolean) => void;
   reset: () => void;
 }
 
 const DEFAULT_ACCOUNT_SIZE = 50_000;
 
-const DEFAULT_REMINDER_TIME = '09:00';
+const DEFAULT_DAILY_TIME_GOAL_MIN = 30;
 
 export const useOnboardingStore = create<OnboardingState>((set) => ({
   archetype: null,
@@ -153,8 +153,7 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
   firstTrade: null,
   authMethod: null,
   isAuthed: false,
-  notificationsEnabled: false,
-  preferredReminderTime: DEFAULT_REMINDER_TIME,
+  dailyTimeGoalMinutes: DEFAULT_DAILY_TIME_GOAL_MIN,
   onboardingComplete: false,
 
   setArchetype: (archetype, answers) =>
@@ -184,8 +183,8 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
   setAuth: (authMethod) =>
     set({ authMethod, isAuthed: true }),
 
-  setNotifications: (notificationsEnabled, preferredReminderTime) =>
-    set({ notificationsEnabled, preferredReminderTime }),
+  setDailyTimeGoal: (dailyTimeGoalMinutes) =>
+    set({ dailyTimeGoalMinutes }),
 
   setOnboardingComplete: (onboardingComplete) =>
     set({ onboardingComplete }),
@@ -203,8 +202,7 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
     firstTrade: null,
     authMethod: null,
     isAuthed: false,
-    notificationsEnabled: false,
-    preferredReminderTime: DEFAULT_REMINDER_TIME,
+    dailyTimeGoalMinutes: DEFAULT_DAILY_TIME_GOAL_MIN,
     onboardingComplete: false,
   }),
 }));

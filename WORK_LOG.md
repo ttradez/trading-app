@@ -5,6 +5,95 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-13 — Screen 12 redesign: daily time goal chips (replaces notification reminder)
+
+Notification reminder concept retired entirely. Screen 12 now captures
+a daily training time goal that drives a streak system: hit the goal
+in a day → +1 streak, miss a day → reset to zero. Streak counter +
+dashboard display + actual time-tracking inside the main app are
+follow-ups; this screen just captures the goal.
+
+### What changed
+
+**`src/store/onboardingStore.ts`**
+- Removed `notificationsEnabled: boolean` field.
+- Removed `preferredReminderTime: string` field.
+- Removed `setNotifications(enabled, time)` action.
+- Removed `DEFAULT_REMINDER_TIME` constant.
+- Added `dailyTimeGoalMinutes: number` field (default `30`, one of
+  `[15, 30, 60, 90, 120, 180]`).
+- Added `setDailyTimeGoal(minutes)` action.
+- `reset()` updated.
+
+**`src/screens/OnboardingWelcomeScreen.tsx`** (rewritten)
+- "You're in." headline kept.
+- Subheadline updated: *"Set your daily training time. Hit your goal
+  every day to build your streak."*
+- Notification card replaced with daily-goal card:
+  - Small-caps `DAILY TRAINING GOAL` label.
+  - 3-col × 2-row chip grid: 15 min / 30 min / 60 min / 90 min /
+    2 hours / 3+ hours. Each row uses flex:1 chips with `gap: 8` so
+    the columns are equal width on any screen.
+  - Chip styling: unselected `#1A1A1A` bg + 1 px `#2A2A2A` border,
+    selected adds 2 px gold (`#FFB800`) border with 1 px padding
+    compensation so the layout doesn't jump on selection. White
+    bold 16 px label.
+  - **30 min preselected** because the store default is already
+    `30` — gold border visible on mount, CTA enabled from the start.
+  - Body copy below the chips: *"Hit this goal in a day → +1 to
+    your streak. Miss a day → streak resets to zero."*
+- Removed the entire time-picker modal + `TIME_OPTIONS` reminder
+  list + `formatTime` helper.
+- Removed `mockRequestNotificationPermission` function.
+- Single full-width gold **"Enter app"** CTA at the bottom. Always
+  enabled (a goal is always selected). Medium haptic on tap →
+  `setDailyTimeGoal(value)` was written on each chip tap (so the
+  current value is already in store) → `setOnboardingComplete(true)`
+  → `navigation.reset({ index: 0, routes: [{ name: 'Main' }] })`.
+- Removed the "Skip reminders for now" link entirely.
+- Staggered fade-ins unchanged: headline → subheadline → card →
+  CTA, each 320 ms with delays at t=0/200/400/600.
+
+**`PROJECT_CONTEXT.md`**
+- Onboarding follow-up #2 rewritten: "Notification scheduling
+  logic" → "**Streak system implementation**". Spelled out as a
+  cross-cutting task that touches dashboard + main app, not just
+  onboarding. Sub-tasks: time-tracking, per-day increment, miss
+  reset, dashboard counter, optional reminder notification.
+- Follow-up #4 updated to include `dailyTimeGoalMinutes` in the
+  backend-save payload list.
+
+### Final onboardingStore shape after the full flow (screen 12 lands user on MainTabs)
+```ts
+{
+  archetype, archetypeAnswers,
+  identity, goalCategory,
+  experienceLevel,
+  accountSize,
+  handle, displayName,
+  dailyCommitment,
+  firstTrade: { action, entryPrice, exitPrice, pnl, badge },
+  authMethod, isAuthed: true,
+  dailyTimeGoalMinutes,          // ← new in this commit
+  onboardingComplete: true,
+}
+```
+Notification fields are gone.
+
+### Files touched
+- `src/store/onboardingStore.ts`
+- `src/screens/OnboardingWelcomeScreen.tsx` (rewritten)
+- `PROJECT_CONTEXT.md`
+- `WORK_LOG.md`
+
+### Out of scope (follow-ups)
+- Streak counter logic + dashboard display.
+- Time-tracking inside the main app.
+- Notification scheduling (deferred along with the streak system).
+- Screens 1–11 untouched.
+
+---
+
 ## 2026-05-13 — Mock notification permission for v1 (real wire-up deferred to Firebase auth follow-up)
 
 The install of `expo-notifications` shipped with the prior screen-12

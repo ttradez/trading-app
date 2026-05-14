@@ -1,98 +1,76 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   View, Text, Pressable, Animated, StyleSheet, StatusBar, ScrollView,
-  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import {
-  useOnboardingStore, DailyCommitment,
-} from '../store/onboardingStore';
+import { useOnboardingStore } from '../store/onboardingStore';
 
 /**
- * MOCK permission ask — simulates the iOS/Android system prompt with
- * a 300 ms delay and always resolves to `granted = true`. The real
- * permission flow lives in the deferred Firebase wire-up follow-up
- * (along with actual daily-notification scheduling against the
- * stored `preferredReminderTime`). Keeping a function shape that
- * matches `Notifications.requestPermissionsAsync()` so the call site
- * doesn't have to change when the real call replaces this one.
- */
-const mockRequestNotificationPermission = (): Promise<boolean> =>
-  new Promise((resolve) => {
-    setTimeout(() => resolve(true), 300);
-  });
-
-/**
- * Onboarding screen 12 — Welcome + notifications opt-in.
+ * Onboarding screen 12 — Welcome + daily training time goal.
  *
- * Final onboarding screen and the hand-off to the main app. Per
- * docs/ONBOARDING_RETENTION_RESEARCH.md the notification opt-in goes
- * HERE (not earlier) — user has experienced value (first trade +
- * badge + rank reveal), is motivated, and hasn't left the app.
- * Optimal moment.
+ * Final onboarding screen. Hand-off to `MainTabs`.
  *
- * Frames the ask in terms of the user's own commitment from screen 8
- * ("You said you'd train every day. We'll help you keep your word.")
- * rather than as a generic permission prompt.
- *
- * Either button (Enable reminders / Skip) marks onboarding complete
- * and resets the navigation stack to `Main` so the user lands on the
- * home screen and can't navigate back into onboarding.
+ * The user picks a daily training time goal (minutes/day). Hitting
+ * the goal in a day increments their streak; missing a day resets
+ * it to zero. Streak counter + dashboard display + actual time
+ * tracking are follow-ups — this screen only captures the goal.
  */
 
-const BG    = '#000000';
-const GOLD  = '#FFB800';
+const BG          = '#000000';
+const GOLD        = '#FFB800';
 const CARD_BG     = '#0F0F0F';
 const CARD_BORDER = '#1F1F1F';
+const CHIP_BG     = '#1A1A1A';
+const CHIP_BORDER = '#2A2A2A';
 
-// Quick-list of reminder times. Avoids the heavyweight native
-// date/time picker (which would need @react-native-community/datetimepicker
-// and a dev-client rebuild — not Expo Go compatible by default). Covers
-// the realistic spread of when traders might want a daily reminder.
-const TIME_OPTIONS: { value: string; label: string }[] = [
-  { value: '06:00', label: '6:00 AM'  },
-  { value: '07:00', label: '7:00 AM'  },
-  { value: '08:00', label: '8:00 AM'  },
-  { value: '09:00', label: '9:00 AM'  },
-  { value: '10:00', label: '10:00 AM' },
-  { value: '12:00', label: '12:00 PM' },
-  { value: '17:00', label: '5:00 PM'  },
-  { value: '19:00', label: '7:00 PM'  },
-  { value: '21:00', label: '9:00 PM'  },
+// 3 cols × 2 rows. Labels stay short so the "3+ hours" chip never
+// needs to wrap on standard mobile widths.
+const TIME_OPTIONS: { value: number; label: string }[] = [
+  { value: 15,  label: '15 min'   },
+  { value: 30,  label: '30 min'   },
+  { value: 60,  label: '60 min'   },
+  { value: 90,  label: '90 min'   },
+  { value: 120, label: '2 hours'  },
+  { value: 180, label: '3+ hours' },
 ];
-
-const COMMITMENT_PHRASE: Record<DailyCommitment, string> = {
-  light:  'three days a week',
-  steady: 'every day',
-  pro:    'every day, sometimes twice',
-};
-
-function formatTime(value: string): string {
-  const opt = TIME_OPTIONS.find((o) => o.value === value);
-  return opt ? opt.label : value;
-}
 
 interface Props {
   navigation: any;
 }
 
+function TimeChip({
+  option, selected, onPress,
+}: { option: { value: number; label: string }; selected: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.chip,
+        selected && styles.chipSelected,
+        pressed && !selected && styles.chipPressed,
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={option.label}
+      accessibilityState={{ selected }}
+    >
+      <Text style={styles.chipText}>{option.label}</Text>
+    </Pressable>
+  );
+}
+
 export default function OnboardingWelcomeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
 
-  const dailyCommitment        = useOnboardingStore((s) => s.dailyCommitment);
-  const preferredReminderTime  = useOnboardingStore((s) => s.preferredReminderTime);
-  const setNotifications       = useOnboardingStore((s) => s.setNotifications);
-  const setOnboardingComplete  = useOnboardingStore((s) => s.setOnboardingComplete);
-
-  const [timeModalOpen, setTimeModalOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const dailyTimeGoalMinutes  = useOnboardingStore((s) => s.dailyTimeGoalMinutes);
+  const setDailyTimeGoal      = useOnboardingStore((s) => s.setDailyTimeGoal);
+  const setOnboardingComplete = useOnboardingStore((s) => s.setOnboardingComplete);
 
   // Staggered fade-ins.
-  const headOp    = useRef(new Animated.Value(0)).current;
-  const subOp     = useRef(new Animated.Value(0)).current;
-  const cardOp    = useRef(new Animated.Value(0)).current;
-  const buttonsOp = useRef(new Animated.Value(0)).current;
+  const headOp   = useRef(new Animated.Value(0)).current;
+  const subOp    = useRef(new Animated.Value(0)).current;
+  const cardOp   = useRef(new Animated.Value(0)).current;
+  const buttonOp = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const fadeIn = (val: Animated.Value, delay: number) =>
@@ -101,49 +79,28 @@ export default function OnboardingWelcomeScreen({ navigation }: Props) {
         Animated.timing(val, { toValue: 1, duration: 320, useNativeDriver: true }),
       ]);
     Animated.parallel([
-      fadeIn(headOp,    0),
-      fadeIn(subOp,     200),
-      fadeIn(cardOp,    400),
-      fadeIn(buttonsOp, 600),
+      fadeIn(headOp,   0),
+      fadeIn(subOp,    200),
+      fadeIn(cardOp,   400),
+      fadeIn(buttonOp, 600),
     ]).start();
     // mount-once
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const goToMain = () => {
+  const handleSelect = (value: number) => {
+    if (value === dailyTimeGoalMinutes) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setDailyTimeGoal(value);
+  };
+
+  const handleEnter = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     setOnboardingComplete(true);
     navigation.reset({
       index: 0,
       routes: [{ name: 'Main' }],
     });
-  };
-
-  const handleEnable = async () => {
-    if (busy) return;
-    setBusy(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    // Mock for v1 — real permission ask lands with the Firebase
-    // follow-up. Always resolves granted=true so the user perceives
-    // notifications as enabled; actual OS permission gets re-asked
-    // when the real notification module wires in.
-    const granted = await mockRequestNotificationPermission();
-    setNotifications(granted, preferredReminderTime);
-    goToMain();
-  };
-
-  const handleSkip = () => {
-    if (busy) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    setNotifications(false, preferredReminderTime);
-    goToMain();
-  };
-
-  const handlePickTime = (value: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    // Update the displayed time immediately — actual `notificationsEnabled`
-    // flips on the Enable tap (which uses this updated time).
-    setNotifications(false, value);
-    setTimeModalOpen(false);
   };
 
   return (
@@ -163,23 +120,29 @@ export default function OnboardingWelcomeScreen({ navigation }: Props) {
         </Animated.Text>
 
         <Animated.Text style={[styles.subheadline, { opacity: subOp }]}>
-          You said you'd train {COMMITMENT_PHRASE[dailyCommitment]}. We'll help you keep your word.
+          Set your daily training time. Hit your goal every day to build your streak.
         </Animated.Text>
 
         <Animated.View style={[styles.card, { opacity: cardOp }]}>
-          <Text style={styles.cardLabel}>DAILY TRAINING REMINDER</Text>
-          <Text style={styles.cardTime}>{formatTime(preferredReminderTime)}</Text>
-          <Pressable
-            onPress={() => setTimeModalOpen(true)}
-            hitSlop={{ top: 6, bottom: 6, left: 8, right: 8 }}
-            style={styles.changeTimeWrap}
-            accessibilityRole="button"
-            accessibilityLabel="Change reminder time"
-          >
-            <Text style={styles.changeTimeText}>Change time</Text>
-          </Pressable>
+          <Text style={styles.cardLabel}>DAILY TRAINING GOAL</Text>
+
+          <View style={styles.chipsGrid}>
+            {[0, 3].map((rowStart) => (
+              <View key={rowStart} style={styles.chipRow}>
+                {TIME_OPTIONS.slice(rowStart, rowStart + 3).map((opt) => (
+                  <TimeChip
+                    key={opt.value}
+                    option={opt}
+                    selected={dailyTimeGoalMinutes === opt.value}
+                    onPress={() => handleSelect(opt.value)}
+                  />
+                ))}
+              </View>
+            ))}
+          </View>
+
           <Text style={styles.cardBody}>
-            We'll send one notification a day at your chosen time. You can change it anytime in settings.
+            Hit this goal in a day → +1 to your streak. Miss a day → streak resets to zero.
           </Text>
         </Animated.View>
       </ScrollView>
@@ -187,79 +150,18 @@ export default function OnboardingWelcomeScreen({ navigation }: Props) {
       <Animated.View
         style={[
           styles.ctaWrap,
-          { paddingBottom: Math.max(insets.bottom, 16), opacity: buttonsOp },
+          { paddingBottom: Math.max(insets.bottom, 16), opacity: buttonOp },
         ]}
       >
         <Pressable
-          onPress={handleEnable}
-          disabled={busy}
-          style={({ pressed }) => [
-            styles.cta,
-            busy && styles.ctaDisabled,
-            !busy && pressed && styles.ctaPressed,
-          ]}
+          onPress={handleEnter}
+          style={({ pressed }) => [styles.cta, pressed && styles.ctaPressed]}
           accessibilityRole="button"
-          accessibilityLabel="Enable reminders and enter"
-          accessibilityState={{ disabled: busy }}
+          accessibilityLabel="Enter app"
         >
-          <Text style={styles.ctaText}>Enable reminders and enter</Text>
-        </Pressable>
-
-        <Pressable
-          onPress={handleSkip}
-          disabled={busy}
-          hitSlop={{ top: 8, bottom: 8, left: 24, right: 24 }}
-          style={styles.skipWrap}
-          accessibilityRole="button"
-          accessibilityLabel="Skip reminders for now"
-          accessibilityState={{ disabled: busy }}
-        >
-          <Text style={styles.skipText}>Skip reminders for now</Text>
+          <Text style={styles.ctaText}>Enter app</Text>
         </Pressable>
       </Animated.View>
-
-      {/* Time-picker modal */}
-      <Modal
-        visible={timeModalOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setTimeModalOpen(false)}
-      >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => setTimeModalOpen(false)}
-        >
-          <Pressable style={styles.modalCard} onPress={() => { /* swallow inner taps */ }}>
-            <Text style={styles.modalTitle}>Reminder time</Text>
-            <View style={styles.modalList}>
-              {TIME_OPTIONS.map((opt) => {
-                const selected = opt.value === preferredReminderTime;
-                return (
-                  <Pressable
-                    key={opt.value}
-                    onPress={() => handlePickTime(opt.value)}
-                    style={({ pressed }) => [
-                      styles.modalOption,
-                      selected && styles.modalOptionActive,
-                      pressed && !selected && styles.modalOptionPressed,
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityLabel={opt.label}
-                    accessibilityState={{ selected }}
-                  >
-                    <Text style={[
-                      styles.modalOptionText,
-                      selected && styles.modalOptionTextActive,
-                    ]}>
-                      {opt.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </View>
   );
 }
@@ -271,7 +173,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 24,
     paddingBottom: 24,
-    alignItems: 'stretch',
   },
 
   headline: {
@@ -285,14 +186,14 @@ const styles = StyleSheet.create({
   subheadline: {
     marginTop: 14,
     color: 'rgba(255,255,255,0.75)',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '400',
-    lineHeight: 24,    // ~1.5×
+    lineHeight: 22,
     textAlign: 'center',
     paddingHorizontal: 4,
   },
 
-  // Notification card
+  // Goal card
   card: {
     marginTop: 32,
     backgroundColor: CARD_BG,
@@ -307,21 +208,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 1.5,
   },
-  cardTime: {
-    marginTop: 8,
-    color: '#FFFFFF',
-    fontSize: 24,
-    fontWeight: '700',
-    letterSpacing: -0.3,
-    fontVariant: ['tabular-nums'],
-  },
-  changeTimeWrap: { alignSelf: 'flex-start', marginTop: 4 },
-  changeTimeText: {
-    color: GOLD,
-    fontSize: 13,
-    fontWeight: '700',
-    textDecorationLine: 'underline',
-  },
   cardBody: {
     marginTop: 14,
     color: 'rgba(255,255,255,0.65)',
@@ -330,7 +216,42 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
 
-  // CTA + skip
+  // Chips — 2 rows of 3
+  chipsGrid: {
+    marginTop: 14,
+    gap: 8,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  chip: {
+    flex: 1,
+    backgroundColor: CHIP_BG,
+    borderColor: CHIP_BORDER,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chipSelected: {
+    borderColor: GOLD,
+    borderWidth: 2,
+    // Compensate so layout doesn't jump when border grows by 1 px.
+    paddingVertical: 11,
+    paddingHorizontal: 7,
+  },
+  chipPressed: { opacity: 0.85 },
+  chipText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: -0.1,
+  },
+
+  // CTA
   ctaWrap: {
     paddingHorizontal: 24,
     paddingTop: 12,
@@ -343,71 +264,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  ctaDisabled: { opacity: 0.55 },
   ctaPressed: { opacity: 0.85 },
   ctaText: {
     color: '#000000',
     fontSize: 17,
     fontWeight: '700',
     letterSpacing: 0.3,
-  },
-  skipWrap: { alignSelf: 'center', marginTop: 16 },
-  skipText: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 14,
-    fontWeight: '400',
-    textDecorationLine: 'underline',
-  },
-
-  // Time modal
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalCard: {
-    backgroundColor: '#0F0F0F',
-    borderColor: '#1F1F1F',
-    borderWidth: 1,
-    borderRadius: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    width: '85%',
-    maxWidth: 360,
-  },
-  modalTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    textAlign: 'center',
-    paddingVertical: 6,
-    marginBottom: 6,
-  },
-  modalList: {
-    gap: 4,
-  },
-  modalOption: {
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-  },
-  modalOptionActive: {
-    backgroundColor: '#1A1A1A',
-    borderColor: GOLD,
-    borderWidth: 1,
-  },
-  modalOptionPressed: { opacity: 0.7 },
-  modalOptionText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-    textAlign: 'center',
-    fontVariant: ['tabular-nums'],
-  },
-  modalOptionTextActive: {
-    color: GOLD,
-    fontWeight: '800',
   },
 });
