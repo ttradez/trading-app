@@ -86,7 +86,7 @@ export default function OnboardingRankRevealScreen({ navigation }: Props) {
 
   const handleContinue = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    navigation.navigate('OnboardingAuth');
+    navigation.navigate('OnboardingPlanSummary');
   };
 
   // Interpolate fill (0→1) into a width string. The cast satisfies

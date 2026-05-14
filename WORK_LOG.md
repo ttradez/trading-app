@@ -5,6 +5,122 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-14 — Onboarding: add Plan Summary screen between Rank Reveal and Auth
+
+Per `docs/ONBOARDING_AUDIT.md`: 10 screens of user input followed
+straight by the auth ask, with nothing between them that made the
+captured inputs feel *earned*. The audit also called out that the
+archetype was "a moment, not a thread" — it appears on screen 3
+and is never referenced again. This new screen synthesizes
+everything the user told us into one composed card right before
+auth, so the auth ask reads as "save the plan we just built" rather
+than "give us your email".
+
+Onboarding flow is now **13 screens**. The new screen sits between
+**Rank Reveal (10)** and **Auth (was 11, now 12)**.
+
+### New file — `src/screens/OnboardingPlanSummaryScreen.tsx`
+
+Reads-only consumer of `onboardingStore`. Layout:
+
+1. Headline "Your trading plan" + subheadline "Built from everything
+   you just told us." (centered, fade-in)
+2. One composed summary card (CARD_BG `#0F0F0F`, 1 px `#1F1F1F`
+   border, 16 px radius, generous inner padding). Card content,
+   top to bottom:
+   - **Identity anchor:** displayName (white 20 px bold) + `@handle`
+     (white 0.5 opacity, 13 px). Baseline-aligned, wraps.
+   - **Identity thread (prominent, gold-accented):**
+     - "TRADES LIKE A" label → archetype name + sigil icon
+       (`MaterialCommunityIcons`, gold #FFB800, 22 px). Glyphs match
+       the archetype reveal screen exactly: `lightning-bolt`,
+       `clock-outline`, `chart-line-variant`, `anchor`.
+     - "BECOMING" label → identity name (e.g. "The Patient Sniper")
+   - Divider (1 px `#1F1F1F`, 18 px vertical breathing room)
+   - **Secondary rows** (label left, value right):
+     - "Experience" → label from `EXPERIENCE_LABEL`
+       (Never traded / Beginner / Intermediate / Experienced)
+     - "Evaluation account" → `$50,000` formatted via
+       `toLocaleString('en-US')`
+     - "Training pace" → `COMMITMENT_LABEL`:
+       - `light` → "Light · 3 sessions a week"
+       - `steady` → "Steady · 1 session a day"
+       - `pro` → "Pro · multiple sessions a day"
+   - Divider
+   - **Trajectory block:** "TRAJECTORY" label →
+     `Gambler  →  Paper Hands` row (Gambler at 0.65 opacity, gold
+     arrow, "Paper Hands" in gold #FFB800) → "~N weeks at this pace"
+     estimate line (0.65 opacity). Pluralized correctly for `N === 1`.
+3. Gold "Continue" CTA pinned to the bottom (standard onboarding
+   CTA — 56 px, gold, black bold text, haptic Light on tap).
+
+### Weeks-to-next-rank estimate
+
+The Rank Reveal screen places the user at 10% toward Paper Hands
+after the first trade, so ~9 more sessions × ~10% per session ≈ a
+full bar. Translated to weeks via:
+
+```ts
+const SESSIONS_PER_WEEK = { light: 3, steady: 7, pro: 14 };
+const weeks = Math.ceil(9 / SESSIONS_PER_WEEK[commitment]);
+```
+
+→ light = 3 weeks, steady = 2 weeks, pro = 1 week.
+
+Pre-XP-system estimate by design. A comment in the file flags that
+this should be swapped for actual remaining-XP / per-session-XP
+math when the real rank XP system lands.
+
+### Wiring
+
+- `App.tsx`: imported `OnboardingPlanSummaryScreen` and registered
+  it as `OnboardingPlanSummary` between `OnboardingRankReveal` and
+  `OnboardingAuth` in the `FORCE_ONBOARDING_FLOW` stack.
+- `OnboardingRankRevealScreen.tsx`: `handleContinue` now navigates
+  to `OnboardingPlanSummary` instead of `OnboardingAuth`. No other
+  changes — content and animation unchanged.
+
+### Entrance animation
+
+Staggered fade-in (~400 ms each) using native-driver opacity:
+headline → card (180 ms delay) → CTA (420 ms delay). No layout
+animation, no slide — kept deliberately quiet so the card itself
+carries the moment.
+
+### Data sources & lookups (all inline, in-file)
+
+- `ARCHETYPE_META` — archetype → `{ name, icon }`. Same 4 glyph
+  names as the archetype reveal screen. Kept inline rather than
+  imported from `OnboardingArchetypeScreen.tsx` to avoid coupling
+  the summary screen to that file's internals; the source-of-truth
+  is short and stable.
+- `IDENTITY_NAME`, `EXPERIENCE_LABEL`, `COMMITMENT_LABEL` —
+  literal display strings matching the screens they came from.
+
+### Out of scope (deliberate)
+
+- No "calculating your plan" loading beat (skipped by request — the
+  card is the moment; a loader would dilute it).
+- Does NOT read or display `dailyTimeGoalMinutes` — that field is
+  set on the Welcome screen, which comes *after* Auth.
+- No RankBanner on this screen — screens 10 and 12 already use it.
+- Rank Reveal screen content untouched, only its `handleContinue`
+  navigation target.
+- Auth screen untouched.
+- No new dependencies (`MaterialCommunityIcons` already in via
+  `@expo/vector-icons`).
+
+### Files touched
+
+- `src/screens/OnboardingPlanSummaryScreen.tsx` (new)
+- `src/screens/OnboardingRankRevealScreen.tsx` (Continue
+  navigation target)
+- `App.tsx` (nav stack registration + import)
+- `PROJECT_CONTEXT.md`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-14 — Screen 9 stabilization: dedicated chart + pre-baked scenario
 
 The First Trade activation event was the highest-risk screen in

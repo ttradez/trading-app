@@ -32,6 +32,7 @@ import OnboardingTraderNameScreen  from './src/screens/OnboardingTraderNameScree
 import OnboardingCommitmentScreen  from './src/screens/OnboardingCommitmentScreen';
 import OnboardingFirstTradeScreen  from './src/screens/OnboardingFirstTradeScreen';
 import OnboardingRankRevealScreen  from './src/screens/OnboardingRankRevealScreen';
+import OnboardingPlanSummaryScreen from './src/screens/OnboardingPlanSummaryScreen';
 import OnboardingAuthScreen        from './src/screens/OnboardingAuthScreen';
 import OnboardingWelcomeScreen     from './src/screens/OnboardingWelcomeScreen';
 
@@ -182,6 +183,7 @@ export default function App() {
             <Stack.Screen name="OnboardingCommitment"  component={OnboardingCommitmentScreen}  options={{ gestureEnabled: false }} />
             <Stack.Screen name="OnboardingFirstTrade"  component={OnboardingFirstTradeScreen}  options={{ gestureEnabled: false }} />
             <Stack.Screen name="OnboardingRankReveal"  component={OnboardingRankRevealScreen}  options={{ gestureEnabled: false }} />
+            <Stack.Screen name="OnboardingPlanSummary" component={OnboardingPlanSummaryScreen} options={{ gestureEnabled: false }} />
             <Stack.Screen name="OnboardingAuth"        component={OnboardingAuthScreen}        options={{ gestureEnabled: false }} />
             <Stack.Screen name="OnboardingWelcome"     component={OnboardingWelcomeScreen}     options={{ gestureEnabled: false }} />
             {/* Hand-off destination: when screen 12 calls
