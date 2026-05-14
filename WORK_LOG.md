@@ -5,6 +5,65 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-13 — Screen 12: forgiveness streak copy + drop 3+hr chip + link to Screen 8 commitment
+
+Three audit fixes from `docs/ONBOARDING_AUDIT.md`, all on the
+welcome screen. Copy + chip-list trim only — no store-shape changes
+or navigation changes.
+
+### Change 1 — Forgiveness streak copy (highest-impact audit item)
+- Old card rule:
+  *"Hit this goal in a day → +1 to your streak. Miss a day →
+  streak resets to zero."*
+- New rule:
+  *"Hit your goal → +1 to your streak. Miss a day → a Streak Freeze
+  protects it automatically."*
+- New subline directly beneath (smaller, white 0.5):
+  *"You start with 2 freezes."*
+- New `cardBodyDim` style: 12 px regular, line-height 17, white 0.5,
+  `marginTop: 6`. Reuses no existing class so the visual hierarchy
+  reads "rule → footnote" cleanly.
+
+This is **copy-only**. The Streak Freeze inventory mechanic (grant
+2 freezes on signup, auto-apply on missed days, top up over time)
+is part of the deferred streak-system follow-up — the on-screen
+promise just matches what that system will deliver.
+
+### Change 2 — Drop "3+ hours" chip
+- `TIME_OPTIONS` shrank from 6 entries to 5: `15 / 30 / 60 / 90 / 120`.
+  The `{ value: 180, label: '3+ hours' }` row was removed entirely.
+- 30 min stays the default selection (store default unchanged).
+- `dailyTimeGoalMinutes` no longer accepts `180` in practice. The
+  store field is still typed as `number` (no enum narrowing — the
+  valid set is enforced by the chip list), so no store-side change
+  needed. If a stale `180` value ever made it into the store (e.g.
+  hot reload during dev), it would round-trip safely — just no
+  chip would show as selected.
+
+### Change 3 — Subheadline links to Screen 8 choice
+The two captures (frequency on screen 8, duration here) now read
+as one coherent contract. Pull `dailyCommitment` from the store
+and pick subheadline copy from a `SUBHEAD_BY_COMMITMENT` map:
+- `light`  → "You're training 3 days a week. How long should each session be?"
+- `steady` → "You're training once a day. How long should each session be?"
+- `pro`    → "You're training multiple times a day. How long should each session be?"
+- fallback (no commitment somehow set) →
+  "How long should each training session be?"
+
+The "You're in." headline above stays unchanged.
+
+### Files touched
+- `src/screens/OnboardingWelcomeScreen.tsx`
+- `WORK_LOG.md`
+
+### Out of scope (follow-ups)
+- Streak Freeze inventory backend mechanic.
+- Streak fire-icon visual on the dashboard.
+- Time-tracking + actual streak increment / freeze application.
+- No other screens touched.
+
+---
+
 ## 2026-05-13 — Screen 12 redesign: daily time goal chips (replaces notification reminder)
 
 Notification reminder concept retired entirely. Screen 12 now captures

@@ -12,10 +12,14 @@ import { useOnboardingStore } from '../store/onboardingStore';
  * Final onboarding screen. Hand-off to `MainTabs`.
  *
  * The user picks a daily training time goal (minutes/day). Hitting
- * the goal in a day increments their streak; missing a day resets
- * it to zero. Streak counter + dashboard display + actual time
- * tracking are follow-ups — this screen only captures the goal.
+ * the goal in a day increments their streak; missing a day applies
+ * a Streak Freeze (deferred streak-system follow-up) — copy here
+ * promises the forgiveness model rather than the punitive
+ * reset-to-zero one. Streak counter + dashboard display + actual
+ * time tracking + freeze inventory are all follow-ups.
  */
+
+import { DailyCommitment } from '../store/onboardingStore';
 
 const BG          = '#000000';
 const GOLD        = '#FFB800';
@@ -24,16 +28,25 @@ const CARD_BORDER = '#1F1F1F';
 const CHIP_BG     = '#1A1A1A';
 const CHIP_BORDER = '#2A2A2A';
 
-// 3 cols × 2 rows. Labels stay short so the "3+ hours" chip never
-// needs to wrap on standard mobile widths.
+// 5 options post-audit ("3+ hours" dropped — outlier, almost no one
+// picks it). Rendered as a single vertical stack.
 const TIME_OPTIONS: { value: number; label: string }[] = [
-  { value: 15,  label: '15 min'   },
-  { value: 30,  label: '30 min'   },
-  { value: 60,  label: '60 min'   },
-  { value: 90,  label: '90 min'   },
-  { value: 120, label: '2 hours'  },
-  { value: 180, label: '3+ hours' },
+  { value: 15,  label: '15 min'  },
+  { value: 30,  label: '30 min'  },
+  { value: 60,  label: '60 min'  },
+  { value: 90,  label: '90 min'  },
+  { value: 120, label: '2 hours' },
 ];
+
+// Subheadline copy linked to the user's screen-8 pick. The two
+// captures (frequency on screen 8 + duration here) read as one
+// coherent contract rather than two disconnected questions.
+const SUBHEAD_BY_COMMITMENT: Record<DailyCommitment, string> = {
+  light:  "You're training 3 days a week. How long should each session be?",
+  steady: "You're training once a day. How long should each session be?",
+  pro:    "You're training multiple times a day. How long should each session be?",
+};
+const SUBHEAD_FALLBACK = 'How long should each training session be?';
 
 interface Props {
   navigation: any;
@@ -63,8 +76,13 @@ export default function OnboardingWelcomeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
 
   const dailyTimeGoalMinutes  = useOnboardingStore((s) => s.dailyTimeGoalMinutes);
+  const dailyCommitment       = useOnboardingStore((s) => s.dailyCommitment);
   const setDailyTimeGoal      = useOnboardingStore((s) => s.setDailyTimeGoal);
   const setOnboardingComplete = useOnboardingStore((s) => s.setOnboardingComplete);
+
+  const subheadText = dailyCommitment
+    ? SUBHEAD_BY_COMMITMENT[dailyCommitment]
+    : SUBHEAD_FALLBACK;
 
   // Staggered fade-ins.
   const headOp   = useRef(new Animated.Value(0)).current;
@@ -120,7 +138,7 @@ export default function OnboardingWelcomeScreen({ navigation }: Props) {
         </Animated.Text>
 
         <Animated.Text style={[styles.subheadline, { opacity: subOp }]}>
-          Set your daily training time. Hit your goal every day to build your streak.
+          {subheadText}
         </Animated.Text>
 
         <Animated.View style={[styles.card, { opacity: cardOp }]}>
@@ -138,7 +156,10 @@ export default function OnboardingWelcomeScreen({ navigation }: Props) {
           </View>
 
           <Text style={styles.cardBody}>
-            Hit this goal in a day → +1 to your streak. Miss a day → streak resets to zero.
+            Hit your goal → +1 to your streak. Miss a day → a Streak Freeze protects it automatically.
+          </Text>
+          <Text style={styles.cardBodyDim}>
+            You start with 2 freezes.
           </Text>
         </Animated.View>
       </ScrollView>
@@ -210,6 +231,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '400',
     lineHeight: 19,
+  },
+  cardBodyDim: {
+    marginTop: 6,
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 12,
+    fontWeight: '400',
+    lineHeight: 17,
   },
 
   // Chips — single vertical stack, full-width
