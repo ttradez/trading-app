@@ -9,79 +9,58 @@ import {
   FirstTradeAction,
   FirstTradeBadge,
 } from '../store/onboardingStore';
-import OnboardingMiniChart, { Candle } from '../components/onboarding/OnboardingMiniChart';
+import OnboardingChart from '../components/onboarding/OnboardingChart';
+import {
+  FIRST_TRADE_BARS,
+  FIRST_TRADE_ENTRY_INDEX,
+  FIRST_TRADE_MAX_REVEALED,
+  FIRST_TRADE_POINT_VALUE,
+  FIRST_TRADE_CONTRACTS,
+  FIRST_TRADE_SYMBOL,
+  FIRST_TRADE_DATE_LABEL,
+} from '../data/firstTradeScenario';
 
 /**
  * Onboarding screen 9 — Your First Trade (activation event).
  *
  * Per docs/ONBOARDING_RETENTION_RESEARCH.md the highest-leverage
- * retention screen. A required, can't-fail first trade on a real
- * historical chart. Both outcomes are framed positively (FIRST
- * STRIKE / FIRST BLOOD / FIRST STEP badges).
+ * retention screen. A required, can't-fail first trade on a real-
+ * looking historical chart. Both outcomes are framed positively
+ * (FIRST STRIKE / FIRST BLOOD).
+ *
+ * Architecture (post-stabilization):
+ *  - Chart data lives in `data/firstTradeScenario.ts` (hardcoded).
+ *  - Render uses `components/onboarding/OnboardingChart` — a pure
+ *    SVG renderer with no `sessionStore` / backend coupling. The
+ *    main app's TradingChart is deliberately NOT used here; it's
+ *    a WebView host wired to live session state and was the source
+ *    of the earlier "Cannot read property 'c' of undefined" crash
+ *    on this screen.
+ *  - State tracks `revealedCount` (1-based count of visible bars)
+ *    not `barIndex`. The chart clamps to `bars.length` so any
+ *    runaway increment is a structural no-op instead of an OOB
+ *    read.
  *
  * Four internal phases on a single screen:
  *   intro            → "Your first trade" overlay
  *   awaiting_trade   → chart + tooltip pointing at BUY/SELL
  *   awaiting_advance → chart + tooltip pointing at NEXT BAR (3 taps)
- *   result           → "FIRST STRIKE / FIRST BLOOD / FIRST STEP" + P&L
+ *   result           → "FIRST STRIKE / FIRST BLOOD" + P&L
  *
- * Curated dataset: NQ 2022-09-13 (CPI day). Hand-crafted to be a
- * clean 30-point down move over the 3 advance bars — either trade
- * direction yields a meaningful $600 P&L.
+ * Scenario shape: 30 chop bars + 3 trending-UP bars (+30 pts).
+ *  BUY  → wins → FIRST STRIKE (+$600)
+ *  SELL → loses → FIRST BLOOD (-$600)
  */
 
-// ── Visual tokens ───────────────────────────────────────────────────────────
 const BG    = '#000000';
 const GOLD  = '#FFB800';
 const GREEN = '#00D395';
 const RED   = '#FF4757';
 
-// ── Constants ───────────────────────────────────────────────────────────────
-const SYMBOL = 'NQ';
-const DATE_LABEL = '2022-09-13 · 5m';
-const POINT_VALUE = 20;                  // NQ: $20/point/contract
-const CONTRACTS = 1;
-const ENTRY_BAR_IDX = 29;                // user enters at this bar's close
-const TOTAL_ADVANCES = 3;
-const FINAL_BAR_IDX = ENTRY_BAR_IDX + TOTAL_ADVANCES; // 32
-
-// Hand-crafted NQ-like 5-minute candles. Bars 0–29: gentle chop in the
-// 11,490–11,520 zone. Bars 30–32: clean 30-point down move (CPI-like).
-const CANDLES: Candle[] = [
-  { o: 11498, h: 11506, l: 11495, c: 11503 },
-  { o: 11503, h: 11510, l: 11500, c: 11508 },
-  { o: 11508, h: 11512, l: 11502, c: 11505 },
-  { o: 11505, h: 11509, l: 11498, c: 11500 },
-  { o: 11500, h: 11507, l: 11497, c: 11504 },
-  { o: 11504, h: 11512, l: 11503, c: 11510 },
-  { o: 11510, h: 11518, l: 11507, c: 11515 },
-  { o: 11515, h: 11520, l: 11510, c: 11512 },
-  { o: 11512, h: 11517, l: 11505, c: 11508 },
-  { o: 11508, h: 11513, l: 11498, c: 11501 },
-  { o: 11501, h: 11508, l: 11498, c: 11505 },
-  { o: 11505, h: 11512, l: 11502, c: 11509 },
-  { o: 11509, h: 11514, l: 11504, c: 11506 },
-  { o: 11506, h: 11510, l: 11498, c: 11500 },
-  { o: 11500, h: 11506, l: 11495, c: 11497 },
-  { o: 11497, h: 11502, l: 11492, c: 11495 },
-  { o: 11495, h: 11503, l: 11493, c: 11500 },
-  { o: 11500, h: 11508, l: 11497, c: 11505 },
-  { o: 11505, h: 11510, l: 11502, c: 11507 },
-  { o: 11507, h: 11512, l: 11503, c: 11509 },
-  { o: 11509, h: 11515, l: 11506, c: 11512 },
-  { o: 11512, h: 11518, l: 11508, c: 11515 },
-  { o: 11515, h: 11520, l: 11510, c: 11513 },
-  { o: 11513, h: 11516, l: 11505, c: 11507 },
-  { o: 11507, h: 11512, l: 11502, c: 11506 },
-  { o: 11506, h: 11510, l: 11500, c: 11503 },
-  { o: 11503, h: 11508, l: 11498, c: 11501 },
-  { o: 11501, h: 11506, l: 11498, c: 11504 },
-  { o: 11504, h: 11510, l: 11500, c: 11508 },
-  { o: 11508, h: 11512, l: 11498, c: 11500 }, // bar 29 — entry close
-  { o: 11500, h: 11502, l: 11484, c: 11488 }, // bar 30 — advance 1
-  { o: 11488, h: 11491, l: 11476, c: 11480 }, // bar 31 — advance 2
-  { o: 11480, h: 11482, l: 11468, c: 11470 }, // bar 32 — advance 3 (exit)
-];
+/** Initial revealed count: bars 0..ENTRY_BAR_IDX inclusive are visible
+ *  before the user takes any action. `revealedCount` is a 1-based
+ *  count, so the initial value is index + 1. */
+const INITIAL_REVEALED = FIRST_TRADE_ENTRY_INDEX + 1; // 30
 
 type Phase = 'intro' | 'awaiting_trade' | 'awaiting_advance' | 'result';
 
@@ -116,21 +95,18 @@ interface Props {
   navigation: any;
 }
 
-// ── Screen ──────────────────────────────────────────────────────────────────
-
 export default function OnboardingFirstTradeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const setFirstTrade = useOnboardingStore((s) => s.setFirstTrade);
 
   const [phase, setPhase] = useState<Phase>('intro');
-  const [barIndex, setBarIndex] = useState(ENTRY_BAR_IDX);
+  const [revealedCount, setRevealedCount] = useState(INITIAL_REVEALED);
   const [tradeAction, setTradeAction] = useState<FirstTradeAction | null>(null);
   const [entryPrice, setEntryPrice] = useState<number | null>(null);
 
   const fadeIn = useRef(new Animated.Value(0)).current;
   const pulse  = useRef(new Animated.Value(0)).current;
 
-  // Mount fade-in for intro / chart phases (result has its own).
   useEffect(() => {
     fadeIn.setValue(0);
     Animated.timing(fadeIn, {
@@ -140,7 +116,6 @@ export default function OnboardingFirstTradeScreen({ navigation }: Props) {
     }).start();
   }, [phase, fadeIn]);
 
-  // Tooltip pulse loop.
   useEffect(() => {
     if (phase !== 'awaiting_trade' && phase !== 'awaiting_advance') return;
     const loop = Animated.loop(
@@ -161,8 +136,6 @@ export default function OnboardingFirstTradeScreen({ navigation }: Props) {
     return () => loop.stop();
   }, [phase, pulse]);
 
-  // ── Handlers ──────────────────────────────────────────────────────────────
-
   const handleStart = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     setPhase('awaiting_trade');
@@ -171,7 +144,7 @@ export default function OnboardingFirstTradeScreen({ navigation }: Props) {
   const handleTrade = (action: FirstTradeAction) => {
     if (phase !== 'awaiting_trade') return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    const entry = CANDLES[ENTRY_BAR_IDX].c;
+    const entry = FIRST_TRADE_BARS[FIRST_TRADE_ENTRY_INDEX].c;
     setEntryPrice(entry);
     setTradeAction(action);
     setPhase('awaiting_advance');
@@ -180,14 +153,17 @@ export default function OnboardingFirstTradeScreen({ navigation }: Props) {
   const handleNextBar = () => {
     if (phase !== 'awaiting_advance') return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    const nextIdx = barIndex + 1;
-    setBarIndex(nextIdx);
 
-    if (nextIdx >= FINAL_BAR_IDX) {
-      // Auto-close at the final bar's close.
-      const exit = CANDLES[nextIdx].c;
+    // Clamp defensively — a stray 4th tap is a no-op, not a crash.
+    const nextRevealed = Math.min(revealedCount + 1, FIRST_TRADE_MAX_REVEALED);
+    if (nextRevealed === revealedCount) return;
+    setRevealedCount(nextRevealed);
+
+    if (nextRevealed >= FIRST_TRADE_MAX_REVEALED) {
+      const exitIdx = nextRevealed - 1;
+      const exit = FIRST_TRADE_BARS[exitIdx].c;
       const dir = tradeAction === 'buy' ? 1 : -1;
-      const pnl = (exit - entryPrice!) * dir * POINT_VALUE * CONTRACTS;
+      const pnl = (exit - entryPrice!) * dir * FIRST_TRADE_POINT_VALUE * FIRST_TRADE_CONTRACTS;
       const badge: FirstTradeBadge =
         pnl > 0 ? 'first_strike' : pnl < 0 ? 'first_blood' : 'first_step';
       setFirstTrade({
@@ -197,8 +173,6 @@ export default function OnboardingFirstTradeScreen({ navigation }: Props) {
         pnl,
         badge,
       });
-      // Small delay so the user sees the final candle paint before the
-      // result overlay appears.
       setTimeout(() => setPhase('result'), 650);
     }
   };
@@ -208,8 +182,6 @@ export default function OnboardingFirstTradeScreen({ navigation }: Props) {
     navigation.navigate('OnboardingRankReveal');
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
-
   if (phase === 'intro') {
     return <IntroOverlay onStart={handleStart} insets={insets} fadeIn={fadeIn} />;
   }
@@ -218,41 +190,35 @@ export default function OnboardingFirstTradeScreen({ navigation }: Props) {
     return <ResultOverlay onContinue={handleContinue} insets={insets} />;
   }
 
-  // Chart phases: 'awaiting_trade' + 'awaiting_advance'.
-  const advancesRemaining = FINAL_BAR_IDX - barIndex;
+  const advancesRemaining = FIRST_TRADE_MAX_REVEALED - revealedCount;
+  const entryColor = tradeAction === 'sell' ? RED : GREEN;
 
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={BG} />
 
-      {/* Symbol / date header */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-        <Text style={styles.headerSymbol}>{SYMBOL}</Text>
-        <Text style={styles.headerDate}>{DATE_LABEL}</Text>
+        <Text style={styles.headerSymbol}>{FIRST_TRADE_SYMBOL}</Text>
+        <Text style={styles.headerDate}>{FIRST_TRADE_DATE_LABEL}</Text>
       </View>
 
-      {/* Chart */}
       <Animated.View style={[styles.chartArea, { opacity: fadeIn }]}>
-        <OnboardingMiniChart
-          candles={CANDLES}
-          currentIndex={barIndex}
+        <OnboardingChart
+          bars={FIRST_TRADE_BARS}
+          revealedCount={revealedCount}
           entryPrice={entryPrice}
-          tradeAction={tradeAction}
+          entryColor={entryColor}
           height={320}
         />
         {entryPrice != null && tradeAction && (
           <View style={styles.entryBadge}>
-            <Text style={[
-              styles.entryBadgeText,
-              { color: tradeAction === 'buy' ? GREEN : RED },
-            ]}>
+            <Text style={[styles.entryBadgeText, { color: entryColor }]}>
               {tradeAction.toUpperCase()} @ {entryPrice.toLocaleString('en-US')}
             </Text>
           </View>
         )}
       </Animated.View>
 
-      {/* Controls */}
       <View style={[styles.controls, { paddingBottom: Math.max(insets.bottom, 16) }]}>
         {phase === 'awaiting_trade' && (
           <>
@@ -307,8 +273,6 @@ export default function OnboardingFirstTradeScreen({ navigation }: Props) {
   );
 }
 
-// ── Sub-components ──────────────────────────────────────────────────────────
-
 function IntroOverlay({
   onStart, insets, fadeIn,
 }: { onStart: () => void; insets: any; fadeIn: Animated.Value }) {
@@ -358,8 +322,6 @@ function ResultOverlay({
   }, [fadeIn]);
 
   if (!trade) {
-    // Defensive: shouldn't happen — phase is only set to 'result' after
-    // setFirstTrade. If it does, nudge user along.
     return (
       <View style={styles.root}>
         <Pressable onPress={onContinue} style={styles.cta}>
@@ -412,12 +374,9 @@ function Tooltip({ text, pulse }: { text: string; pulse: Animated.Value }) {
   );
 }
 
-// ── Styles ──────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG },
 
-  // Intro overlay (phase: intro)
   introContent: {
     flex: 1,
     paddingHorizontal: 32,
@@ -437,7 +396,6 @@ const styles = StyleSheet.create({
     lineHeight: 26,
   },
 
-  // Header on chart phases
   header: {
     flexDirection: 'row',
     alignItems: 'baseline',
@@ -458,7 +416,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
   },
 
-  // Chart area
   chartArea: {
     flex: 1,
     justifyContent: 'center',
@@ -480,7 +437,6 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
 
-  // Controls
   controls: {
     paddingHorizontal: 24,
     paddingTop: 16,
@@ -539,7 +495,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
   },
 
-  // Result overlay
   resultContent: {
     flex: 1,
     paddingHorizontal: 32,
@@ -579,7 +534,6 @@ const styles = StyleSheet.create({
     maxWidth: '95%',
   },
 
-  // CTA shared by intro + result
   ctaWrap: {
     paddingHorizontal: 24,
     paddingTop: 16,
