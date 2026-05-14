@@ -5,6 +5,142 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-14 — Screen 9 stabilization: dedicated chart + pre-baked scenario
+
+The First Trade activation event was the highest-risk screen in
+the onboarding flow because it depended on the production
+`TradingChart` — a WebView host wired to `sessionStore` /
+`positions` / `currentPrice` / backend session endpoints. An
+earlier crash here ("Cannot read property 'c' of undefined")
+traced to that plumbing reaching for bar data the onboarding flow
+didn't have. This stabilization decouples screen 9 entirely:
+hardcoded dataset, dedicated SVG chart, bounded reveal counter.
+Out-of-bounds access on the activation event is now structurally
+impossible.
+
+Shipped in two commits:
+
+### Commit 1 — `c580c74` — data + chart component
+
+**`src/data/firstTradeScenario.ts` (new)** — hand-crafted
+NQ-like 5-minute candle data, 33 bars total:
+- Indices 0–29: gentle chop in the 11,490–11,520 range. Bar 29
+  closes at **11,500** — the entry price.
+- Indices 30–32: clean +30-pt **UP** move (11,510 → 11,520 →
+  11,530). Exit at bar 32's close.
+
+Move direction inverted from the previous inline dataset (was
+DOWN). UP means **BUY → wins → FIRST STRIKE (+$600)** and
+**SELL → loses → FIRST BLOOD (−$600)** on 1 NQ contract at
+$20/point — meaningful but non-absurd (1.2% move on the default
+$50K account).
+
+Exports all scenario constants so the screen reads them by name
+instead of magic numbers:
+
+| Export | Value |
+|---|---:|
+| `FIRST_TRADE_ENTRY_INDEX` | 29 |
+| `FIRST_TRADE_TOTAL_ADVANCES` | 3 |
+| `FIRST_TRADE_MAX_REVEALED` | 33 |
+| `FIRST_TRADE_POINT_VALUE` | 20 |
+| `FIRST_TRADE_CONTRACTS` | 1 |
+| `FIRST_TRADE_SYMBOL` | `'NQ'` |
+| `FIRST_TRADE_DATE_LABEL` | `'2022-09-13 · 5m'` |
+
+**`src/components/onboarding/OnboardingChart.tsx` (new)** —
+focused SVG candlestick renderer (~170 lines, `react-native-svg`
+which was already in the project — no new deps).
+
+Key API change vs the retired `OnboardingMiniChart`: it accepts
+a 1-based `revealedCount` instead of `currentIndex`. The chart
+defensively clamps:
+
+```ts
+const safeCount = Math.max(0, Math.min(revealedCount, bars.length));
+const end = safeCount;
+const start = Math.max(0, end - windowSize);
+const visible = bars.slice(start, end);
+```
+
+→ a `revealedCount` past the end of the array is a no-op slice,
+not an undefined-bar crash. `revealedCount <= 0` renders nothing.
+
+Sliding 20-bar window pinned to the latest revealed bar so newly-
+revealed bars always appear at the right edge. 8% top/bottom
+price padding so candles don't kiss the chart edges. `entryPrice`
+included in the Y-axis range so the dashed entry line stays
+in view even if visible bars trend past it. Entry line is
+direction-tinted by the consumer via `entryColor` (green for
+BUY, red for SELL).
+
+Layout uses `onLayout` for the actual pixel width so the chart
+works in any flex container without a hard-coded screen width.
+
+### Commit 2 — `70f0729` — screen rewire + cleanup
+
+**`src/screens/OnboardingFirstTradeScreen.tsx`** — rewired to
+the new files:
+- Inline `CANDLES` array (DOWN move) deleted; imports
+  `FIRST_TRADE_BARS` from the scenario module.
+- All scenario constants (`SYMBOL`, `DATE_LABEL`, `POINT_VALUE`,
+  `CONTRACTS`, `ENTRY_BAR_IDX`, `TOTAL_ADVANCES`,
+  `FINAL_BAR_IDX`) replaced with the named exports.
+- State variable renamed `barIndex` → `revealedCount` to match
+  the chart's API. Initial value is `FIRST_TRADE_ENTRY_INDEX + 1`
+  (= 30; 1-based count). `handleNextBar` clamps the increment to
+  `FIRST_TRADE_MAX_REVEALED` and bails early if clamping was a
+  no-op — a stray 4th tap is now a no-op instead of a crash.
+- `OnboardingMiniChart` import replaced with `OnboardingChart`.
+  Props passed: `bars`, `revealedCount`, `entryPrice`,
+  `entryColor` (green/red based on `tradeAction`), `height`.
+- P&L computed from `FIRST_TRADE_BARS[revealedCount - 1].c` at
+  the final reveal — direction (`buy: +1, sell: -1`) × point
+  value × contracts.
+- Badge mapping unchanged (`pnl > 0 → first_strike`,
+  `pnl < 0 → first_blood`).
+- `entryBadge` color now reads from a single `entryColor`
+  variable instead of an inline ternary, since the chart needs
+  it too.
+
+**`src/components/onboarding/OnboardingMiniChart.tsx`** —
+deleted. Grep confirmed no other code references; only WORK_LOG
++ PROJECT_CONTEXT mentioned it, both rewritten.
+
+**`PROJECT_CONTEXT.md`** — "First Trade chart approach" section
+rewritten to document the two-file architecture (scenario +
+chart), the `revealedCount` clamping pattern, the prior crash
+that motivated the decoupling, and the deliberate non-reuse of
+the production `TradingChart`.
+
+### Outcome
+- BUY → +$600 → FIRST STRIKE (gold badge)
+- SELL → −$600 → FIRST BLOOD (red badge, reframed positively)
+- 4th tap on NEXT BAR → no-op (was potential crash)
+- Zero coupling to `sessionStore`, `positions`, `currentPrice`,
+  or any backend endpoint
+- Type-check clean on screen 9; only pre-existing
+  `iapService.ts` errors remain (unrelated, `react-native-iap`
+  not installed)
+
+### Out of scope (deliberate)
+- Production `TradingChart` untouched; will be replaced wholesale
+  by TradingView Advanced Charts when that application clears.
+- No new dependencies (`react-native-svg` was already in the
+  project).
+- Visual layout of the screen (header, BUY/SELL buttons, NEXT
+  BAR button, tooltip pulse, result overlay) unchanged.
+
+### Files touched
+- `src/data/firstTradeScenario.ts` (new)
+- `src/components/onboarding/OnboardingChart.tsx` (new)
+- `src/components/onboarding/OnboardingMiniChart.tsx` (deleted)
+- `src/screens/OnboardingFirstTradeScreen.tsx`
+- `PROJECT_CONTEXT.md`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-13 — Archetype reveal: rarity stat + sigil icon + trait bars + 'This is me' CTA
 
 Four audit fixes from `docs/ONBOARDING_AUDIT.md` on the
