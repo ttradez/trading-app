@@ -5,6 +5,100 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-13 — Onboarding screen 10: Rank progression reveal
+
+Per `docs/ONBOARDING_RETENTION_RESEARCH.md` the "where you're going"
+moment — cashes the identity check from screen 4 with a visible
+progression ladder.
+
+### Commit 1 — `RankBanner: add upNext + locked variants`
+- `RankBanner` extended with two new optional props:
+  - `upNext?: boolean` — overlays a small gold-text "UP NEXT" pill
+    on a dark muted background (`#1A1A1A` bg / `#2A2A2A` border /
+    `#FFB800` text / 9 px bold 1.2 letter-spaced) at the banner's
+    top-right corner via `position: absolute`.
+  - `locked?: boolean` — applies `opacity: 0.5` to the whole banner
+    row (banner + any "← YOU" indicator), signaling a future rank
+    not yet earned.
+- API-compatible: existing call sites (`<RankBanner rank="gambler"
+  showYouIndicator />` on the player-card preview) keep working.
+
+### Commit 2 — `Onboarding screen 10: Rank progression reveal`
+
+**`src/screens/OnboardingRankRevealScreen.tsx`** (rewritten from placeholder)
+- Headline "Where you're going" (32 px bold white, centered) +
+  subheadline verbatim from spec at white 0.75 / 15 px / 1.5
+  line-height.
+- 5 stacked rank banners using existing `RankBanner`:
+  - **Gambler** — `showYouIndicator`, full opacity.
+  - Progress bar wedged between Gambler and Paper Hands.
+  - **Paper Hands** — `upNext`, full opacity.
+  - **Sniper / Inside Trader / Market Maker** — `locked` (0.5 opacity).
+- Vertical gap between banners: 10 px (via `gap` on the stack).
+- **Progress bar**: 5 px tall, `#1F1F1F` track, gold `#FFB800` fill,
+  4 px corner radius, label "10% toward Paper Hands" below (white
+  0.6 / 12 px / centered).
+
+**Staggered entrance** (`Animated.parallel` of per-element fade-ins,
+each `Animated.sequence(delay → timing(280 ms, native driver))`):
+- t=0: headline + subheadline
+- t=200: Gambler banner
+- t=400: progress block (track + label fade in) + **fill animates
+  0% → 10% over 600 ms with ease-out cubic, JS driver** (width %
+  needs the non-native driver)
+- t=500: Paper Hands
+- t=600: Sniper
+- t=700: Inside Trader
+- t=800: Market Maker
+- t=1000: Continue CTA
+
+Total animation ~1.3 s — coordinated, not draggy.
+
+**Layout** — `ScrollView` for the stack so smaller phones get
+scroll behaviour; Continue CTA pinned outside the ScrollView at
+the bottom with safe-area-aware padding. CTA always enabled (no
+gating — purely informational screen).
+
+### Other touches
+- `src/screens/OnboardingAuthScreen.tsx` (new) — placeholder for
+  screen 11 ("Save your progress" deferred-auth moment).
+- `App.tsx` — `OnboardingAuth` imported and added to the
+  `FORCE_ONBOARDING_FLOW` stack with `gestureEnabled: false`.
+
+### State
+No new persistence. Reads existing `onboardingStore.firstTrade`
+implicitly via narrative ("Your first trade just moved the
+needle"). The 10% fill amount is hardcoded for v1 — when the real
+rank-XP system lands, it'll come from the store.
+
+### Animation library
+Existing built-in `Animated` from `react-native`. No new deps.
+
+### Out of scope (deliberate)
+- No tap-to-expand rank details.
+- No comparison to other users.
+- No XP system numbers beyond the 10% bar.
+- Screens 1–9 untouched.
+
+### Files touched
+- `src/components/RankBanner.tsx` (commit 1)
+- `src/screens/OnboardingRankRevealScreen.tsx` (rewritten — commit 2)
+- `src/screens/OnboardingAuthScreen.tsx` (new — commit 2)
+- `App.tsx` (commit 2)
+- `WORK_LOG.md`
+
+### Commits
+- `3f8ccd8` — RankBanner: add upNext + locked variants
+- (this commit) — Onboarding screen 10: Rank progression reveal
+
+### Flow wired
+Splash → Premise → Quiz → reveal → Identity → Experience → Account
+size → Trader name → Daily commitment → First Trade → result →
+Continue → **Rank reveal** (staggered ladder + progress bar
+fills to 10%) → Continue → "Screen 11 placeholder".
+
+---
+
 ## 2026-05-13 — Screen 9 — First Trade activation event
 
 THE highest-leverage retention screen per
