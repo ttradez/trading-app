@@ -5,6 +5,124 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-14 — Quiz: per-question layout variety (Q4 grid, Q3 poster tiles)
+
+`docs/ONBOARDING_AUDIT.md` flagged quiz monotony: all 5
+questions used identical chrome — progress dots, "QUESTION N OF
+5" eyebrow, headline, vertical stack of 4 dark rounded cards.
+Fix breaks the card layout on the two personality-proxy
+questions (Q3, Q4) where the content is cheap to re-render
+differently. Q1, Q2, Q5 stay as the vertical stack — their
+options are content-heavy and the stack reads cleanly for them.
+
+### Scoring untouched (deliberate, verified)
+
+`OPTION_SCORES` is keyed by `'A' | 'B' | 'C' | 'D'` — the
+position index, not the option text — and `handleAnswer(choice:
+ArchetypeAnswer)` is called the same way from every layout
+(`handleAnswer(OPTIONS[i])`). No change to:
+
+- `OPTION_SCORES` matrix
+- The `QUESTIONS[].options` array contents or order
+- `computeArchetype` + tiebreakers
+- The `archetypeAnswers` payload written to `onboardingStore`
+- Per-archetype rarity stats on the reveal screen
+
+The poster view re-titles option strings for *display only* via
+a new sidecar `posterMeta` field — the underlying option
+strings stay in `Question.options` exactly as before, so any
+downstream consumer reading them (accessibility labels,
+analytics) sees the unchanged source-of-truth text.
+
+### Architecture — the `layout` field
+
+`Question` now carries a `layout: 'stack' | 'grid' | 'poster'`
+field:
+
+| Q | Layout | Why |
+|---|---|---|
+| 1 — Winning trade still moving | `'stack'` | Long option text, needs full width |
+| 2 — 2-day-old trade alert | `'stack'` | Long option text |
+| 3 — Pick the show you'd binge | `'poster'` | Streaming-app metaphor begs for poster tiles |
+| 4 — Which compliment | `'grid'` | One-word options — chip-friendly |
+| 5 — When to be done thinking | `'stack'` | Long option text |
+
+Renderer dispatches on `q.layout` inside the existing question
+view — three explicit branches, no fall-through. Headline,
+progress dots, "QUESTION N OF 5" eyebrow, fade-on-transition,
+and auto-advance-on-selection are layout-agnostic and identical
+across all 5 questions.
+
+### Q4 — `'grid'` (2 × 2 chips)
+
+- 2 × 2 grid of square chips, `aspectRatio: 1`.
+- One-word options ("Fast.", "Sharp.", "Patient.", "Right.")
+  rendered at **26 px / 800 weight / -0.4 letter-spacing** —
+  oversize typographic statement that wouldn't fit on Q1/Q2's
+  card heights.
+- Same selection chrome as the stack: gold #FFB800 border
+  on highlight, +1 px width to maintain visual weight.
+
+### Q3 — `'poster'` (2 × 2 streaming-poster tiles)
+
+- 2 × 2 grid of `aspectRatio: 3 / 4` tiles — taller than wide,
+  reading as streaming-app thumbnails.
+- Each tile renders a **gold sigil glyph** at the top
+  (`MaterialCommunityIcons`), a bold **title** (16 px / 800
+  weight), and a smaller **descriptor** (12 px / 70% white) at
+  the bottom — visually distinct from Q1/Q2's wide cards.
+- Title + descriptor split derived from the option text by a
+  parallel `posterMeta` array on `QUESTIONS[2]`. Glyphs picked
+  to thematically match each show length:
+
+| Option (display only) | Icon | Why |
+|---|---|---|
+| 22-min Sitcom — "Fast, light, done." | `coffee-outline` | quick, casual |
+| 1-hr Procedural — "Case opens and closes in one episode." | `magnify` | investigation |
+| 8-ep Drama — "Full arc, satisfying." | `book-open-variant` | story arc |
+| 5-season Epic — "In for the long haul." | `infinity` | endless commitment |
+
+  (Originally tried `mountain` for the epic; not in
+  `MaterialCommunityIcons` glyph set — replaced with `infinity`
+  per the type-checker.)
+
+- Same selection chrome: gold border + 1 px width on highlight.
+  Padding shrinks by 1 px on selection to compensate so content
+  doesn't shift on tap.
+- Strictly on-brand: pure black base (#000), white text, gold
+  (#FFB800) accent only. No images, no real show artwork.
+
+### 2 × 2 grid scaffolding
+
+Shared by both `'grid'` and `'poster'` layouts:
+
+```ts
+gridContainer: { gap: 10 }                               // row gap
+gridRow:       { flexDirection: 'row', gap: 10 }         // col gap
+gridCell:      { flex: 1 }                               // equal-width
+```
+
+Two explicit `<View style={gridRow}>` rows with two `gridCell`
+children each. `flexWrap` would also work but explicit rows make
+the layout obvious at a glance.
+
+### Out of scope (deliberate)
+
+- Scoring logic, option order, option text on `Question.options`
+- Reveal screen (untouched)
+- Q1, Q2, Q5 (still `'stack'` — identical to before)
+- Top progress dots + "QUESTION N OF 5" eyebrow + headline
+  styling + auto-advance behavior — unchanged
+- No new dependencies (`MaterialCommunityIcons` already in via
+  `@expo/vector-icons`)
+
+### Files touched
+
+- `src/screens/OnboardingArchetypeScreen.tsx`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-14 — Rank Reveal: weighted YOU-indicator drop-in + re-sequenced entrance animation
 
 Per `docs/ONBOARDING_AUDIT.md`, the Rank Reveal screen was the

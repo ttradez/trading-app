@@ -40,9 +40,32 @@ const CARD_BORDER = '#1F1F1F';
 
 // ── Quiz content ────────────────────────────────────────────────────────────
 
+/** Display-only split for poster-layout options. The underlying
+ *  option string in `Question.options` is still the SCORING SOURCE
+ *  OF TRUTH — `OPTION_SCORES` is keyed by A/B/C/D position, not by
+ *  text — so re-titling here for the poster view changes nothing
+ *  about how the quiz scores. */
+interface PosterMeta {
+  title: string;
+  descriptor: string;
+  icon: IconName;
+}
+
+/** Per-question rendering style.
+ *   - `'stack'`  → the existing full-width 4-card vertical stack
+ *   - `'grid'`   → 2 × 2 typographic chips (single-word options)
+ *   - `'poster'` → 2 × 2 streaming-poster tiles (~3:4 aspect)
+ *
+ *  Scoring is independent of layout. Option order MUST stay
+ *  A → Scalper, D → Position across every question. */
+type QuestionLayout = 'stack' | 'grid' | 'poster';
+
 interface Question {
   headline: string;
   options: [string, string, string, string]; // A, B, C, D
+  layout: QuestionLayout;
+  /** Only used by `'poster'` layout. Index-aligned with `options`. */
+  posterMeta?: [PosterMeta, PosterMeta, PosterMeta, PosterMeta];
 }
 
 const QUESTIONS: Question[] = [
@@ -54,6 +77,7 @@ const QUESTIONS: Question[] = [
       "Let it ride. The move just started — I'll move my safety stop up as it goes.",
       'Stick to the plan. I picked my target before I entered.',
     ],
+    layout: 'stack',
   },
   {
     headline: "A trade you took two days ago is finally moving. You're not at your screen. What's the right call?",
@@ -63,19 +87,31 @@ const QUESTIONS: Question[] = [
       'Let the plan run. I set this up not to need babysitting.',
       "Honestly? I'd already forgotten about it. That's normal for me.",
     ],
+    layout: 'stack',
   },
   {
     headline: "Pick the show you'd binge first.",
+    // Underlying option strings — UNCHANGED, used by accessibility +
+    // any downstream consumer reading `Question.options`. The poster
+    // view splits + re-titles them via `posterMeta` for display only.
     options: [
       'A 22-minute sitcom — fast, light, done.',
       'A 1-hour procedural — case opens and closes in one episode.',
       'An 8-episode prestige drama — full arc, satisfying.',
       "A 5-season slow-burn epic — I'm in for the long haul.",
     ],
+    layout: 'poster',
+    posterMeta: [
+      { title: '22-min Sitcom',   descriptor: 'Fast, light, done.',                    icon: 'coffee-outline' },
+      { title: '1-hr Procedural', descriptor: 'Case opens and closes in one episode.', icon: 'magnify' },
+      { title: '8-ep Drama',      descriptor: 'Full arc, satisfying.',                 icon: 'book-open-variant' },
+      { title: '5-season Epic',   descriptor: 'In for the long haul.',                 icon: 'infinity' },
+    ],
   },
   {
     headline: 'Which compliment would mean more to you?',
     options: ['Fast.', 'Sharp.', 'Patient.', 'Right.'],
+    layout: 'grid',
   },
   {
     headline: 'What time do you want to be done thinking about the market each day?',
@@ -85,6 +121,7 @@ const QUESTIONS: Question[] = [
       'Check it briefly a couple of times during the day.',
       "I don't want to think about it during the day at all — set it and forget.",
     ],
+    layout: 'stack',
   },
 ];
 
@@ -223,6 +260,57 @@ function AnswerCard({
   );
 }
 
+/** Q4 (grid) chip — square, single-word, big bold typography. */
+function ChipOption({
+  label, onPress, highlighted, disabled,
+}: { label: string; onPress: () => void; highlighted: boolean; disabled: boolean }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [
+        styles.chip,
+        (highlighted || pressed) && styles.chipActive,
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <Text style={styles.chipText}>{label}</Text>
+    </Pressable>
+  );
+}
+
+/** Q3 (poster) tile — ~3:4 streaming-poster aspect, gold sigil at the
+ *  top, bold title in the middle, descriptor at the bottom. The icon
+ *  is the "distinguishing visual treatment" the audit asked for —
+ *  the same vocabulary as the identity / archetype-reveal sigils,
+ *  on-brand (white text, gold accent only). */
+function PosterTile({
+  meta, onPress, highlighted, disabled,
+}: { meta: PosterMeta; onPress: () => void; highlighted: boolean; disabled: boolean }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [
+        styles.poster,
+        (highlighted || pressed) && styles.posterActive,
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={`${meta.title}. ${meta.descriptor}`}
+    >
+      <MaterialCommunityIcons
+        name={meta.icon}
+        size={26}
+        color={GOLD}
+        style={styles.posterIcon}
+      />
+      <Text style={styles.posterTitle} numberOfLines={2}>{meta.title}</Text>
+      <Text style={styles.posterDescriptor} numberOfLines={3}>{meta.descriptor}</Text>
+    </Pressable>
+  );
+}
+
 /** Animated horizontal trait bar — fill scales 0% → `value`% over
  *  500 ms with ease-out cubic. Width interpolation requires the JS
  *  driver. Used only on the reveal screen. */
@@ -337,7 +425,8 @@ export default function OnboardingArchetypeScreen({ navigation }: Props) {
           <>
             <Text style={styles.questionHeadline}>{q.headline}</Text>
             <View style={{ height: 20 }} />
-            {OPTIONS.map((opt, idx) => (
+
+            {q.layout === 'stack' && OPTIONS.map((opt, idx) => (
               <View key={opt} style={idx > 0 ? { marginTop: 10 } : null}>
                 <AnswerCard
                   label={q.options[idx]}
@@ -347,6 +436,64 @@ export default function OnboardingArchetypeScreen({ navigation }: Props) {
                 />
               </View>
             ))}
+
+            {q.layout === 'grid' && (
+              <View style={styles.gridContainer}>
+                <View style={styles.gridRow}>
+                  {[0, 1].map((i) => (
+                    <View key={OPTIONS[i]} style={styles.gridCell}>
+                      <ChipOption
+                        label={q.options[i]}
+                        onPress={() => handleAnswer(OPTIONS[i])}
+                        highlighted={selected === OPTIONS[i]}
+                        disabled={selected !== null}
+                      />
+                    </View>
+                  ))}
+                </View>
+                <View style={styles.gridRow}>
+                  {[2, 3].map((i) => (
+                    <View key={OPTIONS[i]} style={styles.gridCell}>
+                      <ChipOption
+                        label={q.options[i]}
+                        onPress={() => handleAnswer(OPTIONS[i])}
+                        highlighted={selected === OPTIONS[i]}
+                        disabled={selected !== null}
+                      />
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {q.layout === 'poster' && q.posterMeta && (
+              <View style={styles.gridContainer}>
+                <View style={styles.gridRow}>
+                  {[0, 1].map((i) => (
+                    <View key={OPTIONS[i]} style={styles.gridCell}>
+                      <PosterTile
+                        meta={q.posterMeta![i]}
+                        onPress={() => handleAnswer(OPTIONS[i])}
+                        highlighted={selected === OPTIONS[i]}
+                        disabled={selected !== null}
+                      />
+                    </View>
+                  ))}
+                </View>
+                <View style={styles.gridRow}>
+                  {[2, 3].map((i) => (
+                    <View key={OPTIONS[i]} style={styles.gridCell}>
+                      <PosterTile
+                        meta={q.posterMeta![i]}
+                        onPress={() => handleAnswer(OPTIONS[i])}
+                        highlighted={selected === OPTIONS[i]}
+                        disabled={selected !== null}
+                      />
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
           </>
         )}
 
@@ -460,6 +607,79 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
     lineHeight: 22,
+  },
+
+  // Q3 / Q4 — 2 × 2 layout shared scaffolding.
+  // Two explicit rows of two flex:1 cells, gap-separated. flexWrap
+  // would also work but explicit rows keep the layout obvious.
+  gridContainer: {
+    gap: 10,
+  },
+  gridRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  gridCell: {
+    flex: 1,
+  },
+
+  // Q4 chip — square, single-word, oversize typography.
+  chip: {
+    backgroundColor: CARD_BG,
+    borderColor: CARD_BORDER,
+    borderWidth: 1,
+    borderRadius: 16,
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chipActive: {
+    borderColor: GOLD,
+    borderWidth: 2,
+  },
+  chipText: {
+    color: '#FFFFFF',
+    fontSize: 26,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+    textAlign: 'center',
+  },
+
+  // Q3 poster tile — ~3:4 streaming-poster aspect.
+  poster: {
+    backgroundColor: CARD_BG,
+    borderColor: CARD_BORDER,
+    borderWidth: 1,
+    borderRadius: 14,
+    aspectRatio: 3 / 4,
+    paddingHorizontal: 14,
+    paddingVertical: 16,
+    // Stack from top → bottom: icon, title, descriptor.
+    justifyContent: 'flex-start',
+  },
+  posterActive: {
+    borderColor: GOLD,
+    borderWidth: 2,
+    // Compensate so content position doesn't shift on selection.
+    paddingHorizontal: 13,
+    paddingVertical: 15,
+  },
+  posterIcon: {
+    marginBottom: 12,
+  },
+  posterTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+    lineHeight: 21,
+  },
+  posterDescriptor: {
+    marginTop: 6,
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 12,
+    fontWeight: '500',
+    lineHeight: 16,
   },
 
   // Reveal view
