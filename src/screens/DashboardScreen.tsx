@@ -10,6 +10,10 @@ import { useStreakStore, computeDisplayStatus } from '../store/streakStore';
 import { useOnboardingStore, Archetype } from '../store/onboardingStore';
 import { useJournalStore, JournalEntry } from '../store/journalStore';
 import { useTradeJournalStore } from '../store/tradeJournalStore';
+import { useIsTodaySetupComplete } from '../store/dailySetupStore';
+import {
+  getTodaySetup, setupStartUnixSeconds, SetupDifficulty,
+} from '../data/dailySetups';
 
 import StreakBadge from '../components/StreakBadge';
 import TradeCard from '../components/TradeCard';
@@ -164,6 +168,12 @@ export default function DashboardScreen({ navigation }: any) {
   const dailyGoalMin    = useOnboardingStore((s) => s.dailyTimeGoalMinutes);
   const archetypeMeta   = archetype ? ARCHETYPE_META[archetype] : null;
 
+  // Daily mission — deterministic by day-of-year; completion is
+  // tracked in dailySetupStore (set by TradingScreen when the user
+  // closes a trade on the matching symbol + replay date).
+  const todaySetup = useMemo(() => getTodaySetup(), []);
+  const setupComplete = useIsTodaySetupComplete();
+
   // Trade history — auto-persisted on close by TradingScreen.
   const entries = useJournalStore((s) => s.entries);
 
@@ -217,6 +227,66 @@ export default function DashboardScreen({ navigation }: any) {
             )}
           </View>
           <StreakBadge count={streakCount} status={streakStatus} size="small" />
+        </View>
+
+        {/* TODAY'S MISSION — the cold-start solver, top card. */}
+        <View
+          style={[
+            styles.card,
+            styles.missionCard,
+            setupComplete && styles.missionCardDone,
+          ]}
+        >
+          {setupComplete && <View style={styles.missionAccent} />}
+          <View style={styles.missionInner}>
+            <View style={styles.missionTopRow}>
+              <Text style={styles.missionLabel}>TODAY'S MISSION</Text>
+              <DifficultyBadge difficulty={todaySetup.difficulty} />
+            </View>
+
+            <Text style={styles.missionTitle}>{todaySetup.title}</Text>
+            <Text style={styles.missionSubtitle}>
+              {todaySetup.symbol} · {todaySetup.setupType}
+            </Text>
+            <Text style={styles.missionDescription}>
+              {todaySetup.description}
+            </Text>
+            <Text style={styles.missionTip}>💡 {todaySetup.tip}</Text>
+
+            <Pressable
+              onPress={() =>
+                navigation.navigate('Chart', {
+                  dailySetup: {
+                    symbol: todaySetup.symbol,
+                    timeframe: todaySetup.timeframe,
+                    startTs: setupStartUnixSeconds(todaySetup),
+                    date: todaySetup.date,
+                    key: `${todaySetup.id}-${Date.now()}`,
+                  },
+                })
+              }
+              disabled={setupComplete}
+              style={({ pressed }) => [
+                styles.missionCta,
+                setupComplete && styles.missionCtaDone,
+                !setupComplete && pressed && { opacity: 0.85 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={
+                setupComplete ? 'Mission completed' : 'Trade this setup'
+              }
+              accessibilityState={{ disabled: setupComplete }}
+            >
+              <Text
+                style={[
+                  styles.missionCtaText,
+                  setupComplete && styles.missionCtaTextDone,
+                ]}
+              >
+                {setupComplete ? 'Completed ✓' : 'Trade this setup'}
+              </Text>
+            </Pressable>
+          </View>
         </View>
 
         {/* SECTION 1 — Daily Training Progress */}
@@ -336,6 +406,19 @@ export default function DashboardScreen({ navigation }: any) {
 
 // ── Stat card ──────────────────────────────────────────────────────────────
 
+function DifficultyBadge({ difficulty }: { difficulty: SetupDifficulty }) {
+  const color =
+    difficulty === 'beginner' ? GREEN :
+    difficulty === 'advanced' ? RED : GOLD;
+  const label =
+    difficulty.charAt(0).toUpperCase() + difficulty.slice(1);
+  return (
+    <View style={[styles.diffBadge, { borderColor: color }]}>
+      <Text style={[styles.diffBadgeText, { color }]}>{label}</Text>
+    </View>
+  );
+}
+
 function StatCard({
   label, value, color, muted,
 }: { label: string; value: string; color?: string; muted?: boolean }) {
@@ -393,6 +476,96 @@ const styles = StyleSheet.create({
     borderColor: CARD_BORDER,
     borderWidth: 1,
     borderRadius: 14,
+  },
+
+  // TODAY'S MISSION
+  missionCard: {
+    flexDirection: 'row',
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  missionCardDone: {
+    borderColor: GREEN,
+  },
+  // 3 px green left accent when done — same language as TradeCard.
+  missionAccent: {
+    width: 3,
+    backgroundColor: GREEN,
+  },
+  missionInner: {
+    flex: 1,
+    padding: 20,
+  },
+  missionTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  missionLabel: {
+    color: GOLD,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+  },
+  diffBadge: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+  },
+  diffBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  missionTitle: {
+    marginTop: 14,
+    color: WHITE,
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+  },
+  missionSubtitle: {
+    marginTop: 4,
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  missionDescription: {
+    marginTop: 12,
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 14,
+    fontWeight: '400',
+    lineHeight: 21,
+  },
+  missionTip: {
+    marginTop: 12,
+    color: 'rgba(255,184,0,0.8)',
+    fontSize: 13,
+    fontStyle: 'italic',
+    lineHeight: 19,
+  },
+  missionCta: {
+    marginTop: 18,
+    height: 48,
+    borderRadius: 10,
+    backgroundColor: GOLD,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  missionCtaDone: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: GREEN,
+  },
+  missionCtaText: {
+    color: '#000000',
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  missionCtaTextDone: {
+    color: GREEN,
   },
 
   // SECTION 1 — Daily Training Progress

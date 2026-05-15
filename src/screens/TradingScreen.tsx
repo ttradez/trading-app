@@ -15,6 +15,8 @@ import MagnetToggle from '../components/chart/MagnetToggle';
 import TradeJournalModal, { TradeSummary } from '../components/TradeJournalModal';
 import { useTradeJournalStore } from '../store/tradeJournalStore';
 import type { JournalEntry } from '../store/journalStore';
+import { useDailySetupStore } from '../store/dailySetupStore';
+import { getTodaySetup } from '../data/dailySetups';
 import EconomicCalendarPanel from '../components/EconomicCalendarPanel';
 import { getEventsForDate } from '../data/economicCalendar';
 import { useDrawingsStore } from '../store/drawingsStore';
@@ -254,12 +256,25 @@ function CustomSessionConfig({
   );
 }
 
-export default function TradingScreen() {
+export default function TradingScreen({ route }: any) {
   // Streak training timer — ticks every 10 s while this screen is
   // mounted + the app is foregrounded; pauses on background; flushes
   // any partial interval on unmount. Auto-fires completeDaily() the
   // moment today's bucket crosses the user's daily goal.
   useTrainingTimer();
+
+  // Daily-mission plumbing. `route.params.dailySetup` is set when the
+  // user taps "Trade this setup" on the dashboard. We preload that
+  // symbol/timeframe at the scenario's historical date, and mark the
+  // mission complete once the user closes a trade on the matching
+  // symbol + replay date.
+  const dailySetup = route?.params?.dailySetup as
+    | { symbol: string; timeframe: string; startTs: number; date: string; key: string }
+    | undefined;
+  const markDailySetupComplete = useDailySetupStore((s) => s.markCompletedToday);
+  const todaySetup = useMemo(() => getTodaySetup(), []);
+  const pendingStartTsRef   = useRef<number | null>(null);
+  const consumedSetupKeyRef = useRef<string | null>(null);
 
   const { uid, username } = useAuthStore();
 
@@ -307,7 +322,24 @@ export default function TradingScreen() {
       savedAt: Date.now(),
     };
     addJournalEntry(entry);
-  }, [recentClosedTrade, addJournalEntry]);
+
+    // Mark the daily mission complete if this trade is on the
+    // curated scenario's symbol AND its NY-time calendar date.
+    // The date is derived locally from the trade's close timestamp
+    // (the module-level `replayDateYMD` memo is declared further
+    // down, so we can't reference it here without a TDZ).
+    if (entry.symbol === todaySetup.symbol) {
+      const closedSec = typeof t.closed_at === 'number'
+        ? t.closed_at
+        : Math.floor(Date.now() / 1000);
+      const p = tzPartsOf(closedSec * 1000, 'America/New_York');
+      const pad = (n: number) => (n < 10 ? '0' + n : '' + n);
+      const tradeYMD = `${p.y}-${pad(p.mo)}-${pad(p.d)}`;
+      if (tradeYMD === todaySetup.date) {
+        markDailySetupComplete();
+      }
+    }
+  }, [recentClosedTrade, addJournalEntry, todaySetup, markDailySetupComplete]);
 
   // Adapt the snake_case backend close payload into the journal
   // modal's `TradeSummary` shape. Defensive defaults because the
@@ -466,18 +498,50 @@ export default function TradingScreen() {
     return () => stopAdTimer();
   }, []);
 
-  // If still no session after resume attempt, auto-start one
+  // If still no session after resume attempt, auto-start one. When a
+  // fresh, unconsumed daily-setup param is present we DON'T start a
+  // random session here — the setup effect below sets market /
+  // timeframe / start-ts first and then drives the start, so we'd
+  // otherwise flash a random session before the curated one loads.
   useEffect(() => {
     if (sessionId || autoStarting || !uid) return;
+    if (dailySetup && dailySetup.key !== consumedSetupKeyRef.current) return;
     autoStart();
   }, [sessionId, uid, market.symbol, timeframe]);
+
+  // Consume a daily-setup navigation param: point the chart at the
+  // scenario's symbol/timeframe and queue its historical start time,
+  // then drop any current session so the auto-start effect re-fires
+  // and picks up the pending start-ts. Re-tapping the same scenario
+  // re-triggers because the dashboard stamps a fresh `key` per tap.
+  useEffect(() => {
+    if (!dailySetup || dailySetup.key === consumedSetupKeyRef.current) return;
+    consumedSetupKeyRef.current = dailySetup.key;
+    pendingStartTsRef.current = dailySetup.startTs;
+
+    const found = allMarkets.find((m) => m.symbol === dailySetup.symbol);
+    setMarket(found ?? {
+      symbol: dailySetup.symbol,
+      name: dailySetup.symbol,
+      pip: DEFAULT_MARKET.pip,
+      contractSize: DEFAULT_MARKET.contractSize,
+    });
+    setTimeframe(dailySetup.timeframe);
+    if (sessionId) reset(); // auto-start effect restarts with the pending ts
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dailySetup?.key, allMarkets]);
 
   const autoStart = async () => {
     if (!uid || autoStarting) return;
     setAutoStarting(true);
     setAutoStartError(null);
+    // Consume any queued daily-setup start time exactly once.
+    const startTs = pendingStartTsRef.current ?? undefined;
+    pendingStartTsRef.current = null;
     try {
-      const data = await startSession(uid, username || 'guest', market.symbol, timeframe, accountSize);
+      const data = await startSession(
+        uid, username || 'guest', market.symbol, timeframe, accountSize, startTs,
+      );
       await setSession(data);
     } catch (e: any) {
       console.warn('auto-start failed:', e.message);

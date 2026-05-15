@@ -5,6 +5,130 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-15 — Daily Setup of the Day: curated scenarios + dashboard card + completion tracking
+
+The #1 retention recommendation: kill the cold-start problem.
+Users open the app, don't know which historical date to replay,
+and bounce. One curated daily mission gives them a clear "do this
+now" — the Duolingo daily-lesson pattern.
+
+### New file — `src/data/dailySetups.ts`
+
+**30 curated scenarios** (verified count). Each:
+`{ id, symbol, date, timeframe, title, description, setupType,
+difficulty, tip }`.
+
+Diversity (script-verified):
+
+| Axis | Spread |
+|---|---|
+| Symbol | NQ ×11, ES ×11, CL ×4, GC ×4 |
+| Setup type | News Reaction ×9, Reversal ×6, Trend Day ×6, Breakdown ×5, Opening Range Breakout ×2, Range Day ×1, Gap Fill ×1 (all 7 represented) |
+| Difficulty | beginner ×9, intermediate ×10, advanced ×11 |
+| Year | all 2022 (backend coverage) |
+
+Descriptions are written to *teach* — each names the structure
+to look for; each `tip` is a concrete entry trigger. Several are
+anchored to real 2022 macro days (CPI prints, FOMC decisions,
+Jackson Hole, the Feb-24 invasion gap) so the replay date lines
+up with a genuine catalyst.
+
+Exports:
+- `getTodaySetup()` — `DAILY_SETUPS[dayOfYear(now) % 30]`.
+  Deterministic per calendar day, zero backend, every device
+  agrees on the same calendar day.
+- `setupStartUnixSeconds(s)` — the scenario date at 14:00 UTC
+  (~9:30 AM ET year-round); backend snaps `start_time` to the
+  nearest bar so sub-hour precision is irrelevant.
+- `DAILY_SETUP_COUNT` for analytics / smoke checks.
+
+### New file — `src/store/dailySetupStore.ts`
+
+Persisted Zustand store (`zustand/middleware` + AsyncStorage,
+key `daily-setup-storage-v1`). Stores ONLY
+`lastCompletedSetupDate: string | null`. Since rotation is
+deterministic by day-of-year, the completion date alone answers
+"is today's mission done?" — no per-scenario history needed.
+`markCompletedToday()` writes `getTodayYMD()` (reuses
+streakStore's exported helper — single source of truth for
+"today"). `useIsTodaySetupComplete()` selector hook re-renders
+the card the instant completion lands.
+
+### Dashboard — top card (`DashboardScreen.tsx`)
+
+New "TODAY'S MISSION" card inserted **above** the Daily
+Training Progress ring (first thing the user sees; no existing
+section changed). Layout per spec:
+- Gold "TODAY'S MISSION" eyebrow + right-aligned difficulty
+  pill (`DifficultyBadge`: beginner=green, intermediate=gold,
+  advanced=red — text + border, transparent fill, pill radius).
+- Title (20 px / 800), `SYMBOL · Setup Type` subtitle (60 %
+  white), description (75 % white, 1.5 line-height), tip line
+  prefixed with 💡 in italic gold-80 %.
+- Full-width 48 px gold CTA "Trade this setup".
+- Completed state: 3 px green left-accent on the card, CTA
+  swaps to a disabled transparent green-bordered "Completed ✓".
+
+CTA `onPress` → `navigation.navigate('Chart', { dailySetup: {
+symbol, timeframe, startTs, date, key } })`. `key` is
+`${id}-${Date.now()}` so re-tapping the same scenario always
+re-triggers a fresh load.
+
+### Chart wiring (`TradingScreen.tsx`)
+
+- Signature `TradingScreen()` → `TradingScreen({ route })` (it's
+  a `Tab.Screen` component, so React Navigation passes
+  `{ navigation, route }`).
+- Two refs: `pendingStartTsRef` (queued historical start time)
+  and `consumedSetupKeyRef` (last-handled param key, so the
+  effect is idempotent across tab focus / re-render).
+- **Setup-consume effect** (`[dailySetup?.key, allMarkets]`):
+  on a new key, queue `startTs`, set the market (look up the
+  full `Market` in `allMarkets`, else synthesize a minimal one
+  from `DEFAULT_MARKET`'s pip/contractSize), set the timeframe,
+  and `reset()` any live session so the auto-start effect
+  re-fires.
+- **Auto-start effect** gained a guard: if a fresh unconsumed
+  `dailySetup` param exists, it does NOT start a random session
+  — it defers to the setup effect so the user never sees a
+  random session flash before the curated one.
+- `autoStart()` now reads + clears `pendingStartTsRef` and
+  threads it through `startSession(..., startTs)` (the API
+  already accepted an optional `start_time`; it was just never
+  passed).
+- **Completion**: the existing close→`journalStore` auto-persist
+  effect now also checks `entry.symbol === todaySetup.symbol`
+  and derives the trade's NY-time YMD from `closed_at` via the
+  module-level `tzPartsOf` helper (can't reference the
+  `replayDateYMD` memo — it's declared further down → TDZ). On a
+  match it calls `markCompletedToday()`. Completion is keyed on
+  trade **close** (round-trip), not open — a pragmatic choice
+  given the close path is already wired; documented as a v1
+  limitation.
+
+### Out of scope (deliberate)
+
+- Backend/API for scenarios (static client-side v1).
+- Per-archetype/skill personalized selection (day-of-year only).
+- > 30 scenarios (expandable later).
+- Sharing the daily setup.
+- Missed-day punishment (streak system already covers that —
+  the card always shows *today's* fresh setup, never yesterday's).
+- No existing dashboard section changed — card is purely additive
+  at the top.
+
+### Files touched
+
+- `src/data/dailySetups.ts` (new)
+- `src/store/dailySetupStore.ts` (new)
+- `src/screens/DashboardScreen.tsx` (mission card + badge)
+- `src/screens/TradingScreen.tsx` (route props, setup-consume +
+  auto-start guard + start-ts plumbing + completion marking)
+- `PROJECT_CONTEXT.md`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-15 — Shorten "LEADERBOARD" tab label to "RANKS"
 
 "LEADERBOARD" still truncated even at 4 tabs / 10 px. Added
