@@ -5,6 +5,105 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-14 — Screen 9 result: badge stamp + P&L counter + haptic on entry
+
+`docs/ONBOARDING_AUDIT.md` called the First Strike result screen
+the strongest moment in the flow and asked for the cheap polish
+worth adding on a moment that matters: a stamp animation on the
+badge, a haptic at impact, and a number-counter on the P&L. All
+three for every outcome (FIRST STRIKE / FIRST BLOOD / FIRST STEP).
+
+Animation library: React Native's built-in `Animated`. No new
+dep. Native driver for opacity + transform on the badge / label /
+copy / CTA. JS driver for the P&L counter — `Animated.Value`
+listeners only fire on the JS thread, so the counter animation
+runs on JS and writes each frame's value into React state via
+the listener.
+
+### Entrance timeline
+
+All five steps are run inside one `Animated.parallel` with
+explicit `Animated.delay`-based start times so each step hands
+off cleanly without state machines.
+
+| Step | Element | Start (ms) | Duration (ms) |
+|---|---|---:|---:|
+| a | "RESULT" eyebrow | 0   | 200 |
+| b | Badge name — fade (130 ms) + spring scale 1.25 → 1.0 | 230 | spring |
+|   | **Notification haptic at perceived stamp impact (~360 ms)** | 360 | — |
+| c | P&L — fade (150 ms) + count 0 → final value | 420 | 600 |
+| d | Body copy | 1050 | 250 |
+| e | Continue button | 1420 | 240 |
+
+Total ≈ **1.55 s** end-to-end. All timing constants are top-of-
+file (`RESULT_T_*` / `RESULT_D_*`) so the choreography is
+re-balanceable without hunting through the animation block.
+
+### Badge stamp — the "stamp" feel
+
+- Initial state: `scale: 1.25`, `opacity: 0`.
+- Quick 130 ms opacity fade to 1 so the badge becomes visible as
+  the spring fires.
+- `Animated.spring(badgeScale, { toValue: 1, tension: 140,
+  friction: 6 })` — tuned for a sharp settle with a single small
+  overshoot. Higher friction made it feel like a slow shrink;
+  lower wobbled.
+- Native-driven transform — runs on the UI thread.
+
+### Outcome-keyed haptic at impact
+
+`setTimeout` fires at `RESULT_T_BADGE + 130 ms` (the spring's
+first downward crossing of 1.0 from 1.25 with the chosen config
+— that's the perceived "stamp impact"):
+
+```ts
+if (trade.badge === 'first_blood') {
+  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+} else {
+  // first_strike (win) + first_step (breakeven)
+  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+}
+```
+
+Captured + cleared in the effect's cleanup so a fast back-nav
+doesn't ping the haptic motor after unmount. `Animated.spring`
+`start(...)` callbacks fire at *settle*, not at *impact*, which
+would land the haptic ~300 ms after the visible stamp moment —
+hence the `setTimeout`.
+
+### P&L counter
+
+- `pnlValue: Animated.Value` animates from `0` → `trade.pnl`
+  over 600 ms with `Easing.out(Easing.cubic)`.
+- `pnlValue.addListener` writes each frame into React state
+  (`displayPnl`); the existing `formatUSD(displayPnl)` formats
+  it currency-style so e.g. `599.12 → "+$599.12"` mid-flight.
+- The color rule (`trade.pnl > 0 ? GREEN : ...`) reads the
+  **final** value, so the digits don't flicker from white to
+  green/red as the counter crosses zero on the way up.
+- For breakeven (FIRST STEP, `pnl === 0`), the counter is a
+  no-op (0 → 0) and the text just shows `$0.00` throughout.
+- Loss case (FIRST BLOOD, `pnl < 0`): counter ticks DOWN from
+  0 to the negative value — `formatUSD(-599.12) → "-$599.12"`.
+
+### Out of scope (deliberate)
+
+- No sound effect — would require `expo-av`, a new dep, and the
+  audit explicitly priced this as "cheap polish".
+- Copy, colors, layout, the `formatUSD` formatter, P&L math,
+  badge logic, and Continue navigation untouched.
+- States A/B/C of screen 9 (intro / awaiting_trade /
+  awaiting_advance) untouched.
+- No other screen touched.
+
+### Files touched
+
+- `src/screens/OnboardingFirstTradeScreen.tsx` (ResultOverlay
+  only — the other phases / sub-components are unchanged)
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-14 — Quiz: per-question layout variety (Q4 grid, Q3 poster tiles)
 
 `docs/ONBOARDING_AUDIT.md` flagged quiz monotony: all 5

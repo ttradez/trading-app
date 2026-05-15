@@ -308,18 +308,151 @@ function IntroOverlay({
   );
 }
 
+/**
+ * State D — Result overlay. Entrance polish per ONBOARDING_AUDIT.md:
+ *   a. "RESULT" eyebrow fades in
+ *   b. Badge name stamps in (scale 1.25 → 1.0 with spring overshoot)
+ *      + notification haptic on first land — Success for win /
+ *      breakeven, Warning for loss
+ *   c. P&L counts up (or down) from $0 to the final value
+ *   d. Body copy fades in
+ *   e. Continue button fades in last
+ * Total under ~1.6 s — kept snappy. No new dependency: built-in
+ * `Animated` + a JS-driver listener for the counter (Animated.Value
+ * listeners only fire on the JS thread, so the counter animation is
+ * JS-driven and writes each frame's value into React state).
+ */
+const RESULT_T_LABEL    = 0;
+const RESULT_D_LABEL    = 200;
+const RESULT_T_BADGE    = 230;
+const RESULT_D_BADGE_FADE = 130;
+// Spring's first downward crossing of 1.0 from 1.25 with the config
+// below sits around ~130 ms after the spring kicks off — that's the
+// perceived "stamp impact" and the haptic moment.
+const RESULT_HAPTIC_AT  = RESULT_T_BADGE + 130;
+const RESULT_T_PNL      = RESULT_HAPTIC_AT + 60;
+const RESULT_D_PNL_FADE = 150;
+const RESULT_D_PNL_FILL = 600;
+const RESULT_T_BODY     = RESULT_T_PNL + RESULT_D_PNL_FILL + 30;
+const RESULT_D_BODY     = 250;
+const RESULT_T_CTA      = RESULT_T_BODY + 120;
+const RESULT_D_CTA      = 240;
+// Total ≈ RESULT_T_CTA + RESULT_D_CTA ≈ 1.55 s.
+
+const BADGE_SPRING = {
+  tension: 140,
+  friction: 6,
+  useNativeDriver: true,
+};
+
 function ResultOverlay({
   onContinue, insets,
 }: { onContinue: () => void; insets: any }) {
   const trade = useOnboardingStore((s) => s.firstTrade);
-  const fadeIn = useRef(new Animated.Value(0)).current;
+
+  // Per-element animated values.
+  const labelOp    = useRef(new Animated.Value(0)).current;
+  const badgeOp    = useRef(new Animated.Value(0)).current;
+  const badgeScale = useRef(new Animated.Value(1.25)).current;
+  const pnlOp      = useRef(new Animated.Value(0)).current;
+  const pnlValue   = useRef(new Animated.Value(0)).current;
+  const bodyOp     = useRef(new Animated.Value(0)).current;
+  const ctaOp      = useRef(new Animated.Value(0)).current;
+
+  // Mirror the JS-driven `pnlValue` into React state so the Text
+  // can re-render each frame's formatted number.
+  const [displayPnl, setDisplayPnl] = useState(0);
+
   useEffect(() => {
-    Animated.timing(fadeIn, {
-      toValue: 1,
-      duration: 400,
-      useNativeDriver: true,
-    }).start();
-  }, [fadeIn]);
+    if (!trade) return;
+
+    // Listener fires per-frame while pnlValue animates. Removed in
+    // cleanup so a fast back-nav doesn't dangle.
+    const listenerId = pnlValue.addListener(({ value }) => {
+      setDisplayPnl(value);
+    });
+
+    // Outcome-keyed haptic at the badge's perceived stamp impact.
+    const hapticTimer = setTimeout(() => {
+      if (trade.badge === 'first_blood') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+      } else {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      }
+    }, RESULT_HAPTIC_AT);
+
+    Animated.parallel([
+      // a. "RESULT"
+      Animated.sequence([
+        Animated.delay(RESULT_T_LABEL),
+        Animated.timing(labelOp, {
+          toValue: 1,
+          duration: RESULT_D_LABEL,
+          useNativeDriver: true,
+        }),
+      ]),
+
+      // b. Badge — quick fade-on + spring scale 1.25 → 1.0 (stamp).
+      Animated.sequence([
+        Animated.delay(RESULT_T_BADGE),
+        Animated.parallel([
+          Animated.timing(badgeOp, {
+            toValue: 1,
+            duration: RESULT_D_BADGE_FADE,
+            useNativeDriver: true,
+          }),
+          Animated.spring(badgeScale, { toValue: 1, ...BADGE_SPRING }),
+        ]),
+      ]),
+
+      // c. P&L — fade in + count from 0 to trade.pnl. The counter
+      // is JS-driven (useNativeDriver: false) because Animated.Value
+      // listeners only fire on the JS thread.
+      Animated.sequence([
+        Animated.delay(RESULT_T_PNL),
+        Animated.parallel([
+          Animated.timing(pnlOp, {
+            toValue: 1,
+            duration: RESULT_D_PNL_FADE,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pnlValue, {
+            toValue: trade.pnl,
+            duration: RESULT_D_PNL_FILL,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: false,
+          }),
+        ]),
+      ]),
+
+      // d. Body copy
+      Animated.sequence([
+        Animated.delay(RESULT_T_BODY),
+        Animated.timing(bodyOp, {
+          toValue: 1,
+          duration: RESULT_D_BODY,
+          useNativeDriver: true,
+        }),
+      ]),
+
+      // e. Continue
+      Animated.sequence([
+        Animated.delay(RESULT_T_CTA),
+        Animated.timing(ctaOp, {
+          toValue: 1,
+          duration: RESULT_D_CTA,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
+
+    return () => {
+      clearTimeout(hapticTimer);
+      pnlValue.removeListener(listenerId);
+    };
+    // mount-once
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!trade) {
     return (
@@ -332,22 +465,47 @@ function ResultOverlay({
   }
 
   const info = BADGE_COPY[trade.badge];
+  // Color reflects the final outcome — kept constant across the
+  // counter animation so it doesn't flicker from white → green/red
+  // as the value crosses zero.
   const pnlColor = trade.pnl > 0 ? GREEN : trade.pnl < 0 ? RED : '#FFFFFF';
 
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={BG} />
-      <Animated.View style={[styles.resultContent, { opacity: fadeIn }]}>
-        <Text style={styles.resultLabel}>RESULT</Text>
-        <Text style={[styles.resultBadge, { color: info.color }]} allowFontScaling={false}>
+      <View style={styles.resultContent}>
+        <Animated.Text style={[styles.resultLabel, { opacity: labelOp }]}>
+          RESULT
+        </Animated.Text>
+        <Animated.Text
+          style={[
+            styles.resultBadge,
+            {
+              color: info.color,
+              opacity: badgeOp,
+              transform: [{ scale: badgeScale }],
+            },
+          ]}
+          allowFontScaling={false}
+        >
           {info.name}
-        </Text>
-        <Text style={[styles.resultPnl, { color: pnlColor }]} allowFontScaling={false}>
-          {formatUSD(trade.pnl)}
-        </Text>
-        <Text style={styles.resultBody}>{info.body}</Text>
-      </Animated.View>
-      <View style={[styles.ctaWrap, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+        </Animated.Text>
+        <Animated.Text
+          style={[styles.resultPnl, { color: pnlColor, opacity: pnlOp }]}
+          allowFontScaling={false}
+        >
+          {formatUSD(displayPnl)}
+        </Animated.Text>
+        <Animated.Text style={[styles.resultBody, { opacity: bodyOp }]}>
+          {info.body}
+        </Animated.Text>
+      </View>
+      <Animated.View
+        style={[
+          styles.ctaWrap,
+          { paddingBottom: Math.max(insets.bottom, 16), opacity: ctaOp },
+        ]}
+      >
         <Pressable
           onPress={onContinue}
           style={({ pressed }) => [styles.cta, pressed && styles.ctaPressed]}
@@ -356,7 +514,7 @@ function ResultOverlay({
         >
           <Text style={styles.ctaText}>Continue</Text>
         </Pressable>
-      </View>
+      </Animated.View>
     </View>
   );
 }
