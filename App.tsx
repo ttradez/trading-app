@@ -12,6 +12,8 @@ import { auth } from './src/services/firebase';
 import { upsertUser, getUser } from './src/services/api';
 import { useAuthStore } from './src/store/authStore';
 import { useStreakManager } from './src/hooks/useStreakManager';
+import { useWeeklyRecapTrigger } from './src/hooks/useWeeklyRecapTrigger';
+import WeeklyRecapModal from './src/components/WeeklyRecapModal';
 import { colors } from './src/theme';
 
 import LoginScreen        from './src/screens/LoginScreen';
@@ -59,6 +61,11 @@ function MainTabs() {
   // (post-onboarding) and on every background → foreground.
   useStreakManager();
 
+  // Sunday Wrap: auto-decides whether to surface the weekly recap
+  // on app open (once per mount). Renders the modal as an overlay
+  // sibling of the tab navigator below.
+  const { recap: weeklyRecap, dismiss: dismissRecap } = useWeeklyRecapTrigger();
+
   // Load persisted journal entries from AsyncStorage so the
   // dashboard's stats + recent-trades section have real data on
   // first paint. `hydrate` is idempotent; calling it again on
@@ -70,6 +77,7 @@ function MainTabs() {
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, 4);
   return (
+    <>
     <Tab.Navigator
       initialRouteName="Dashboard"
       screenOptions={({ route }) => ({
@@ -112,6 +120,12 @@ function MainTabs() {
       <Tab.Screen name="Journal"     component={JournalScreen} />
       <Tab.Screen name="Leaderboard" component={LeaderboardScreen} options={{ tabBarLabel: 'Ranks' }} />
     </Tab.Navigator>
+    <WeeklyRecapModal
+      visible={weeklyRecap !== null}
+      recap={weeklyRecap}
+      onClose={dismissRecap}
+    />
+    </>
   );
 }
 

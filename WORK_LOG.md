@@ -5,6 +5,126 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-15 — Weekly Performance Recap: Sunday Wrap with auto-modal + Journal section
+
+The research's "Magic 3" weekly-synthesis moment (Strava-style)
+— a reason to come back at the end of every week. Auto-generates
+a personalized recap, pops on Sunday, and lives permanently in
+the Journal for review.
+
+### New — `src/utils/weeklyRecap.ts` (pure, tested)
+
+`generateWeeklyRecap(refDate, allTrades, streak, grades)` — filters
+the full closed-trade history to the target week (Mon 00:00 →
+Sun 23:59 **local**), returns the recap object: `weekId`
+(ISO-8601, zero-padded so it sorts chronologically),
+`dateRange` ("May 11 – 18, 2026"), totals, `winRate`
+(null < 2 trades), `bestTrade`/`worstTrade`
+(`{symbol,pnl,direction}`), training minutes, streak,
+`edgeInsight`, `generatedAt`. Also exports `weekBounds` +
+`isoWeekId`.
+
+**Edge-insight candidates** (each needs ≥3 trades unless noted;
+the applicable candidate with the highest `interest` wins, ties
+break toward the earlier-listed one — spec order):
+1. **Long vs Short** — win-rate split; interest = |spread|.
+2. **Hold duration** — avg winner vs loser minutes; verdict
+   "cutting losers fast" / "cut losers faster"; interest =
+   |Δminutes|.
+3. **Consistency** — distinct trading days /7; interest = days
+   (kept modest so stat candidates win when meaningful).
+4. **Journal correlation** — A/A+ graded win rate (needs ≥1
+   A-grade); interest = |wr−50|+5.
+5. **< 3 trades** → "Keep trading to unlock deeper weekly
+   insights." (0 trades → null).
+
+Node-smoke-tested via `node --experimental-strip-types`: 5-trade
+week → W20, "May 11 – 18, 2026", 3/2, 60 %, +$1350, best CL
++900 long, worst ES −200 short, picked the long-vs-short insight
+(100 % vs 0 %, widest spread). 1-trade → winRate null + fallback.
+0-trade → totals 0, insight null, best/worst null.
+
+### New — `src/store/recapStore.ts`
+
+Persisted (zustand/middleware + AsyncStorage,
+`weekly-recap-storage-v1`), keyed by weekId →
+`{ recap, viewedAt }`. `saveRecap` is insert-only (never
+clobbers an existing week, so a regenerate can't wipe a
+`viewedAt`) and prunes to the most-recent 12 weeks. `markViewed`
+stamps dismissal. `useRecapList()` selector returns newest-first
+for the Journal list.
+
+### New — `src/components/WeeklyRecapModal.tsx`
+
+Full-screen black, scrollable, reused by the auto-trigger AND
+Journal review. Choreography (~1.7 s): container fade (400 ms)
+→ hero P&L counts up from $0 over 700 ms (JS-driver
+`Animated.Value` + listener → state, the screen-9 First Strike
+pattern) → 2×2 stats grid fade → training+streak row →
+edge-insight card (3 px gold left accent) slides up from below
+→ gold Continue CTA. Win-rate / best / worst colour-keyed;
+unavailable stats render "—".
+
+### New — `src/hooks/useWeeklyRecapTrigger.ts`
+
+Runs once per mount (one recap per app open, never stacks).
+Hydration-safe: awaits `journalStore.hydrate()` + a generic
+`awaitPersist()` on recap/streak/tradeJournal stores
+(`persist.hasHydrated()` / `onFinishHydration`, 2 s safety
+timeout) so a cold start can't mis-decide off empty state.
+Target week: **today is Sunday → current week; Mon–Sat →
+`today − 7 days` (previous full week, catch-up)**. Shows only
+if that week is unviewed and had ≥1 closed trade. If a recap
+was generated-but-unviewed it re-shows the stored snapshot
+(preserves `generatedAt`) rather than regenerating. `dismiss()`
+→ `markViewed`.
+
+### Wiring
+
+- `App.tsx` / `MainTabs`: `useWeeklyRecapTrigger()` +
+  `<WeeklyRecapModal>` rendered as a sibling overlay of the
+  `Tab.Navigator` (wrapped the return in a fragment). Sits
+  alongside the existing `useStreakManager()` mount hooks.
+- `JournalScreen.tsx`: new `RecapsSection` ("WEEKLY RECAPS")
+  pinned above the trade list — as the `FlatList`
+  `ListHeaderComponent` when trades exist, and inside a
+  `ScrollView` above the empty message otherwise (so recaps
+  still show when a filter empties the trade list). Compact
+  rows (date range · trades · win % · P&L, chevron) → tap
+  reopens `WeeklyRecapModal` for that week. Empty →
+  "Complete your first week of trading to unlock your Weekly
+  Recap."
+
+### `totalTrainingMinutes` limitation (documented)
+
+The streak store only persists *today's* training bucket, not a
+per-day history. The hook passes `streak.todayTrainingMinutes`
+as the weekly figure — best-effort, will under-report on a
+multi-day week. A true weekly accumulator (expand the streak
+store) is a follow-up; noted in `weeklyRecap.ts` + PROJECT_CONTEXT.
+
+### Out of scope (deliberate, per prompt)
+
+- Share-as-image (needs view-shot — dev-build feature).
+- Sunday push notification (needs notifications/dev build).
+- Prev-week comparison ("↑12% from last week") — v2.
+- No screen changed beyond the Journal section + the MainTabs
+  overlay (Dashboard untouched).
+
+### Files touched
+
+- `src/utils/weeklyRecap.ts` (new)
+- `src/store/recapStore.ts` (new)
+- `src/components/WeeklyRecapModal.tsx` (new)
+- `src/hooks/useWeeklyRecapTrigger.ts` (new)
+- `App.tsx` (MainTabs: trigger hook + modal overlay)
+- `src/screens/JournalScreen.tsx` (Weekly Recaps section +
+  review modal)
+- `PROJECT_CONTEXT.md`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-15 — Settings screen: profile + training + preferences + data management + about
 
 No settings surface existed. Adding one telegraphs maturity and

@@ -8,6 +8,9 @@ import { colors, radius, spacing, fontSize, fontWeight, labelStyle } from '../th
 import { useJournalStore, JournalEntry, Emotion } from '../store/journalStore';
 import TradeCard from '../components/TradeCard';
 import { useTradeJournalStore } from '../store/tradeJournalStore';
+import { useRecapList } from '../store/recapStore';
+import WeeklyRecapModal from '../components/WeeklyRecapModal';
+import { WeeklyRecap } from '../utils/weeklyRecap';
 
 const EMOTIONS: { id: Emotion; label: string; icon: string; color: string }[] = [
   { id: 'fear',         label: 'Fear',         icon: 'eye-off-outline',     color: '#A855F7' },
@@ -26,6 +29,7 @@ export default function JournalScreen() {
   const { entries } = useJournalStore();
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
+  const [openRecap, setOpenRecap] = useState<WeeklyRecap | null>(null);
   const [editing, setEditing] = useState<JournalEntry | null>(null);
 
   const filtered = useMemo(() => {
@@ -95,16 +99,20 @@ export default function JournalScreen() {
 
       {/* List */}
       {filtered.length === 0 ? (
-        <View style={styles.empty}>
-          <Text style={styles.emptyMessage}>
-            No trades yet. Start a replay session to place your first trade.
-          </Text>
-        </View>
+        <ScrollView contentContainerStyle={styles.listContent}>
+          <RecapsSection onOpen={setOpenRecap} />
+          <View style={styles.empty}>
+            <Text style={styles.emptyMessage}>
+              No trades yet. Start a replay session to place your first trade.
+            </Text>
+          </View>
+        </ScrollView>
       ) : (
         <FlatList
           data={filtered}
           keyExtractor={(e) => e.id}
           contentContainerStyle={styles.listContent}
+          ListHeaderComponent={<RecapsSection onOpen={setOpenRecap} />}
           ItemSeparatorComponent={() => <View style={styles.listGap} />}
           renderItem={({ item }) => (
             <JournalTradeCard entry={item} onPress={() => setEditing(item)} />
@@ -114,7 +122,63 @@ export default function JournalScreen() {
 
       {/* Edit modal */}
       <EntryEditModal entry={editing} onClose={() => setEditing(null)} />
+
+      {/* Tapped past-recap review */}
+      <WeeklyRecapModal
+        visible={openRecap !== null}
+        recap={openRecap}
+        onClose={() => setOpenRecap(null)}
+      />
     </SafeAreaView>
+  );
+}
+
+/** "Weekly Recaps" section pinned above the trade list. Compact
+ *  rows (date range · win rate · total P&L); tap → reopen the full
+ *  recap modal for that week. Newest first. */
+function RecapsSection({ onOpen }: { onOpen: (r: WeeklyRecap) => void }) {
+  const recaps = useRecapList();
+  return (
+    <View style={styles.recapSection}>
+      <Text style={styles.recapHeader}>WEEKLY RECAPS</Text>
+      {recaps.length === 0 ? (
+        <Text style={styles.recapEmpty}>
+          Complete your first week of trading to unlock your Weekly Recap.
+        </Text>
+      ) : (
+        recaps.map(({ recap }) => {
+          const pnlPos = recap.totalPnL >= 0;
+          return (
+            <TouchableOpacity
+              key={recap.weekId}
+              style={styles.recapRow}
+              activeOpacity={0.8}
+              onPress={() => onOpen(recap)}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.recapRange}>{recap.dateRange}</Text>
+                <Text style={styles.recapSub}>
+                  {recap.totalTrades} {recap.totalTrades === 1 ? 'trade' : 'trades'}
+                  {recap.winRate != null ? `  ·  ${recap.winRate}% win` : ''}
+                </Text>
+              </View>
+              <Text
+                style={[styles.recapPnl, pnlPos ? styles.green : styles.red]}
+                allowFontScaling={false}
+              >
+                {pnlPos ? '+' : '-'}${Math.abs(recap.totalPnL).toFixed(2)}
+              </Text>
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color="rgba(255,255,255,0.3)"
+                style={{ marginLeft: 8 }}
+              />
+            </TouchableOpacity>
+          );
+        })
+      )}
+    </View>
   );
 }
 
@@ -277,6 +341,51 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
   },
   listGap: { height: 10 },
+
+  // Weekly Recaps section (pinned above the trade list)
+  recapSection: { marginBottom: spacing.lg },
+  recapHeader: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    marginBottom: 10,
+  },
+  recapEmpty: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 13,
+    fontWeight: '500',
+    lineHeight: 19,
+    paddingVertical: 8,
+  },
+  recapRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0F0F0F',
+    borderColor: '#1F1F1F',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 8,
+  },
+  recapRange: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: -0.1,
+  },
+  recapSub: {
+    marginTop: 3,
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  recapPnl: {
+    fontSize: 15,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
 
   // Edit modal
   editBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
