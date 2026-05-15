@@ -26,6 +26,9 @@ import {
   checkTradeCloseBadges, checkJournalBadges,
   checkDailySetupBadges, checkWatchlistBadges,
 } from '../utils/badgeChecker';
+import {
+  detectAfterTradeClose, detectAfterJournalSave, detectDailySetupComplete,
+} from '../utils/challengeDetection';
 import EconomicCalendarPanel from '../components/EconomicCalendarPanel';
 import { getEventsForDate } from '../data/economicCalendar';
 import { useDrawingsStore } from '../store/drawingsStore';
@@ -357,6 +360,7 @@ export default function TradingScreen({ route }: any) {
             useXpStore.getState().addXP(50, 'daily setup');
           }
           checkDailySetupBadges();
+          detectDailySetupComplete();
         }
       }
     }
@@ -1233,6 +1237,10 @@ export default function TradingScreen({ route }: any) {
           // isn't hidden behind it; a grade was saved → journal badges.
           checkTradeCloseBadges(closedPnl);
           checkJournalBadges();
+          // Challenge progress (after badges so consecutiveWins is
+          // current).
+          detectAfterTradeClose(recentClosedTrade ?? {}, timeframe);
+          detectAfterJournalSave(data.grade, data.emotions ?? []);
         }}
         onSkip={() => {
           const closedPnl =
@@ -1245,6 +1253,7 @@ export default function TradingScreen({ route }: any) {
           if (closedPnl > 0) xp.addXP(5, 'win');
           // Unjournaled loss: no bonus (base only).
           checkTradeCloseBadges(closedPnl);
+          detectAfterTradeClose(recentClosedTrade ?? {}, timeframe);
         }}
       />
 

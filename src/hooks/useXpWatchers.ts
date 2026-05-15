@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useStreakStore } from '../store/streakStore';
 import { useXpStore } from '../store/xpStore';
+import { updateChallengeProgress } from '../store/challengeStore';
 
 /**
  * Streak XP, granted by subscribing to the streak store rather
@@ -43,6 +44,13 @@ export function useXpWatchers() {
       xp.addXP(10 + Math.min(day, 40), 'streak: maintain');
       const milestone = MILESTONE_XP[day];
       if (milestone) xp.addXP(milestone, `streak: day ${day} milestone`);
+
+      // Challenge progress — one completeDaily == one day's
+      // session that hit the time goal.
+      updateChallengeProgress('streak_days', day);     // max
+      updateChallengeProgress('active_days', 1);        // add
+      updateChallengeProgress('time_goal_hit', 1);      // add
+      updateChallengeProgress('time_goal_days', 1);     // add (weekly)
     });
 
     return unsub;

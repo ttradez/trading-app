@@ -73,6 +73,9 @@ interface StreakState {
   /** Manual freeze decrement (kept for dev/QA — daily check uses
    *  this internally). */
   consumeFreeze: () => void;
+  /** Grant one freeze, capped at FREEZE_CAP. Used by the
+   *  `streak_freeze` challenge bonus reward. */
+  grantFreeze: () => void;
   /** Manual streak reset to 0 (kept for dev/QA). */
   resetStreak: () => void;
   /** Full reset to defaults (used on onboarding wipe / sign-out). */
@@ -255,6 +258,11 @@ export const useStreakStore = create<StreakState>()(
       consumeFreeze: () =>
         set((s) => ({
           freezesRemaining: Math.max(0, s.freezesRemaining - 1),
+        })),
+
+      grantFreeze: () =>
+        set((s) => ({
+          freezesRemaining: Math.min(FREEZE_CAP, s.freezesRemaining + 1),
         })),
 
       resetStreak: () => set({ currentStreak: 0 }),

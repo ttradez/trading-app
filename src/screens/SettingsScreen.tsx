@@ -15,6 +15,7 @@ import { useDailySetupStore } from '../store/dailySetupStore';
 import { useWatchlistStore } from '../store/watchlistStore';
 import { useBadgeStore } from '../store/badgeStore';
 import { useXpStore } from '../store/xpStore';
+import { useChallengeStore } from '../store/challengeStore';
 
 /**
  * SettingsScreen — pushed onto the stack from the dashboard gear
@@ -208,6 +209,7 @@ export default function SettingsScreen({ navigation }: any) {
                     useWatchlistStore.getState().reset();
                     useBadgeStore.getState().reset();
                     useXpStore.getState().reset();
+                    useChallengeStore.getState().reset();
                     navigation.reset({
                       index: 0,
                       routes: [{ name: 'OnboardingSplash' }],

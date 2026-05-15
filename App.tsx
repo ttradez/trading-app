@@ -16,7 +16,9 @@ import { useWeeklyRecapTrigger } from './src/hooks/useWeeklyRecapTrigger';
 import WeeklyRecapModal from './src/components/WeeklyRecapModal';
 import { useBadgeWatchers } from './src/hooks/useBadgeWatchers';
 import { useXpWatchers } from './src/hooks/useXpWatchers';
+import { useChallengeRotation } from './src/hooks/useChallengeRotation';
 import BadgeToastHost from './src/components/BadgeToastHost';
+import ChallengeToastHost from './src/components/ChallengeToastHost';
 import { colors } from './src/theme';
 
 import LoginScreen        from './src/screens/LoginScreen';
@@ -78,6 +80,10 @@ function MainTabs() {
   // subscription — keeps streakStore free of an xpStore import.
   useXpWatchers();
 
+  // Challenge rotation — refresh dailies/weekly/monthly on open
+  // and on background → foreground.
+  useChallengeRotation();
+
   // Load persisted journal entries from AsyncStorage so the
   // dashboard's stats + recent-trades section have real data on
   // first paint. `hydrate` is idempotent; calling it again on
@@ -138,6 +144,7 @@ function MainTabs() {
       onClose={dismissRecap}
     />
     <BadgeToastHost />
+    <ChallengeToastHost />
     </>
   );
 }

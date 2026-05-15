@@ -16,6 +16,8 @@ import { useUnlockedCount } from '../store/badgeStore';
 import { BADGE_COUNT } from '../data/badges';
 import { useXpStore } from '../store/xpStore';
 import { getRankForXP } from '../data/rankConfig';
+import { useChallengeStore, ChallengeInstance } from '../store/challengeStore';
+import { getTemplate, challengeIcon } from '../data/challengePool';
 import {
   getTodaySetup, setupStartUnixSeconds, SetupDifficulty,
 } from '../data/dailySetups';
@@ -523,21 +525,8 @@ export default function DashboardScreen({ navigation }: any) {
           />
         </Pressable>
 
-        {/* SECTION 5 — Challenges (placeholder) */}
-        <Text style={[styles.sectionTitle, styles.challengesSectionTitle]}>
-          Challenges
-        </Text>
-        <View style={[styles.card, styles.challengesCard]}>
-          <Ionicons
-            name="trophy-outline"
-            size={32}
-            color={GOLD}
-            style={styles.challengesIcon}
-          />
-          <Text style={styles.challengesText}>
-            Challenges coming soon. Compete against other traders in timed events.
-          </Text>
-        </View>
+        {/* SECTION 5 — Missions (challenges) */}
+        <MissionsSection />
       </ScrollView>
     </SafeAreaView>
   );
@@ -575,6 +564,141 @@ function StatCard({
         {value}
       </Text>
       <Text style={styles.statLabel}>{label}</Text>
+    </View>
+  );
+}
+
+// ── Missions (challenges) ──────────────────────────────────────────────────
+
+function ChallengeCard({
+  inst, tag, onSwap,
+}: {
+  inst: ChallengeInstance;
+  tag?: 'WEEKLY' | 'MONTHLY';
+  onSwap?: () => void;
+}) {
+  const t = getTemplate(inst.challengeId);
+  if (!t) return null;
+  const pct = Math.min(
+    1,
+    inst.target > 0 ? inst.progress / inst.target : 0,
+  );
+  return (
+    <View
+      style={[
+        styles.chCard,
+        inst.completed && styles.chCardDone,
+      ]}
+    >
+      {inst.completed && <View style={styles.chAccent} />}
+      <View style={styles.chInner}>
+        <View style={styles.chTopRow}>
+          <MaterialCommunityIcons
+            name={challengeIcon(t.category) as any}
+            size={18}
+            color="rgba(255,255,255,0.4)"
+            style={styles.chIcon}
+          />
+          <View style={{ flex: 1 }}>
+            <View style={styles.chNameRow}>
+              {tag && <Text style={styles.chTag}>{tag}</Text>}
+              <Text style={styles.chName} numberOfLines={1}>{t.name}</Text>
+            </View>
+            <Text style={styles.chDesc} numberOfLines={1}>{t.description}</Text>
+          </View>
+          {inst.completed ? (
+            <View style={styles.chDoneWrap}>
+              <Ionicons name="checkmark-circle" size={18} color={GREEN} />
+              <Text style={styles.chDoneXp}>+{inst.xpReward}</Text>
+            </View>
+          ) : (
+            <Text style={styles.chProgressText}>
+              {Math.floor(inst.progress)} / {inst.target}
+            </Text>
+          )}
+        </View>
+        <View style={styles.chBarTrack}>
+          <View
+            style={[
+              styles.chBarFill,
+              {
+                width: `${Math.round(pct * 100)}%`,
+                backgroundColor: inst.completed ? GREEN : GOLD,
+              },
+            ]}
+          />
+        </View>
+        {onSwap && !inst.completed && (
+          <Pressable
+            onPress={onSwap}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={({ pressed }) => [styles.chSwap, pressed && { opacity: 0.6 }]}
+          >
+            <Text style={styles.chSwapText}>Swap a mission</Text>
+          </Pressable>
+        )}
+      </View>
+    </View>
+  );
+}
+
+function MissionsSection() {
+  const dailies   = useChallengeStore((s) => s.activeDailies);
+  const weekly    = useChallengeStore((s) => s.activeWeekly);
+  const monthly   = useChallengeStore((s) => s.activeMonthly);
+  const skipsUsed = useChallengeStore((s) => s.skipsUsedThisWeek);
+  const skipDaily = useChallengeStore((s) => s.skipDaily);
+  const userRank  = useXpStore((s) => s.currentRank);
+
+  const allComplete =
+    dailies.length > 0 && dailies.every((d) => d.completed);
+  const canSwap =
+    skipsUsed < 1 && dailies.some((d) => !d.completed);
+
+  return (
+    <View>
+      <Text style={[styles.sectionTitle, styles.missionsTitle]}>
+        Today's Missions
+      </Text>
+
+      {allComplete && (
+        <Text style={styles.missionsAllDone}>
+          All daily missions complete ✓
+        </Text>
+      )}
+
+      <View
+        style={[styles.missionsList, allComplete && styles.missionsListDone]}
+      >
+        {dailies.map((d, i) => (
+          <ChallengeCard
+            key={d.challengeId}
+            inst={d}
+            onSwap={
+              canSwap && !d.completed
+                ? () => skipDaily(i, userRank)
+                : undefined
+            }
+          />
+        ))}
+      </View>
+
+      {skipsUsed >= 1 && !allComplete && (
+        <Text style={styles.missionsNoSwap}>
+          No swaps remaining this week
+        </Text>
+      )}
+
+      {weekly && (
+        <View style={styles.missionsCadenceBlock}>
+          <ChallengeCard inst={weekly} tag="WEEKLY" />
+        </View>
+      )}
+      {monthly && (
+        <View style={styles.missionsCadenceBlock}>
+          <ChallengeCard inst={monthly} tag="MONTHLY" />
+        </View>
+      )}
     </View>
   );
 }
@@ -949,25 +1073,84 @@ const styles = StyleSheet.create({
   },
 
   // SECTION 5 — Challenges placeholder
-  challengesSectionTitle: {
-    marginTop: 28,
-    marginBottom: 12,
-  },
-  challengesCard: {
-    paddingVertical: 28,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-  },
-  challengesIcon: {
-    opacity: 0.3,
+  // Missions (challenges)
+  missionsTitle: { marginTop: 28, marginBottom: 12 },
+  missionsAllDone: {
+    color: GREEN,
+    fontSize: 13,
+    fontWeight: '700',
     marginBottom: 10,
   },
-  challengesText: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 14,
+  missionsList: { gap: 10 },
+  missionsListDone: { opacity: 0.7 },
+  missionsNoSwap: {
+    marginTop: 10,
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 12,
     fontWeight: '500',
-    lineHeight: 20,
-    textAlign: 'center',
-    maxWidth: 280,
+  },
+  missionsCadenceBlock: { marginTop: 10 },
+
+  chCard: {
+    flexDirection: 'row',
+    backgroundColor: CARD_BG,
+    borderColor: CARD_BORDER,
+    borderWidth: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  chCardDone: { borderColor: GREEN },
+  chAccent: { width: 3, backgroundColor: GREEN },
+  chInner: { flex: 1, padding: 14 },
+  chTopRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  chIcon: { marginRight: 10, marginTop: 1 },
+  chNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  chTag: {
+    color: GOLD,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  chName: {
+    flexShrink: 1,
+    color: WHITE,
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: -0.1,
+  },
+  chDesc: {
+    marginTop: 2,
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  chProgressText: {
+    color: WHITE,
+    fontSize: 14,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+    marginLeft: 8,
+  },
+  chDoneWrap: { alignItems: 'flex-end', marginLeft: 8 },
+  chDoneXp: {
+    marginTop: 2,
+    color: GOLD,
+    fontSize: 12,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  chBarTrack: {
+    marginTop: 12,
+    height: 4,
+    backgroundColor: '#1F1F1F',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  chBarFill: { height: '100%', borderRadius: 2 },
+  chSwap: { marginTop: 10, alignSelf: 'flex-start' },
+  chSwapText: {
+    color: GOLD,
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

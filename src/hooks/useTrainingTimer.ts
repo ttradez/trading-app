@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { useStreakStore } from '../store/streakStore';
 import { useOnboardingStore } from '../store/onboardingStore';
+import { updateChallengeProgress } from '../store/challengeStore';
 
 /**
  * useTrainingTimer — ticks while the host screen is mounted AND the
@@ -43,6 +44,7 @@ export function useTrainingTimer() {
 
     const tick = () => {
       addRef.current(TICK_MINUTES, goalRef.current);
+      updateChallengeProgress('minutes_traded', TICK_MINUTES);
       lastTickAt = Date.now();
     };
 
@@ -51,7 +53,9 @@ export function useTrainingTimer() {
     const flushPartial = () => {
       const elapsedMs = Date.now() - lastTickAt;
       if (elapsedMs >= MIN_PARTIAL_MS) {
-        addRef.current(elapsedMs / MS_PER_MIN, goalRef.current);
+        const mins = elapsedMs / MS_PER_MIN;
+        addRef.current(mins, goalRef.current);
+        updateChallengeProgress('minutes_traded', mins);
       }
       lastTickAt = Date.now();
     };

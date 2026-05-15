@@ -5,6 +5,116 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-15 — Challenge system: daily/weekly/monthly with rotation, detection, rewards, and dashboard UI
+
+Mid-game XP engine (research target ~35-45 % of total XP). 3
+daily + 1 weekly + 1 monthly, rank-gated, rotating from pools.
+
+### New — `src/data/challengePool.ts`
+
+**34 templates**: 19 daily / 10 weekly / 5 monthly (node-counted).
+`{ id, name, description, type, category, minRank, target,
+xpReward, bonusReward?, condition }`. `DETECTABLE_CONDITIONS`
+allowlist + `CONDITION_MODE` ('add' default; 'max' for
+consecutive_wins / streak_days / unique_symbols /
+unique_emotions). `rankAtLeast(userRank,minRank)` via
+`RANK_ORDER`. Two daily templates (`new_symbol_today`,
+`quick_start`) are kept in the pool but excluded from generation
+(not yet reliably detectable offline — no shame UI, so an
+un-progressable daily would just sit at 0).
+
+### New — `src/store/challengeStore.ts`
+
+Persist (`challenge-storage-v1`). Instances `{ challengeId,
+progress, target, completed, completedAt, xpReward }` ×
+activeDailies[3] / activeWeekly / activeMonthly + dailyDate /
+weeklyWeek (ISO via `isoWeekId`) / monthlyMonth + skip token.
+- `generateDailies/Weekly/Monthly(rank)` — filter pool by
+  `minRank ≤ rank` AND `DETECTABLE_CONDITIONS`, shuffle, prefer
+  not repeating the previous period's ids (fall back if the
+  eligible set is too small).
+- `updateProgress(cond,val)` — applies mode to every matching
+  un-completed active instance; on `progress ≥ target` →
+  completed+timestamp, `xpStore.addXP(reward,'challenge')`,
+  `streakStore.grantFreeze()` for `streak_freeze` bonus, enqueue
+  challenge toast.
+- `skipDaily(i,rank)` — one swap/week of an uncompleted daily.
+- `checkExpiry(rank)` — regenerates each elapsed period; skip
+  token resets on the weekly boundary; expired-incomplete just
+  vanish.
+- `updateChallengeProgress(cond,val)` thin export for call sites.
+
+Added `grantFreeze()` to streakStore (capped at FREEZE_CAP) for
+the bonus reward — additive, no behaviour change.
+
+### New — toast + rotation
+
+`challengeToastStore` (ephemeral FIFO) + `ChallengeToastHost`
+(MainTabs) — BadgeToastHost pattern, green "MISSION COMPLETE" +
+name + "+N XP", slide/hold/swipe, native-overlay Modal.
+`useChallengeRotation` (MainTabs) runs `checkExpiry(currentRank)`
+on mount + every background→foreground.
+
+### Detection — `src/utils/challengeDetection.ts`
+
+Centralised so trigger sites stay one-liners. `detectAfterTradeClose`
+(trades_placed, consecutive_wins from badgeStore, hold-bars from
+timestamp/timeframe, unique_symbols lifetime, today-windowed
+green_day/win_rate_55, month-windowed win_rate_55_monthly),
+`detectAfterJournalSave` (journal_count, grade_ab/aplus,
+unique_emotions, all_journaled), `detectDailySetupComplete`
+(daily_setup + daily_setups). Wired in:
+- `TradingScreen` TradeJournalModal `onSave` (+ journal detect)
+  / `onSkip`, and the daily-setup close-effect guard — all AFTER
+  the badge checks so consecutiveWins is current.
+- `useXpWatchers` streak subscription → streak_days (max),
+  active_days, time_goal_hit, time_goal_days.
+- `useTrainingTimer` tick + partial-flush → minutes_traded.
+
+Windowing v1 simplification documented in-file: unique_symbols is
+lifetime-distinct (generous, never punishing).
+
+### Dashboard — "Today's Missions"
+
+Replaces the "Challenges coming soon" placeholder (section +
+its 4 styles removed). `MissionsSection`: 3 daily `ChallengeCard`s
+(category icon, name/desc, "X / Y" or ✓+XP, gold/green progress
+bar, green left-accent + border when done, per-card "Swap a
+mission" link when a skip is available), "No swaps remaining
+this week" once the token's spent, "All daily missions complete
+✓" + dimmed list when all 3 done, then WEEKLY and MONTHLY
+tagged cards. Reads challengeStore + `xpStore.currentRank`.
+
+### Wiring
+
+- `App.tsx` MainTabs: `useChallengeRotation()` +
+  `<ChallengeToastHost/>` alongside the existing hooks/hosts.
+- `SettingsScreen` Reset Everything: + `challengeStore.reset()`
+  (10 stores wiped now).
+
+### Out of scope (per prompt)
+
+- Challenge history log, "1 away" nudges, custom challenges,
+  rank-up-gated UI, leaderboard/Firebase.
+- XP system / rank thresholds from the prior prompt unchanged.
+
+### Files touched
+
+- `src/data/challengePool.ts`, `src/store/challengeStore.ts`,
+  `src/store/challengeToastStore.ts`,
+  `src/components/ChallengeToastHost.tsx`,
+  `src/hooks/useChallengeRotation.ts`,
+  `src/utils/challengeDetection.ts` (all new)
+- `src/store/streakStore.ts` (+`grantFreeze`)
+- `src/screens/TradingScreen.tsx` (detection triggers)
+- `src/hooks/useXpWatchers.ts`, `src/hooks/useTrainingTimer.ts`
+  (detection triggers)
+- `src/screens/DashboardScreen.tsx` (missions UI)
+- `App.tsx` (MainTabs), `src/screens/SettingsScreen.tsx` (reset)
+- `PROJECT_CONTEXT.md`, `WORK_LOG.md`
+
+---
+
 ## 2026-05-15 — XP system + rank sub-tiers: 15-beat progression with XP-per-action wiring
 
 The progression foundation. XP rewards PROCESS over OUTCOME — a
