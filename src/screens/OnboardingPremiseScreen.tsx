@@ -165,6 +165,13 @@ export default function OnboardingPremiseScreen({ navigation }: Props) {
             Pocket Trade is where you fail 1,000 times — without losing a dollar.
           </Text>
         </Animated.View>
+
+        {/* Trust line — pre-empts the "is this a real brokerage?"
+            objection from finance-wary users without slowing the
+            pitch above. Shares the body's fade-in. */}
+        <Animated.Text style={[styles.trustLine, { opacity: textOpacity }]}>
+          Pocket Trade is a simulator. No real money. No accounts. No funny business.
+        </Animated.Text>
       </View>
 
       {/* CTA — unchanged from the previous build of this screen. */}
@@ -248,6 +255,18 @@ const styles = StyleSheet.create({
     lineHeight: 26,    // ~1.5×
   },
   bodyGap: { height: 18 },
+
+  // Fine-print-weight reassurance line that the app is a sim, not a
+  // brokerage. Lighter than the body so it reads as a footnote, not
+  // another headline.
+  trustLine: {
+    marginTop: 24,
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: 13,
+    fontWeight: '400',
+    lineHeight: 18,
+    textAlign: 'center',
+  },
 
   ctaWrap: {
     paddingHorizontal: 24,

@@ -36,27 +36,17 @@ interface Props {
 // ── Sub-components ─────────────────────────────────────────────────────────
 
 interface AuthButtonProps {
-  variant: 'apple' | 'google' | 'email';
+  variant: 'apple' | 'google';
   disabled: boolean;
   onPress: () => void;
 }
 
+/** SSO button — Apple / Google. Email was demoted to a text link
+ *  below the SSO row per ONBOARDING_AUDIT.md (SSO-dominant layouts
+ *  lift auth conversion 15-25%). */
 function AuthButton({ variant, disabled, onPress }: AuthButtonProps) {
-  const isEmail = variant === 'email';
-
-  // Sub-styling per variant.
-  const containerStyle = [
-    styles.authBtn,
-    isEmail ? styles.emailBtn : styles.ssoBtn,
-    disabled && styles.btnDisabled,
-  ];
-  const textStyle = [
-    styles.authBtnText,
-    isEmail ? styles.emailBtnText : styles.ssoBtnText,
-  ];
-
   let label: string;
-  let icon: React.ReactNode = null;
+  let icon: React.ReactNode;
   switch (variant) {
     case 'apple':
       label = 'Continue with Apple';
@@ -66,10 +56,6 @@ function AuthButton({ variant, disabled, onPress }: AuthButtonProps) {
       label = 'Continue with Google';
       icon = <Ionicons name="logo-google" size={20} color="#000000" style={styles.btnIcon} />;
       break;
-    case 'email':
-      label = 'Continue with email';
-      icon = <Ionicons name="mail-outline" size={20} color={GOLD} style={styles.btnIcon} />;
-      break;
   }
 
   return (
@@ -77,7 +63,9 @@ function AuthButton({ variant, disabled, onPress }: AuthButtonProps) {
       onPress={onPress}
       disabled={disabled}
       style={({ pressed }) => [
-        ...containerStyle,
+        styles.authBtn,
+        styles.ssoBtn,
+        disabled && styles.btnDisabled,
         pressed && !disabled && styles.btnPressed,
       ]}
       accessibilityRole="button"
@@ -85,7 +73,7 @@ function AuthButton({ variant, disabled, onPress }: AuthButtonProps) {
       accessibilityState={{ disabled }}
     >
       {icon}
-      <Text style={textStyle}>{label}</Text>
+      <Text style={[styles.authBtnText, styles.ssoBtnText]}>{label}</Text>
     </Pressable>
   );
 }
@@ -182,12 +170,25 @@ export default function OnboardingAuthScreen({ navigation }: Props) {
             disabled={loading}
             onPress={() => handleAuth('mock-google')}
           />
-          <View style={styles.btnGap} />
-          <AuthButton
-            variant="email"
-            disabled={loading}
+
+          {/* Email — demoted to a text link below the SSO row.
+              Same mock-auth tap target as the buttons above. */}
+          <View style={styles.emailLinkGap} />
+          <Pressable
             onPress={() => handleAuth('mock-email')}
-          />
+            disabled={loading}
+            style={({ pressed }) => [
+              styles.emailLink,
+              pressed && !loading && styles.emailLinkPressed,
+              loading && styles.emailLinkDisabled,
+            ]}
+            accessibilityRole="link"
+            accessibilityLabel="Continue with email"
+            accessibilityState={{ disabled: loading }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Text style={styles.emailLinkText}>Continue with email</Text>
+          </Pressable>
 
           {/* Fine print */}
           <Text style={styles.finePrint}>
@@ -278,11 +279,6 @@ const styles = StyleSheet.create({
   ssoBtn: {
     backgroundColor: WHITE,
   },
-  emailBtn: {
-    backgroundColor: 'transparent',
-    borderColor: GOLD,
-    borderWidth: 1.5,
-  },
   btnDisabled: { opacity: 0.55 },
   btnPressed:  { opacity: 0.85 },
   btnIcon:     { marginRight: 10 },
@@ -293,7 +289,23 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   ssoBtnText:   { color: '#000000' },
-  emailBtnText: { color: GOLD },
+
+  // Email link — deliberately lighter than the SSO buttons. Centered,
+  // underlined gold text; tap target padded out with `hitSlop`.
+  emailLinkGap: { height: 16 },
+  emailLink: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  emailLinkPressed:  { opacity: 0.55 },
+  emailLinkDisabled: { opacity: 0.4 },
+  emailLinkText: {
+    color: GOLD,
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+    textDecorationLine: 'underline',
+  },
 
   // Fine print
   finePrint: {

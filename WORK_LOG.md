@@ -5,6 +5,83 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-14 — Polish: splash timing + simulator trust line + auth button hierarchy
+
+Three one-line-level fixes from `docs/ONBOARDING_AUDIT.md`, each
+on a different screen with no interactions between them.
+
+### Fix 1 — Splash auto-advance
+
+`OnboardingSplashScreen.tsx`: `SPLASH_DURATION_MS` **1500 → 900**.
+The audit flagged 1.5 s as long enough to register as a wait
+rather than a brand flash. 900 ms keeps the logo on screen long
+enough to read but is short enough to feel like a flash. Fade-in
+duration (`FADE_IN_MS = 300`) unchanged — the logo is fully
+visible at ~300 ms and holds for ~600 ms before the auto-advance.
+
+### Fix 2 — Simulator trust line on Premise
+
+`OnboardingPremiseScreen.tsx`: added one line of fine-print-
+weight copy below the body block, above the "I'm in" CTA:
+
+> Pocket Trade is a simulator. No real money. No accounts. No
+> funny business.
+
+Style: white at 0.45 opacity, 13 px / 400 weight / 18 px line
+height, centered, 24 px top margin. Shares the body's existing
+`textOpacity` fade-in so it doesn't introduce a new animation
+beat. Pre-empts the "is this a real brokerage?" objection from
+finance-wary users without slowing the pitch above.
+
+### Fix 3 — Auth button hierarchy
+
+`OnboardingAuthScreen.tsx`: demoted "Continue with email" from a
+gold-bordered full-width button to a centered text link below
+the Apple/Google SSO buttons. Audit rationale: the gold-bordered
+email button was visually competing with the SSO options that
+convert 15-25 % better — making email a text link concentrates
+attention on SSO without removing the email option.
+
+Changes:
+- `AuthButton` type narrowed from `'apple' | 'google' | 'email'`
+  to `'apple' | 'google'`. The `isEmail` branching, `emailBtn`
+  and `emailBtnText` styles, and the dedicated mail icon are
+  removed (dead code after the demotion).
+- Apple + Google buttons unchanged — same white surface, full
+  width, 56 px height, same icons, same mock auth handler.
+- 16 px gap below the Google button (vs the 12 px `btnGap`
+  between the two SSO buttons) — visually separates the SSO row
+  from the demoted email option.
+- New `<Pressable>` renders centered gold #FFB800 / 15 px / 600
+  weight / underlined text "Continue with email". `hitSlop` of
+  10 px on all sides keeps the tap target finger-friendly even
+  though the visual footprint is smaller.
+- `accessibilityRole="link"` (matches the visual demotion).
+- Tap behavior unchanged: still calls `handleAuth('mock-email')`,
+  spins for `MOCK_SPIN_MS`, navigates to `OnboardingWelcome`.
+- Disabled state during the 500 ms mock spin: link goes to 0.4
+  opacity, taps gated by `disabled={loading}` — matches the
+  SSO buttons' disabled treatment.
+
+### Out of scope (deliberate)
+
+- Splash logo asset, fade-in duration, layout — unchanged.
+- Premise headline, hero number animation, candle row, body
+  copy, CTA — unchanged.
+- Auth headline, recap, player card, fine print, Terms / Privacy
+  link handlers, loading overlay, mock-auth latency — all
+  unchanged.
+- No new dependencies.
+
+### Files touched
+
+- `src/screens/OnboardingSplashScreen.tsx`
+- `src/screens/OnboardingPremiseScreen.tsx`
+- `src/screens/OnboardingAuthScreen.tsx`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-14 — Screen 9 result: badge stamp + P&L counter + haptic on entry
 
 `docs/ONBOARDING_AUDIT.md` called the First Strike result screen
