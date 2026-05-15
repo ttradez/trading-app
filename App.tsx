@@ -11,6 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth } from './src/services/firebase';
 import { upsertUser, getUser } from './src/services/api';
 import { useAuthStore } from './src/store/authStore';
+import { useStreakManager } from './src/hooks/useStreakManager';
 import { colors } from './src/theme';
 
 import LoginScreen        from './src/screens/LoginScreen';
@@ -50,6 +51,10 @@ const Tab   = createBottomTabNavigator();
 const DISCLAIMER_KEY = '@pocket_trade_disclaimer_accepted';
 
 function MainTabs() {
+  // Streak daily-check runs when the user enters the main app
+  // (post-onboarding) and on every background → foreground.
+  useStreakManager();
+
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, 4);
   return (

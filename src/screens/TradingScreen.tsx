@@ -24,6 +24,7 @@ import {
 import { useInterstitialAd } from '../services/adService';
 import { useSessionStore } from '../store/sessionStore';
 import { useAuthStore } from '../store/authStore';
+import { useTrainingTimer } from '../hooks/useTrainingTimer';
 import { colors, radius, spacing, fontSize, fontWeight, labelStyle } from '../theme';
 
 // ── Timezone helpers for session-jump (Asia/London/NY/Custom) ──────────────
@@ -251,6 +252,12 @@ function CustomSessionConfig({
 }
 
 export default function TradingScreen() {
+  // Streak training timer — ticks every 10 s while this screen is
+  // mounted + the app is foregrounded; pauses on background; flushes
+  // any partial interval on unmount. Auto-fires completeDaily() the
+  // moment today's bucket crosses the user's daily goal.
+  useTrainingTimer();
+
   const { uid, username } = useAuthStore();
 
   const [market, setMarket] = useState<Market>(DEFAULT_MARKET);

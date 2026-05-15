@@ -5,6 +5,149 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-14 — Streak system: time tracking + daily check + increment/reset + freeze mechanics
+
+The visual layer shipped this morning; this commit fills in the
+mechanics. Streak now actually moves: it ticks while the user is
+on the chart screen, completes today when they hit the goal, burns
+freezes on missed days, resets when they're out of freezes. All
+local-state, persisted via `zustand/middleware` + AsyncStorage.
+
+### Expanded — `src/store/streakStore.ts`
+
+Added persistence via `persist` middleware over `AsyncStorage`
+(`zustand` is already 5.0.12; `@react-native-async-storage/
+async-storage` 2.2.0 was already installed). Storage key
+`streak-storage-v1`. Function fields are dropped automatically
+by the serializer.
+
+New fields:
+
+| Field | Purpose |
+|---|---|
+| `todayDate: string` | YYYY-MM-DD that the today-bucket below applies to. Rolled over by both `performDailyCheck` and the first `addTrainingTime` that notices a stale date. |
+| `todayTrainingMinutes: number` | Accumulated training time for `todayDate`. Reset on rollover. |
+| `frozenToday: boolean` | A freeze was burned during today's daily check; the badge shows 'frozen' until tomorrow's rollover. |
+
+Removed the raw `streakStatus` field — visual status is now
+**derived** by `computeDisplayStatus(state)` (exported helper).
+Components subscribe via `useStreakStore(computeDisplayStatus)`
+which re-runs the selector on every state change.
+
+Precedence inside `computeDisplayStatus` (matters when more than
+one rule could fire):
+
+1. `lastCompletedDate === today` →
+   `MILESTONE_DAYS.includes(currentStreak)` ? `'milestone'` :
+   `'active'`. Completing today always wins; a user who trained
+   should never see 'frozen' all day.
+2. `frozenToday` → `'frozen'`.
+3. `currentStreak === 0 && lastCompletedDate === null` →
+   `'new'` (a brand-new user who's never completed a day).
+4. `currentStreak === 0` → `'broken'` (had a streak, lost it —
+   `lastCompletedDate` stays set after reset so we can tell
+   broken apart from new).
+5. otherwise → `'at_risk'`.
+
+Milestone days: **`[3, 7, 14, 30, 60, 100, 365]`** (the prompt
+expanded the previous set by adding day 3).
+
+Freeze cap: **3**. Freeze earning: every 7 streak days inside
+`completeDaily()` — if `newStreak % 7 === 0` and freezes are
+below the cap, +1 freeze.
+
+#### Actions
+
+| Action | Behavior |
+|---|---|
+| `addTrainingTime(minutes, dailyGoalMinutes)` | Rolls over today-bucket if stale, adds minutes, **auto-fires `completeDaily()`** if today's bucket just crossed the goal and today isn't already completed. |
+| `completeDaily()` | Increments streak; sets `lastCompletedDate = today`; +1 freeze if streak hit a multiple of 7 (capped). Idempotent — repeats are no-ops. Clears `frozenToday` (completing today supersedes any earlier "freeze saved you" signal). |
+| `performDailyCheck()` | Rolls over the today-bucket if stale; if `lastCompletedDate` is in the past (older than yesterday), counts missed days (`daysBetween(last, yesterday)`) and burns freezes one per missed day. If freezes run out mid-loop, streak resets to 0 and `lastCompletedDate` is preserved (so the badge reads 'broken'). |
+| `consumeFreeze()` / `resetStreak()` / `reset()` | Manual mutators for dev/QA + onboarding wipe. |
+
+Date helpers (`getTodayYMD`, `getYesterdayYMD`, `daysBetween`)
+use device-local time and a `T00:00:00`-suffix midnight pinning
+so the day count is DST-safe.
+
+### New hook — `src/hooks/useStreakManager.ts`
+
+Mounted in **`MainTabs`** (so it activates the moment the user
+enters the main app post-onboarding; brand-new users in the
+onboarding flow don't need it — their daily check is a no-op).
+
+Behavior:
+- Calls `performDailyCheck()` on mount.
+- Subscribes to `AppState.addEventListener('change', ...)` and
+  re-runs the check whenever the app returns to `'active'`.
+- Stashes the latest `performDailyCheck` in a ref so the
+  AppState handler always sees the live function reference
+  without the effect needing to re-mount.
+
+### New hook — `src/hooks/useTrainingTimer.ts`
+
+Mounted in **`TradingScreen`** (the chart / replay screen).
+
+Behavior:
+- `setInterval(tick, 10_000)` while the host screen is mounted
+  AND the app is foregrounded. Each tick calls
+  `addTrainingTime(10/60, dailyGoalMinutes)` — i.e., 0.1667
+  minutes (= 10 s) credited per tick.
+- Pauses on `AppState.change → background`, resumes on
+  `→ active`. Users can't accumulate "training" time while the
+  phone is locked.
+- Flushes any partial interval (≥1 s, < `MIN_PARTIAL_MS`)
+  on stop / unmount so brief visits aren't rounded to zero.
+- Reads `dailyTimeGoalMinutes` from `onboardingStore` via a ref
+  so a goal change mid-session doesn't require remounting the
+  timer.
+
+The store-level `addTrainingTime` is the one that detects
+"today's bucket just crossed the goal" and fires
+`completeDaily()`, so the hook itself stays a thin tick loop.
+
+### Wiring
+
+- `App.tsx` (`MainTabs`): added `useStreakManager()` at the top.
+- `src/screens/TradingScreen.tsx`: added `useTrainingTimer()` at
+  the top of the component body.
+- `src/screens/DashboardScreen.tsx`: replaced
+  `useStreakStore((s) => s.streakStatus)` (the field no longer
+  exists) with `useStreakStore(computeDisplayStatus)`. The badge's
+  count selector is unchanged; only the status path moved to the
+  derived computation.
+
+### Persistence smoke
+
+Verified by inspection: `persist` is wrapping the store factory,
+storage key is `'streak-storage-v1'`, AsyncStorage is the backend.
+Data fields persist; actions don't (functions aren't serializable).
+A bumped key (`-v1` suffix) is in place for the inevitable schema
+change once the milestone celebration screens land.
+
+### Out of scope (deferred — see PROJECT_CONTEXT follow-ups)
+
+- Firebase sync of streak data (cross-device + cross-install).
+- Milestone celebration screens for day 3/7/14/30/60/100/365.
+- Notification reminders tied to the streak (needs a dev build —
+  Expo Go can't schedule local notifications under EAS-free).
+- Midnight rollover while the app stays foreground all night:
+  the next training tick or next AppState wakeup handles it; no
+  in-session midnight timer.
+
+### Files touched
+
+- `src/store/streakStore.ts` (rewritten: persistence + new fields
+  + actions + `computeDisplayStatus`)
+- `src/hooks/useStreakManager.ts` (new)
+- `src/hooks/useTrainingTimer.ts` (new)
+- `App.tsx` (MainTabs: `useStreakManager()`)
+- `src/screens/TradingScreen.tsx` (`useTrainingTimer()`)
+- `src/screens/DashboardScreen.tsx` (use derived status)
+- `PROJECT_CONTEXT.md`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-14 — Streak visual system: StreakBadge + streakStore + dashboard placement + screen 12 teaser
 
 Ben specifically asked for a fire icon with a day-count; the audit

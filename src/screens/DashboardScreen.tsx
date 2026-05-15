@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { getAccount, getTrades } from '../services/api';
 import { useAuthStore } from '../store/authStore';
-import { useStreakStore } from '../store/streakStore';
+import { useStreakStore, computeDisplayStatus } from '../store/streakStore';
 import { colors, radius, spacing, fontSize, fontWeight, labelStyle } from '../theme';
 import { EquityCurve, WinLossBar, DailyPnlSpark, StreakTracker } from '../components/DashboardCharts';
 import StreakBadge from '../components/StreakBadge';
@@ -29,7 +29,10 @@ const RANK_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
 export default function DashboardScreen({ navigation }: any) {
   const { uid, username } = useAuthStore();
   const streakCount  = useStreakStore((s) => s.currentStreak);
-  const streakStatus = useStreakStore((s) => s.streakStatus);
+  // Derived from currentStreak + lastCompletedDate + frozenToday.
+  // computeDisplayStatus reads `new Date()` so the badge always
+  // reflects the device's current day, not a stale persisted status.
+  const streakStatus = useStreakStore(computeDisplayStatus);
   const [account, setAccount] = useState<any>(null);
   const [trades, setTrades] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
