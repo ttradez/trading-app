@@ -21,8 +21,11 @@ import DashboardScreen    from './src/screens/DashboardScreen';
 import TradingScreen      from './src/screens/TradingScreen';
 import LeaderboardScreen  from './src/screens/LeaderboardScreen';
 import JournalScreen      from './src/screens/JournalScreen';
-import ChallengesScreen   from './src/screens/ChallengesScreen';
+// ChallengesScreen retired from the tab bar 2026-05-14 — the
+// dashboard's "Challenges" section is the placeholder for now.
+// Component file is preserved for a future re-wire.
 import DisclaimerScreen   from './src/screens/DisclaimerScreen';
+import { useJournalStore } from './src/store/journalStore';
 import OnboardingSplashScreen    from './src/screens/OnboardingSplashScreen';
 import OnboardingPremiseScreen   from './src/screens/OnboardingPremiseScreen';
 import OnboardingArchetypeScreen from './src/screens/OnboardingArchetypeScreen';
@@ -55,11 +58,19 @@ function MainTabs() {
   // (post-onboarding) and on every background → foreground.
   useStreakManager();
 
+  // Load persisted journal entries from AsyncStorage so the
+  // dashboard's stats + recent-trades section have real data on
+  // first paint. `hydrate` is idempotent; calling it again on
+  // re-mount is harmless.
+  React.useEffect(() => {
+    useJournalStore.getState().hydrate().catch(() => {});
+  }, []);
+
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, 4);
   return (
     <Tab.Navigator
-      initialRouteName="Chart"
+      initialRouteName="Dashboard"
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarStyle: {
@@ -72,10 +83,14 @@ function MainTabs() {
         },
         tabBarActiveTintColor: colors.gold,
         tabBarInactiveTintColor: colors.textSecondary,
+        // With 4 tabs (was 5), the labels (DASHBOARD / CHART /
+        // JOURNAL / LEADERBOARD) fit without truncation at 10 px.
+        // The CHALLENGES tab was retired — its content lives as
+        // a placeholder section inside the dashboard.
         tabBarLabelStyle: {
-          fontSize: 8,
+          fontSize: 10,
           fontWeight: '700',
-          letterSpacing: 1.2,
+          letterSpacing: 1,
           textTransform: 'uppercase',
           marginTop: -3,
         },
@@ -85,17 +100,15 @@ function MainTabs() {
             Dashboard:   'home-outline',
             Chart:       'analytics-outline',
             Journal:     'journal-outline',
-            Challenges:  'flame-outline',
             Leaderboard: 'trophy-outline',
           };
-          return <Ionicons name={iconMap[route.name] ?? 'help'} size={16} color={color} />;
+          return <Ionicons name={iconMap[route.name] ?? 'help'} size={18} color={color} />;
         },
       })}
     >
       <Tab.Screen name="Dashboard"   component={DashboardScreen} />
       <Tab.Screen name="Chart"       component={TradingScreen} />
       <Tab.Screen name="Journal"     component={JournalScreen} />
-      <Tab.Screen name="Challenges"  component={ChallengesScreen} />
       <Tab.Screen name="Leaderboard" component={LeaderboardScreen} />
     </Tab.Navigator>
   );

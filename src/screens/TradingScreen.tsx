@@ -14,6 +14,7 @@ import DrawingFavoritesBar from '../components/chart/DrawingFavoritesBar';
 import MagnetToggle from '../components/chart/MagnetToggle';
 import TradeJournalModal, { TradeSummary } from '../components/TradeJournalModal';
 import { useTradeJournalStore } from '../store/tradeJournalStore';
+import type { JournalEntry } from '../store/journalStore';
 import EconomicCalendarPanel from '../components/EconomicCalendarPanel';
 import { getEventsForDate } from '../data/economicCalendar';
 import { useDrawingsStore } from '../store/drawingsStore';
@@ -271,6 +272,42 @@ export default function TradingScreen() {
   const [marketWheelOpen, setMarketWheelOpen] = useState(false);
   const [recentClosedTrade, setRecentClosedTrade] = useState<any | null>(null);
   const saveTradeJournalEntry = useTradeJournalStore((s) => s.saveEntry);
+  const addJournalEntry       = useJournalStore((s) => s.addEntry);
+
+  // Auto-persist every closed trade into `journalStore` so the
+  // dashboard's recent-trades + stats sections always have real
+  // data, even if the user Skips the journal modal. Journal-modal
+  // grade/emotions/note continues to flow into the separate
+  // `tradeJournalStore`; the old-schema fields (notes / mistakes /
+  // emotion / etc.) on the JournalEntry stay empty until the user
+  // edits via EntryEditModal. addEntry de-dupes by tradeId so a
+  // re-render here can't double-write.
+  useEffect(() => {
+    const t = recentClosedTrade;
+    if (!t) return;
+    const id = String(t.id ?? '');
+    if (!id) return;
+    const entry: JournalEntry = {
+      id,
+      tradeId:    id,
+      symbol:     t.symbol ?? '',
+      side:       t.side === 'sell' ? 'sell' : 'buy',
+      lots:       typeof t.lots === 'number' ? t.lots : 1,
+      entryPrice: typeof t.entry_price === 'number' ? t.entry_price : 0,
+      exitPrice:  typeof t.exit_price  === 'number' ? t.exit_price  : 0,
+      stopLoss:   t.stop_loss   ?? null,
+      takeProfit: t.take_profit ?? null,
+      pnl:        typeof t.pnl === 'number' ? t.pnl : 0,
+      rMultiple:  typeof t.r_multiple === 'number' ? t.r_multiple : null,
+      openedAt:   typeof t.opened_at === 'number' ? t.opened_at : Date.now(),
+      closedAt:   typeof t.closed_at === 'number' ? t.closed_at : Date.now(),
+      notes: '', mistakes: '', wentWell: '',
+      emotion: null, confidence: null,
+      strategy: '', tags: [],
+      savedAt: Date.now(),
+    };
+    addJournalEntry(entry);
+  }, [recentClosedTrade, addJournalEntry]);
 
   // Adapt the snake_case backend close payload into the journal
   // modal's `TradeSummary` shape. Defensive defaults because the

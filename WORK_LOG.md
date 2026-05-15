@@ -5,6 +5,139 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-14 — Dashboard redesign + remove Challenges tab (4 tabs)
+
+Two coupled fixes: a 5th tab was truncating labels to 6 chars
+("CHALLENG...", "LEADERBO..."), and the dashboard's backend
+`getAccount` fetch was getting stuck on a "Loading..." spinner
+when no Firebase user existed. Both addressed in one pass — the
+Challenges tab is retired and its content moves into a placeholder
+section inside the rebuilt local-state-only dashboard.
+
+### Tab bar — 5 → 4 (`App.tsx`)
+
+- `<Tab.Screen name="Challenges">` removed from the navigator.
+  `ChallengesScreen` import retired with a top-of-file comment so
+  the next reader knows the component file is preserved for a
+  future re-wire.
+- Tab label `fontSize` 8 → **10**, `letterSpacing` 1.2 → 1.0,
+  icon size 16 → **18**. With 4 tabs (DASHBOARD / CHART / JOURNAL
+  / LEADERBOARD) the labels fit at 10 px without truncation on
+  the test devices.
+- `initialRouteName` flipped from `Chart` → **`Dashboard`** —
+  matches the new dashboard's information-dense first-load and
+  the user's expected entry point post-onboarding.
+
+### Trade history persistence (`TradingScreen.tsx`)
+
+Necessary infrastructure so the dashboard has real data to read.
+
+- `journalStore` (`@pocket_trade_journal` in AsyncStorage) was
+  already persisting trade entries with the full schema; it was
+  just no longer being written to after the trade-journal modal
+  redesign retired the manual "Journal Trade" button.
+- New `useEffect` on `recentClosedTrade` constructs a
+  `JournalEntry` snapshot from the snake_case backend close
+  payload and calls `addEntry()` on every close. Defensive
+  defaults match the legacy `TradeCardModal` pattern in case the
+  auto-close path omits fields. `addEntry` already de-dupes by
+  `tradeId`, so a re-render here can't double-write.
+- Old-schema fields (`notes`, `mistakes`, `wentWell`, `emotion`,
+  `confidence`, `strategy`, `tags`) start empty — they can still
+  be filled later via the `EntryEditModal` accessible from the
+  Journal tab. The new-schema fields (`grade`, `emotions`,
+  `note`) keep flowing into the separate `tradeJournalStore` via
+  the journal modal's Save path.
+- `useJournalStore.getState().hydrate()` is now ALSO called once
+  in `MainTabs`'s mount effect (idempotent — TradingScreen's own
+  hydrate stays). Without this, opening the app directly to the
+  Dashboard tab would render before the persisted entries
+  hydrated.
+
+### DashboardScreen — full rewrite
+
+Replaces the prior account-fetch-then-`if (!account) return`
+loading screen with an immediately-painting, store-only layout.
+
+**Five sections** beneath the existing header (archetype identity
+left, StreakBadge right — both kept unchanged):
+
+1. **Daily Training Progress** — `react-native-svg` ring
+   (120 px / 10 px stroke) with a track + gold dashoffset fill,
+   center reads `{minutes} /{goal}`. When `minutesToday >= goal`,
+   the center swaps to a gold checkmark and the label flips from
+   "minutes today" → **"Goal hit!"**. Reads
+   `streakStore.todayTrainingMinutes` + `onboardingStore.dailyTimeGoalMinutes`.
+2. **Performance Stats** — 2 × 2 grid via `flexBasis: '48%'` +
+   `gap: 10`. Four cards: **Trades** (count), **Win Rate**
+   (green ≥ 50 %, red < 50 %), **Total P&L** (green +/red −),
+   **Best Trade** (green when positive). Each card 14 px radius,
+   `#0F0F0F`/`#1F1F1F` chrome, 20 px / 800-weight tabular value
+   with a faded label below. Empty state: `opacity: 0.6` +
+   `value: '—'` / `'$0.00'` / `'0'`.
+3. **Recent Trades** — section header with **"View all"** gold
+   link → Journal tab (only when trades exist). Top 3 entries
+   from `journalStore` via a small `RecentTradeRow` wrapper (so
+   `useTradeJournalStore` can be called per-row to pull the
+   grade pill). Empty state: faded copy + **"Start training"**
+   gold outline button → Chart tab.
+4. **Rank Progression** — `RankBanner rank="gambler"` at
+   `width: 130` (left) + name / 4 px progress bar / "10 % toward
+   Paper Hands" caption (right). The 10 % is hardcoded — real
+   XP plumbing is a separate follow-up; this matches the
+   post-onboarding Rank Reveal screen.
+5. **Challenges** — placeholder card with `trophy-outline` gold
+   glyph at 0.3 opacity + the copy "Challenges coming soon.
+   Compete against other traders in timed events." Lives where
+   the retired Challenges TAB's content would have gone.
+
+Bottom padding: `100 px` so the last card clears the tab bar.
+
+### Icon library note
+
+The prompt mentioned `lucide: Trophy`. `lucide-react-native` still
+isn't installed; Ionicons `trophy-outline` is the substitute (same
+glyph family the existing dashboard already used for the rank
+icon).
+
+### What got dropped from the old dashboard
+
+- Backend fetches (`getAccount`, `getTrades`) — replaced by
+  in-process store reads, so no "Loading..." stall on first
+  paint.
+- Big rank XP badge (was at the top below the header) — folded
+  into the new compact Rank Progression section.
+- Detailed stats rows (Profit Factor / Avg Win / Avg Loss /
+  Expectancy / Equity) — out per spec ("a horizontal row of 4
+  stat cards"). Will return when an Analytics section is built.
+- `DashboardCharts` (EquityCurve / WinLossBar / DailyPnlSpark /
+  StreakTracker) — same reason; these belong in an Analytics
+  surface, not the dashboard's first screen.
+- The previous "View all" → empty navigation target — now wired
+  to a real tab.
+
+### Out of scope (deliberate)
+
+- Backend sync of trade history (Firebase pass).
+- Real challenges feature (only the placeholder ships here).
+- Real XP / rank-progression math (still the hardcoded 10 %).
+- Chart / Journal / Leaderboard screens untouched.
+- `DashboardCharts.tsx`, `LeaderboardScreen.tsx`, and the
+  retired analytics helpers remain in the repo unused for a
+  future re-wire.
+
+### Files touched
+
+- `App.tsx` (drop Challenges tab, bump label sizes, switch
+  initialRoute, hydrate journalStore from MainTabs)
+- `src/screens/TradingScreen.tsx` (auto-persist closed trades
+  into `journalStore`)
+- `src/screens/DashboardScreen.tsx` (rewritten — 5 sections,
+  ProgressRing, local stores only)
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-14 — Trade journal: auto-popup on trade close with grade + emotions + notes
 
 Builds the post-trade reflection habit by design: every trade
