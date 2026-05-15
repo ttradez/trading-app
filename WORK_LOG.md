@@ -5,6 +5,92 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-15 — Custom Watchlist: bookmark setups from chart + dashboard saved section
+
+Research feature #7 — "an artifact that belongs to the user, not
+the app" (Spotify-playlist / Watch-Later retention psychology).
+"I want to study this day again" is natural trader behavior.
+
+### New — `src/store/watchlistStore.ts`
+
+Persisted (zustand/middleware + AsyncStorage,
+`watchlist-storage-v1`). `savedSetups: SavedSetup[]` where
+`SavedSetup = { id, symbol, date, timeframe, label, savedAt }`.
+- `addSetup(s)` prepends; **returns `false` (no-op) when the 50
+  cap is already hit** so the caller surfaces the limit alert —
+  the store never does UI.
+- `removeSetup(id)`, `reset()`.
+- `useSavedSetup(symbol, date)` selector → the matching entry or
+  undefined (matches on symbol+date, ignores timeframe — one
+  bookmark per day-on-symbol regardless of the TF being viewed).
+- `savedSetupStartUnixSeconds(date)` mirrors dailySetups'
+  `setupStartUnixSeconds` (14:00 UTC anchor, backend snaps) so a
+  saved card preloads the chart **identically to a Daily
+  Mission** — same `dailySetup` nav-param mechanism, no
+  TradingScreen consume-logic change.
+
+### Chart — bookmark icon + modals (`TradingScreen.tsx`)
+
+- Bookmark `TouchableOpacity` placed in the **topBar, immediately
+  right of the symbol button** (the spec's "near the
+  symbol/date display"). `useSavedSetup(market.symbol,
+  replayDateYMD)` drives the icon: `bookmark-outline` @ white-50 %
+  when not saved, solid `bookmark` @ gold when saved. (lucide
+  Bookmark unavailable → Ionicons, consistent with the screen.)
+- Tap when **not saved** → fade Modal: "Save this session",
+  `SYMBOL · YYYY-MM-DD · TF` confirm line, optional 100-char note
+  `TextInput`, gold Save + Cancel link. Save →
+  `addWatchSetup({...})`; on success `maybeHaptic()` (settings-
+  gated — the new helper's first real consumer); on cap-hit it
+  closes + `Alert("You've hit the 50 bookmark limit…")`.
+- Tap when **saved** → "Remove from saved?" Modal, red Remove +
+  Cancel. Remove → `removeSetup(savedSetup.id)`; icon reverts.
+- Date captured = `replayDateYMD` (the existing NY-time YMD memo
+  of the on-screen bar), timeframe = current `timeframe`.
+
+### Dashboard — "Saved Setups" section (`DashboardScreen.tsx`)
+
+Inserted **between the Daily Mission card and the Daily Training
+Progress ring** — no existing section moved. Header "Saved
+Setups" + right-aligned "N saved" count (hidden at 0). Horizontal
+`ScrollView` of 160 px cards: symbol (bold), `formatSavedDate`
+("Sep 13, 2022", string-parsed so no TZ day-shift), single-line
+truncated label if present. Tap → `navigation.navigate('Chart',
+{ dailySetup: { symbol, timeframe, startTs, date, key } })` — the
+exact param shape the Daily Mission uses, so the existing chart
+preload effect handles it unchanged. Empty state: dashed
+`#2A2A2A` placeholder card, gold-30 % bookmark glyph, "Bookmark
+setups from the chart" (not tappable). Per spec, no
+swipe-to-delete in the horizontal row — removal is the chart's
+filled-bookmark → Remove modal.
+
+### Reset consistency (`SettingsScreen.tsx`)
+
+Added `useWatchlistStore.getState().reset()` to the **Reset
+Everything** double-confirm flow. "Delete ALL your data"
+semantically includes the watchlist; leaving it behind would be
+a data-leak bug in that feature. One line, no behavior change
+elsewhere.
+
+### Out of scope (deliberate, per prompt)
+
+- Folders / categories, sharing, sort/filter, full-screen
+  watchlist manager.
+- Swipe-to-delete in the horizontal row.
+- No change to Daily Mission, stats, or other dashboard sections.
+
+### Files touched
+
+- `src/store/watchlistStore.ts` (new)
+- `src/screens/TradingScreen.tsx` (bookmark icon + save/remove
+  modals + styles)
+- `src/screens/DashboardScreen.tsx` (Saved Setups section +
+  styles)
+- `src/screens/SettingsScreen.tsx` (reset includes watchlist)
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-15 — Weekly Performance Recap: Sunday Wrap with auto-modal + Journal section
 
 The research's "Magic 3" weekly-synthesis moment (Strava-style)

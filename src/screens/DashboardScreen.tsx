@@ -11,6 +11,7 @@ import { useOnboardingStore, Archetype } from '../store/onboardingStore';
 import { useJournalStore, JournalEntry } from '../store/journalStore';
 import { useTradeJournalStore } from '../store/tradeJournalStore';
 import { useIsTodaySetupComplete } from '../store/dailySetupStore';
+import { useWatchlistStore, savedSetupStartUnixSeconds } from '../store/watchlistStore';
 import {
   getTodaySetup, setupStartUnixSeconds, SetupDifficulty,
 } from '../data/dailySetups';
@@ -77,6 +78,19 @@ function formatUSD(n: number): string {
     minimumFractionDigits: 2, maximumFractionDigits: 2,
   });
   return `${sign}$${abs}`;
+}
+
+const MONTHS_SHORT = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+/** "2022-09-13" → "Sep 13, 2022". String-parsed (no `new Date()`)
+ *  so a YYYY-MM-DD never shifts a day in negative-UTC zones. */
+function formatSavedDate(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map((n) => parseInt(n, 10));
+  if (!y || !m || !d) return ymd;
+  return `${MONTHS_SHORT[m - 1]} ${d}, ${y}`;
 }
 
 // ── Daily training progress ring ───────────────────────────────────────────
@@ -173,6 +187,9 @@ export default function DashboardScreen({ navigation }: any) {
   // closes a trade on the matching symbol + replay date).
   const todaySetup = useMemo(() => getTodaySetup(), []);
   const setupComplete = useIsTodaySetupComplete();
+
+  // User-curated watchlist (bookmarked from the chart screen).
+  const savedSetups = useWatchlistStore((s) => s.savedSetups);
 
   // Trade history — auto-persisted on close by TradingScreen.
   const entries = useJournalStore((s) => s.entries);
@@ -303,6 +320,64 @@ export default function DashboardScreen({ navigation }: any) {
             </Pressable>
           </View>
         </View>
+
+        {/* SAVED SETUPS — user-curated watchlist (between the daily
+            mission and the training ring; no existing section moved). */}
+        <View style={styles.savedHeader}>
+          <Text style={styles.sectionTitle}>Saved Setups</Text>
+          {savedSetups.length > 0 && (
+            <Text style={styles.savedCount}>{savedSetups.length} saved</Text>
+          )}
+        </View>
+        {savedSetups.length === 0 ? (
+          <View style={styles.savedEmptyCard}>
+            <Ionicons
+              name="bookmark-outline"
+              size={26}
+              color="rgba(255,184,0,0.3)"
+            />
+            <Text style={styles.savedEmptyText}>
+              Bookmark setups from the chart
+            </Text>
+          </View>
+        ) : (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.savedRow}
+          >
+            {savedSetups.map((s) => (
+              <Pressable
+                key={s.id}
+                style={({ pressed }) => [
+                  styles.savedCard,
+                  pressed && { opacity: 0.85 },
+                ]}
+                onPress={() =>
+                  navigation.navigate('Chart', {
+                    dailySetup: {
+                      symbol: s.symbol,
+                      timeframe: s.timeframe,
+                      startTs: savedSetupStartUnixSeconds(s.date),
+                      date: s.date,
+                      key: `wl-${s.id}-${Date.now()}`,
+                    },
+                  })
+                }
+                accessibilityRole="button"
+                accessibilityLabel={`Open saved setup ${s.symbol} ${s.date}`}
+              >
+                <Text style={styles.savedSymbol}>{s.symbol}</Text>
+                <Text style={styles.savedDate}>{formatSavedDate(s.date)}</Text>
+                {s.label ? (
+                  <Text style={styles.savedLabel} numberOfLines={1}>
+                    {s.label}
+                  </Text>
+                ) : null}
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
 
         {/* SECTION 1 — Daily Training Progress */}
         <View style={[styles.card, styles.trainingCard]}>
@@ -583,6 +658,65 @@ const styles = StyleSheet.create({
   },
   missionCtaTextDone: {
     color: GREEN,
+  },
+
+  // Saved Setups (watchlist)
+  savedHeader: {
+    marginTop: 24,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+  },
+  savedCount: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  savedRow: {
+    gap: 10,
+    paddingRight: 4,
+  },
+  savedCard: {
+    width: 160,
+    backgroundColor: CARD_BG,
+    borderColor: CARD_BORDER,
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+  },
+  savedSymbol: {
+    color: WHITE,
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  savedDate: {
+    marginTop: 4,
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  savedLabel: {
+    marginTop: 6,
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  savedEmptyCard: {
+    borderWidth: 1,
+    borderColor: '#2A2A2A',
+    borderStyle: 'dashed',
+    borderRadius: 14,
+    paddingVertical: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  savedEmptyText: {
+    marginTop: 8,
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 12,
+    fontWeight: '500',
   },
 
   // SECTION 1 — Daily Training Progress

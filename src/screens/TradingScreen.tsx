@@ -17,6 +17,8 @@ import { useTradeJournalStore } from '../store/tradeJournalStore';
 import type { JournalEntry } from '../store/journalStore';
 import { useDailySetupStore } from '../store/dailySetupStore';
 import { getTodaySetup } from '../data/dailySetups';
+import { useWatchlistStore, useSavedSetup } from '../store/watchlistStore';
+import { maybeHaptic } from '../store/settingsStore';
 import EconomicCalendarPanel from '../components/EconomicCalendarPanel';
 import { getEventsForDate } from '../data/economicCalendar';
 import { useDrawingsStore } from '../store/drawingsStore';
@@ -735,6 +737,39 @@ export default function TradingScreen({ route }: any) {
     [replayDateYMD],
   );
 
+  // Watchlist bookmark — filled/gold when this symbol+date is saved.
+  const savedSetup     = useSavedSetup(market.symbol, replayDateYMD);
+  const addWatchSetup  = useWatchlistStore((s) => s.addSetup);
+  const removeWatchSetup = useWatchlistStore((s) => s.removeSetup);
+  const [bookmarkModal, setBookmarkModal] = useState<null | 'save' | 'remove'>(null);
+  const [bookmarkNote, setBookmarkNote] = useState('');
+
+  const openBookmarkModal = () => {
+    setBookmarkNote('');
+    setBookmarkModal(savedSetup ? 'remove' : 'save');
+  };
+  const confirmSaveBookmark = () => {
+    const ok = addWatchSetup({
+      symbol: market.symbol,
+      date: replayDateYMD,
+      timeframe,
+      label: bookmarkNote.trim() ? bookmarkNote.trim() : null,
+    });
+    setBookmarkModal(null);
+    if (!ok) {
+      Alert.alert(
+        'Bookmark limit reached',
+        "You've hit the 50 bookmark limit. Remove one to save a new one.",
+      );
+    } else {
+      maybeHaptic();
+    }
+  };
+  const confirmRemoveBookmark = () => {
+    if (savedSetup) removeWatchSetup(savedSetup.id);
+    setBookmarkModal(null);
+  };
+
   const pnl = useMemo(() => {
     const realized = closedTrades.reduce((sum, t) => sum + t.pnl, 0);
     const unrealized = positions.reduce((sum, p) => {
@@ -864,6 +899,20 @@ export default function TradingScreen({ route }: any) {
           <Text style={styles.symbolText}>{market.symbol}</Text>
           <Ionicons name="chevron-down" size={14} color={colors.textPrimary} style={{ marginLeft: 4 }} />
         </View>
+
+        <TouchableOpacity
+          style={styles.bookmarkBtn}
+          onPress={openBookmarkModal}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel={savedSetup ? 'Remove bookmark' : 'Bookmark this session'}
+        >
+          <Ionicons
+            name={savedSetup ? 'bookmark' : 'bookmark-outline'}
+            size={18}
+            color={savedSetup ? colors.gold : 'rgba(255,255,255,0.5)'}
+          />
+        </TouchableOpacity>
 
         <View style={styles.balanceWrap}>
           <Text style={styles.balanceLabel}>EQUITY</Text>
@@ -1151,6 +1200,72 @@ export default function TradingScreen({ route }: any) {
         }}
         onSkip={() => setRecentClosedTrade(null)}
       />
+
+      {/* Watchlist bookmark — save (with optional note) / remove. */}
+      <Modal
+        visible={bookmarkModal !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setBookmarkModal(null)}
+      >
+        <Pressable style={styles.bmBackdrop} onPress={() => setBookmarkModal(null)}>
+          <Pressable style={styles.bmCard} onPress={() => {}}>
+            {bookmarkModal === 'save' ? (
+              <>
+                <Text style={styles.bmTitle}>Save this session</Text>
+                <Text style={styles.bmSub}>
+                  {market.symbol} · {replayDateYMD} · {timeframe}
+                </Text>
+                <TextInput
+                  style={styles.bmInput}
+                  value={bookmarkNote}
+                  onChangeText={(t) => setBookmarkNote(t.slice(0, 100))}
+                  placeholder="Add a note (optional)"
+                  placeholderTextColor="rgba(255,255,255,0.3)"
+                  maxLength={100}
+                  selectionColor={colors.gold}
+                  returnKeyType="done"
+                />
+                <TouchableOpacity
+                  style={styles.bmPrimaryBtn}
+                  onPress={confirmSaveBookmark}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.bmPrimaryText}>Save</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.bmCancel}
+                  onPress={() => setBookmarkModal(null)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.bmCancelText}>Cancel</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={styles.bmTitle}>Remove from saved?</Text>
+                <Text style={styles.bmSub}>
+                  {market.symbol} · {replayDateYMD}
+                </Text>
+                <TouchableOpacity
+                  style={styles.bmRemoveBtn}
+                  onPress={confirmRemoveBookmark}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.bmRemoveText}>Remove</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.bmCancel}
+                  onPress={() => setBookmarkModal(null)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.bmCancelText}>Cancel</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* Display-timezone picker — purely cosmetic; never feeds the seek logic. */}
       <Modal visible={tzPickerOpen} transparent animationType="fade" onRequestClose={() => setTzPickerOpen(false)}>
@@ -1464,7 +1579,95 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: colors.border,
     gap: spacing.sm,
   },
+  bookmarkBtn: {
+    width: 32, height: 32,
+    borderRadius: radius.sm,
+    borderWidth: 1, borderColor: colors.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
   balanceWrap: { flex: 1, paddingHorizontal: spacing.sm },
+
+  // Bookmark save / remove modal
+  bmBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+  },
+  bmCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: '#0F0F0F',
+    borderColor: '#1F1F1F',
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 20,
+  },
+  bmTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  bmSub: {
+    marginTop: 6,
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 14,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  },
+  bmInput: {
+    marginTop: 16,
+    backgroundColor: '#1A1A1A',
+    borderColor: '#2A2A2A',
+    borderWidth: 1,
+    borderRadius: 10,
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '500',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  bmPrimaryBtn: {
+    marginTop: 18,
+    height: 50,
+    borderRadius: 12,
+    backgroundColor: colors.gold,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bmPrimaryText: {
+    color: '#000000',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  bmRemoveBtn: {
+    marginTop: 18,
+    height: 50,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.red,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bmRemoveText: {
+    color: colors.red,
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  bmCancel: {
+    marginTop: 12,
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  bmCancelText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   balanceLabel: { color: colors.textSecondary, fontSize: 9, fontWeight: fontWeight.bold, letterSpacing: 1.2 },
   balanceValue: { color: colors.textPrimary, fontSize: fontSize.md, fontWeight: fontWeight.bold, fontVariant: ['tabular-nums'], marginTop: 1 },
   pnlBadge: {
