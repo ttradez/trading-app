@@ -1,12 +1,19 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
-  ActivityIndicator, TextInput, Alert, RefreshControl,
+  ActivityIndicator, TextInput, Alert, RefreshControl, ScrollView,
+  Modal, Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { fetchLeaderboard, getFeed, createGroup, joinGroup, getGroupLeaderboard } from '../services/api';
 import { useAuthStore } from '../store/authStore';
+import { useBadgeStore } from '../store/badgeStore';
+import {
+  BADGES, BADGE_COUNT, CATEGORY_ORDER, CATEGORY_LABEL,
+  RARITY_COLOR, Badge,
+} from '../data/badges';
+import { getBadgeProgress } from '../utils/badgeChecker';
 import { colors, radius, spacing, fontSize, fontWeight, labelStyle } from '../theme';
 
 type Tab = 'leaderboard' | 'feed' | 'friends';
@@ -22,8 +29,11 @@ const RANK_COLORS: Record<string, string> = {
   'Market Maker':  colors.rankMarketMaker,
 };
 
-export default function LeaderboardScreen() {
+export default function LeaderboardScreen({ route }: any) {
   const { uid } = useAuthStore();
+  const [view, setView] = useState<'rankings' | 'badges'>(
+    route?.params?.initialSegment === 'badges' ? 'badges' : 'rankings',
+  );
   const [tab, setTab] = useState<Tab>('leaderboard');
   const [period, setPeriod] = useState<Period>('weekly');
   const [data, setData] = useState<any[]>([]);
@@ -235,9 +245,35 @@ export default function LeaderboardScreen() {
     </>
   );
 
+  const segmentToggle = (
+    <View style={styles.segmentRow}>
+      {(['rankings', 'badges'] as const).map((v) => (
+        <TouchableOpacity
+          key={v}
+          style={[styles.segBtn, view === v && styles.segBtnActive]}
+          onPress={() => setView(v)}
+        >
+          <Text style={[styles.segText, view === v && styles.segTextActive]}>
+            {v === 'rankings' ? 'LEADERBOARD' : 'BADGES'}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
+  if (view === 'badges') {
+    return (
+      <SafeAreaView edges={['top']} style={styles.container}>
+        {segmentToggle}
+        <TrophyCase />
+      </SafeAreaView>
+    );
+  }
+
   if (loading && data.length === 0 && feed.length === 0) {
     return (
       <SafeAreaView edges={['top']} style={styles.container}>
+        {segmentToggle}
         {renderHeader()}
         <ActivityIndicator color={colors.gold} style={{ marginTop: 40 }} />
       </SafeAreaView>
@@ -246,6 +282,7 @@ export default function LeaderboardScreen() {
 
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
+    {segmentToggle}
     <FlatList
       style={styles.container}
       contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.xxxl }}
@@ -267,6 +304,146 @@ export default function LeaderboardScreen() {
       }
     />
     </SafeAreaView>
+  );
+}
+
+/** Trophy case — progress bar + category-grouped 4-per-row grid.
+ *  Tap any badge → detail modal (unlocked: description + date;
+ *  locked: condition + numeric progress when applicable). */
+function TrophyCase() {
+  const unlockedMap = useBadgeStore((s) => s.unlockedBadges);
+  const unlockedCount = Object.keys(unlockedMap).length;
+  const [selected, setSelected] = useState<Badge | null>(null);
+
+  return (
+    <>
+      <ScrollView
+        contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxxl }}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={styles.tcCount}>
+          {unlockedCount} / {BADGE_COUNT} unlocked
+        </Text>
+        <View style={styles.tcBarTrack}>
+          <View
+            style={[
+              styles.tcBarFill,
+              { width: `${Math.round((unlockedCount / BADGE_COUNT) * 100)}%` },
+            ]}
+          />
+        </View>
+
+        {CATEGORY_ORDER.map((cat) => (
+          <View key={cat} style={styles.tcCatBlock}>
+            <Text style={styles.tcCatLabel}>{CATEGORY_LABEL[cat]}</Text>
+            <View style={styles.tcGrid}>
+              {BADGES.filter((b) => b.category === cat).map((b) => {
+                const unlocked = !!unlockedMap[b.id];
+                const accent = RARITY_COLOR[b.rarity];
+                return (
+                  <TouchableOpacity
+                    key={b.id}
+                    style={styles.tcCell}
+                    activeOpacity={0.8}
+                    onPress={() => setSelected(b)}
+                  >
+                    <View
+                      style={[
+                        styles.tcIconWrap,
+                        unlocked
+                          ? { borderColor: accent }
+                          : styles.tcIconWrapLocked,
+                      ]}
+                    >
+                      <MaterialCommunityIcons
+                        name={unlocked ? b.icon : 'lock'}
+                        size={26}
+                        color={unlocked ? accent : 'rgba(255,255,255,0.3)'}
+                      />
+                    </View>
+                    <Text
+                      style={[
+                        styles.tcName,
+                        !unlocked && styles.tcNameLocked,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {unlocked ? b.name : '???'}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        ))}
+      </ScrollView>
+
+      <BadgeDetailModal
+        badge={selected}
+        unlockedAt={selected ? unlockedMap[selected.id] ?? null : null}
+        onClose={() => setSelected(null)}
+      />
+    </>
+  );
+}
+
+function BadgeDetailModal({
+  badge, unlockedAt, onClose,
+}: { badge: Badge | null; unlockedAt: string | null; onClose: () => void }) {
+  if (!badge) return null;
+  const unlocked = unlockedAt !== null;
+  const accent = RARITY_COLOR[badge.rarity];
+  const progress = !unlocked ? getBadgeProgress(badge.id) : null;
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.bdBackdrop} onPress={onClose}>
+        <Pressable style={styles.bdCard} onPress={() => {}}>
+          <View
+            style={[
+              styles.bdIconWrap,
+              { borderColor: unlocked ? accent : '#2A2A2A' },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name={unlocked ? badge.icon : 'lock'}
+              size={44}
+              color={unlocked ? accent : 'rgba(255,255,255,0.3)'}
+            />
+          </View>
+          <Text style={styles.bdName}>{unlocked ? badge.name : '???'}</Text>
+          <View style={[styles.bdRarity, { borderColor: accent }]}>
+            <Text style={[styles.bdRarityText, { color: accent }]}>
+              {badge.rarity.toUpperCase()}
+            </Text>
+          </View>
+
+          {unlocked ? (
+            <>
+              <Text style={styles.bdDesc}>{badge.description}</Text>
+              {unlockedAt && (
+                <Text style={styles.bdDate}>
+                  Unlocked {new Date(unlockedAt).toLocaleDateString()}
+                </Text>
+              )}
+            </>
+          ) : (
+            <>
+              <Text style={styles.bdDesc}>{badge.condition}</Text>
+              {progress && (
+                <Text style={styles.bdProgress}>
+                  {progress.current} / {progress.target}
+                </Text>
+              )}
+            </>
+          )}
+
+          <TouchableOpacity style={styles.bdClose} onPress={onClose}>
+            <Text style={styles.bdCloseText}>Close</Text>
+          </TouchableOpacity>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -355,4 +532,165 @@ const styles = StyleSheet.create({
 
   green: { color: colors.green },
   red:   { color: colors.red },
+
+  // Segment toggle (Leaderboard | Badges)
+  segmentRow: {
+    flexDirection: 'row',
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 3,
+  },
+  segBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: radius.sm,
+  },
+  segBtnActive: { backgroundColor: colors.cardAlt },
+  segText: {
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.bold,
+    letterSpacing: 1.2,
+  },
+  segTextActive: { color: colors.gold },
+
+  // Trophy case
+  tcCount: {
+    color: colors.textPrimary,
+    fontSize: fontSize.lg,
+    fontWeight: fontWeight.black,
+    fontVariant: ['tabular-nums'],
+  },
+  tcBarTrack: {
+    marginTop: spacing.sm,
+    height: 5,
+    backgroundColor: '#1F1F1F',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  tcBarFill: {
+    height: '100%',
+    backgroundColor: colors.gold,
+    borderRadius: 3,
+  },
+  tcCatBlock: { marginTop: spacing.xl },
+  tcCatLabel: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: fontWeight.bold,
+    letterSpacing: 1.5,
+    marginBottom: spacing.md,
+  },
+  tcGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  tcCell: {
+    width: '25%',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+    paddingHorizontal: 4,
+  },
+  tcIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.card,
+  },
+  tcIconWrapLocked: {
+    borderColor: '#2A2A2A',
+    opacity: 0.6,
+  },
+  tcName: {
+    marginTop: 6,
+    color: colors.textPrimary,
+    fontSize: 11,
+    fontWeight: fontWeight.semibold,
+    textAlign: 'center',
+  },
+  tcNameLocked: { color: 'rgba(255,255,255,0.3)' },
+
+  // Badge detail modal
+  bdBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+  },
+  bdCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#0F0F0F',
+    borderColor: '#1F1F1F',
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: spacing.xl,
+    alignItems: 'center',
+  },
+  bdIconWrap: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bdName: {
+    marginTop: spacing.md,
+    color: colors.textPrimary,
+    fontSize: fontSize.xl,
+    fontWeight: fontWeight.black,
+    letterSpacing: -0.3,
+  },
+  bdRarity: {
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+  },
+  bdRarityText: {
+    fontSize: 10,
+    fontWeight: fontWeight.black,
+    letterSpacing: 1,
+  },
+  bdDesc: {
+    marginTop: spacing.lg,
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: fontSize.sm,
+    lineHeight: 21,
+    textAlign: 'center',
+  },
+  bdDate: {
+    marginTop: spacing.md,
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
+  },
+  bdProgress: {
+    marginTop: spacing.md,
+    color: colors.gold,
+    fontSize: fontSize.lg,
+    fontWeight: fontWeight.black,
+    fontVariant: ['tabular-nums'],
+  },
+  bdClose: {
+    marginTop: spacing.xl,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.xl,
+  },
+  bdCloseText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.bold,
+  },
 });

@@ -5,6 +5,148 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-15 — Achievement system: 30 badges + trophy case + unlock detection + celebration toast
+
+Research feature #8 — Zeigarnik / collection-completion (Pokémon
+GO / Duolingo / Strava / Apple Fitness). The onboarding First
+Strike badge proved the pattern; this gives it depth.
+
+### New — `src/data/badges.ts`
+
+30 badges, pure data. Counts by category: **volume 6, skill 9,
+consistency 7, discovery 5, journal 3** (note: the spec grouped
+Perfect Day/Green Week/Sharpshooter/Big Catch/Whale under skill →
+9 skill; Freeze Saver/Unbreakable under consistency → 7). Each:
+`{ id, name, description, category, condition, icon, rarity }`.
+Icons are MaterialCommunityIcons (lucide never installed — typed
+against the MCI glyph union; `whale`→`cash-multiple` after the
+type-checker rejected `whale`). `RARITY_COLOR` map (common white /
+uncommon green / rare #4A9EFF / epic #9B59B6 / legendary gold).
+
+### New — `src/store/badgeStore.ts`
+
+Persist (`badge-storage-v1`). Unlock ledger
+(`unlockedBadges: { id → ISO }`, idempotent `unlockBadge`) +
+stateful counters that can't be re-derived: `consecutiveWins`,
+`dailySetupsCompleted`, `freezesUsedTotal`. `useUnlockedCount()`
+selector for the dashboard counter + trophy bar.
+
+### New — `src/store/badgeToastStore.ts`
+
+Ephemeral (NOT persisted) FIFO `queue` + `enqueue`/`dequeue`.
+
+### New — `src/utils/badgeChecker.ts`
+
+`buildBadgeContext()` gathers from journal/tradeJournal/streak/
+watchlist/badge stores (trade count, win streak, max single P&L,
+**perfect-day** = any local day ≥3 trades all green,
+**green-week** = any 7 consecutive calendar days each with ≥1
+trade and net P&L > 0, win rate, unique symbols, streak, freezes,
+daily-setups, watchlist size, journaled count). `BADGE_TESTS`
+maps every id → predicate; `evaluateBadges()` unlocks all newly-
+satisfied + enqueues toasts + returns new ids — **re-checks all
+30 every trigger so nothing is ever missed regardless of which
+trigger fired**. `getBadgeProgress(id)` → `{current,target}` for
+count-based badges (null for boolean ones) → locked-badge modal.
+Named wrappers (`checkTradeCloseBadges` advances/resets
+`consecutiveWins` once per close, others delegate to evaluate).
+"Global Trader" uses the curated set `[NQ,ES,CL,GC]` (documented
+— no offline backend market list).
+
+### New — `src/components/BadgeToastHost.tsx`
+
+Transparent-Modal toast (native overlay layer so it never hides
+behind plain content), slides down from the top, 3 s hold + 280 ms
+slides + 1 s inter-toast gap, swipe-up to dismiss early,
+rarity-coloured icon ring + "UNLOCKED" + name, `maybeHaptic` on
+appear. Drains the queue sequentially. Mounted in MainTabs.
+
+### New — `src/hooks/useBadgeWatchers.ts`
+
+Mounted in MainTabs. Runs one full `evaluateBadges()` on entry
+(catches anything already earned from persisted data), then
+subscribes to streakStore: `currentStreak` ↑ → re-evaluate;
+`freezesRemaining` strict-↓ → add the delta to `freezesUsedTotal`
+(drives Freeze Saver / Unbreakable) → re-evaluate. (A freeze is
+also *earned* every 7 days — only a decrease counts as usage.)
+Streak changes never collide with the journal modal, so a
+subscription is safe here.
+
+### Trigger wiring (`TradingScreen.tsx`)
+
+- TradeJournalModal `onSave`: capture closed P&L → save grade →
+  clear `recentClosedTrade` → `checkTradeCloseBadges(pnl)` +
+  `checkJournalBadges()`. `onSkip`: clear → `checkTradeCloseBadges`.
+  Fired **after dismiss** so the toast isn't behind the modal
+  (the spec's "after journal popup dismissed").
+- Close effect's daily-setup match: guarded once-per-day
+  (compare `dailySetupStore.lastCompletedSetupDate` to today
+  before marking) → `incrementDailySetupsCompleted()` +
+  `checkDailySetupBadges()`.
+- `confirmSaveBookmark` success → `checkWatchlistBadges()`.
+
+Implemented as call-site triggers + one streak subscription
+rather than N store-internal hooks — the least invasive option
+(zero streak/store-internal edits; `evaluateBadges` re-checks
+everything so partial wiring still can't miss a badge).
+
+### Trophy case (`LeaderboardScreen.tsx` — the Ranks tab)
+
+Top-level "LEADERBOARD | BADGES" segment toggle (reads
+`route.params.initialSegment` so the dashboard counter deep-links
+to badges). Badges view: "N / 30 unlocked" + gold progress bar,
+category-grouped (`CATEGORY_ORDER`) 4-per-row grid. Unlocked =
+rarity-bordered colour icon + name; locked = `lock` glyph @ 30 %
++ "???". Tap → `BadgeDetailModal`: unlocked shows icon/name/
+rarity pill/description/unlock-date; locked shows lock/"???"/
+rarity/condition + numeric progress when `getBadgeProgress`
+returns non-null. The existing leaderboard/feed/friends FlatList
+is unchanged, just gated behind the rankings segment.
+
+### Dashboard counter (`DashboardScreen.tsx`)
+
+Trophy icon + "N / 30" + "badges" row directly under the Rank
+Progression card; tap → `navigation.navigate('Leaderboard', {
+initialSegment: 'badges' })`. No existing section changed.
+
+### MainTabs (`App.tsx`)
+
+`useBadgeWatchers()` mounted alongside the other entry hooks;
+`<BadgeToastHost/>` added to the overlay-sibling fragment next to
+`<WeeklyRecapModal/>`.
+
+### Reset consistency (`SettingsScreen.tsx`)
+
+Added `useBadgeStore.getState().reset()` to Reset Everything
+(8 stores wiped now). Same data-deletion-completeness principle
+as the watchlist reset.
+
+### Out of scope (deliberate, per prompt)
+
+- > 30 badges, badge sharing (view-shot/dev build),
+  per-badge celebration screens, leaderboard/Firebase.
+- No existing screen changed beyond trigger hooks, the dashboard
+  counter, and the Ranks-tab trophy case (all spec-sanctioned).
+
+### Files touched
+
+- `src/data/badges.ts` (new)
+- `src/store/badgeStore.ts` (new)
+- `src/store/badgeToastStore.ts` (new)
+- `src/utils/badgeChecker.ts` (new)
+- `src/components/BadgeToastHost.tsx` (new)
+- `src/hooks/useBadgeWatchers.ts` (new)
+- `src/screens/TradingScreen.tsx` (trigger wiring)
+- `src/screens/DashboardScreen.tsx` (badge counter)
+- `src/screens/LeaderboardScreen.tsx` (segment toggle + trophy
+  case + detail modal)
+- `App.tsx` (watcher + toast host in MainTabs)
+- `src/screens/SettingsScreen.tsx` (reset includes badges)
+- `PROJECT_CONTEXT.md`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-15 — Custom Watchlist: bookmark setups from chart + dashboard saved section
 
 Research feature #7 — "an artifact that belongs to the user, not

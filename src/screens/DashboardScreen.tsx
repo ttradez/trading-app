@@ -12,6 +12,8 @@ import { useJournalStore, JournalEntry } from '../store/journalStore';
 import { useTradeJournalStore } from '../store/tradeJournalStore';
 import { useIsTodaySetupComplete } from '../store/dailySetupStore';
 import { useWatchlistStore, savedSetupStartUnixSeconds } from '../store/watchlistStore';
+import { useUnlockedCount } from '../store/badgeStore';
+import { BADGE_COUNT } from '../data/badges';
 import {
   getTodaySetup, setupStartUnixSeconds, SetupDifficulty,
 } from '../data/dailySetups';
@@ -190,6 +192,9 @@ export default function DashboardScreen({ navigation }: any) {
 
   // User-curated watchlist (bookmarked from the chart screen).
   const savedSetups = useWatchlistStore((s) => s.savedSetups);
+
+  // Achievement badge progress (counter near rank progression).
+  const unlockedBadges = useUnlockedCount();
 
   // Trade history — auto-persisted on close by TradingScreen.
   const entries = useJournalStore((s) => s.entries);
@@ -473,6 +478,31 @@ export default function DashboardScreen({ navigation }: any) {
             </Text>
           </View>
         </View>
+
+        {/* Badge counter — taps through to the Ranks tab's trophy case. */}
+        <Pressable
+          style={({ pressed }) => [
+            styles.badgeCounter,
+            pressed && { opacity: 0.7 },
+          ]}
+          onPress={() =>
+            navigation.navigate('Leaderboard', { initialSegment: 'badges' })
+          }
+          accessibilityRole="button"
+          accessibilityLabel={`${unlockedBadges} of ${BADGE_COUNT} badges unlocked`}
+        >
+          <Ionicons name="trophy" size={16} color={GOLD} />
+          <Text style={styles.badgeCounterText}>
+            {unlockedBadges} / {BADGE_COUNT}
+          </Text>
+          <Text style={styles.badgeCounterLabel}>badges</Text>
+          <View style={{ flex: 1 }} />
+          <Ionicons
+            name="chevron-forward"
+            size={16}
+            color="rgba(255,255,255,0.3)"
+          />
+        </Pressable>
 
         {/* SECTION 5 — Challenges (placeholder) */}
         <Text style={[styles.sectionTitle, styles.challengesSectionTitle]}>
@@ -873,6 +903,30 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     letterSpacing: 0.1,
+  },
+
+  badgeCounter: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: CARD_BG,
+    borderColor: CARD_BORDER,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    gap: 8,
+  },
+  badgeCounterText: {
+    color: WHITE,
+    fontSize: 14,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  badgeCounterLabel: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 13,
+    fontWeight: '600',
   },
 
   // SECTION 5 — Challenges placeholder

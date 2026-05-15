@@ -14,6 +14,8 @@ import { useAuthStore } from './src/store/authStore';
 import { useStreakManager } from './src/hooks/useStreakManager';
 import { useWeeklyRecapTrigger } from './src/hooks/useWeeklyRecapTrigger';
 import WeeklyRecapModal from './src/components/WeeklyRecapModal';
+import { useBadgeWatchers } from './src/hooks/useBadgeWatchers';
+import BadgeToastHost from './src/components/BadgeToastHost';
 import { colors } from './src/theme';
 
 import LoginScreen        from './src/screens/LoginScreen';
@@ -65,6 +67,11 @@ function MainTabs() {
   // on app open (once per mount). Renders the modal as an overlay
   // sibling of the tab navigator below.
   const { recap: weeklyRecap, dismiss: dismissRecap } = useWeeklyRecapTrigger();
+
+  // Achievement badges: full re-evaluation on entry + streak/freeze
+  // subscription. Trade/journal/daily-setup/watchlist triggers fire
+  // at their call sites in TradingScreen.
+  useBadgeWatchers();
 
   // Load persisted journal entries from AsyncStorage so the
   // dashboard's stats + recent-trades section have real data on
@@ -125,6 +132,7 @@ function MainTabs() {
       recap={weeklyRecap}
       onClose={dismissRecap}
     />
+    <BadgeToastHost />
     </>
   );
 }

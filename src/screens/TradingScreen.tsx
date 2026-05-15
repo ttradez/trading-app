@@ -19,6 +19,12 @@ import { useDailySetupStore } from '../store/dailySetupStore';
 import { getTodaySetup } from '../data/dailySetups';
 import { useWatchlistStore, useSavedSetup } from '../store/watchlistStore';
 import { maybeHaptic } from '../store/settingsStore';
+import { getTodayYMD } from '../store/streakStore';
+import { useBadgeStore } from '../store/badgeStore';
+import {
+  checkTradeCloseBadges, checkJournalBadges,
+  checkDailySetupBadges, checkWatchlistBadges,
+} from '../utils/badgeChecker';
 import EconomicCalendarPanel from '../components/EconomicCalendarPanel';
 import { getEventsForDate } from '../data/economicCalendar';
 import { useDrawingsStore } from '../store/drawingsStore';
@@ -338,7 +344,16 @@ export default function TradingScreen({ route }: any) {
       const pad = (n: number) => (n < 10 ? '0' + n : '' + n);
       const tradeYMD = `${p.y}-${pad(p.mo)}-${pad(p.d)}`;
       if (tradeYMD === todaySetup.date) {
+        // Count one daily-setup completion per distinct day (guard
+        // against the every-matching-close re-fire).
+        const today = getTodayYMD();
+        const alreadyDone =
+          useDailySetupStore.getState().lastCompletedSetupDate === today;
         markDailySetupComplete();
+        if (!alreadyDone) {
+          useBadgeStore.getState().incrementDailySetupsCompleted();
+          checkDailySetupBadges();
+        }
       }
     }
   }, [recentClosedTrade, addJournalEntry, todaySetup, markDailySetupComplete]);
@@ -763,6 +778,7 @@ export default function TradingScreen({ route }: any) {
       );
     } else {
       maybeHaptic();
+      checkWatchlistBadges();
     }
   };
   const confirmRemoveBookmark = () => {
@@ -1193,12 +1209,24 @@ export default function TradingScreen({ route }: any) {
         visible={!!recentClosedTrade}
         trade={tradeJournalSummary}
         onSave={(data) => {
+          const closedPnl =
+            typeof recentClosedTrade?.pnl === 'number' ? recentClosedTrade.pnl : 0;
           if (recentClosedTrade?.id) {
             saveTradeJournalEntry(recentClosedTrade.id, data);
           }
           setRecentClosedTrade(null);
+          // Fire badge checks AFTER the journal modal is dismissed so
+          // the celebration toast isn't hidden behind it. A grade was
+          // just saved → journal badges too.
+          checkTradeCloseBadges(closedPnl);
+          checkJournalBadges();
         }}
-        onSkip={() => setRecentClosedTrade(null)}
+        onSkip={() => {
+          const closedPnl =
+            typeof recentClosedTrade?.pnl === 'number' ? recentClosedTrade.pnl : 0;
+          setRecentClosedTrade(null);
+          checkTradeCloseBadges(closedPnl);
+        }}
       />
 
       {/* Watchlist bookmark — save (with optional note) / remove. */}
