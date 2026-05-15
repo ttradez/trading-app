@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import {
   View, Text, Pressable, Animated, Easing, StyleSheet,
 } from 'react-native';
+import { TradeGrade } from '../store/tradeJournalStore';
 
 /**
  * TradeCard — single-row presentation of a closed or open trade.
@@ -55,6 +56,10 @@ export interface TradeCardProps {
   exitTime: number | null;
   contracts: number;
   status: TradeStatus;
+  /** Optional execution grade (from tradeJournalStore). Undefined
+   *  if the trade hasn't been journaled — no shame marker is shown
+   *  in that case, just no pill at all. */
+  grade?: TradeGrade;
   /** Optional tap handler. Used by JournalScreen to open the edit
    *  modal; Dashboard passes nothing. */
   onPress?: () => void;
@@ -158,7 +163,7 @@ function OpenDot() {
 export default function TradeCard(props: TradeCardProps) {
   const {
     symbol, direction, entryPrice, exitPrice, pnl, entryTime, exitTime,
-    contracts, status, onPress,
+    contracts, status, grade, onPress,
   } = props;
 
   const isOpen = status === 'open';
@@ -190,14 +195,21 @@ export default function TradeCard(props: TradeCardProps) {
             </View>
           </View>
 
-          {isOpen ? (
-            <View style={styles.statusRow}>
-              <OpenDot />
-              <Text style={styles.statusOpenText}>OPEN</Text>
-            </View>
-          ) : (
-            <Text style={styles.statusClosedText}>CLOSED</Text>
-          )}
+          <View style={styles.statusRow}>
+            {!isOpen && grade && (
+              <View style={styles.gradePill}>
+                <Text style={styles.gradePillText}>{grade}</Text>
+              </View>
+            )}
+            {isOpen ? (
+              <>
+                <OpenDot />
+                <Text style={styles.statusOpenText}>OPEN</Text>
+              </>
+            ) : (
+              <Text style={styles.statusClosedText}>CLOSED</Text>
+            )}
+          </View>
         </View>
 
         {/* Middle — prices + hero P&L */}
@@ -320,6 +332,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 1,
+  },
+
+  // Journaled-trade grade pill — gold border + gold text, sits to
+  // the left of the "CLOSED" label. Only renders when `grade` is
+  // set; unjournaled trades show nothing here (no shame marker).
+  gradePill: {
+    marginRight: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: GOLD,
+    backgroundColor: 'rgba(255,184,0,0.12)',
+  },
+  gradePillText: {
+    color: GOLD,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
 
   // Middle

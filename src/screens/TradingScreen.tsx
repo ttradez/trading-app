@@ -12,7 +12,8 @@ import DrawingToolbar from '../components/chart/DrawingToolbar';
 import DrawingSettingsModal from '../components/chart/DrawingSettingsModal';
 import DrawingFavoritesBar from '../components/chart/DrawingFavoritesBar';
 import MagnetToggle from '../components/chart/MagnetToggle';
-import TradeCardModal from '../components/TradeCardModal';
+import TradeJournalModal, { TradeSummary } from '../components/TradeJournalModal';
+import { useTradeJournalStore } from '../store/tradeJournalStore';
 import EconomicCalendarPanel from '../components/EconomicCalendarPanel';
 import { getEventsForDate } from '../data/economicCalendar';
 import { useDrawingsStore } from '../store/drawingsStore';
@@ -269,6 +270,21 @@ export default function TradingScreen() {
   const [tfWheelOpen, setTfWheelOpen] = useState(false);
   const [marketWheelOpen, setMarketWheelOpen] = useState(false);
   const [recentClosedTrade, setRecentClosedTrade] = useState<any | null>(null);
+  const saveTradeJournalEntry = useTradeJournalStore((s) => s.saveEntry);
+
+  // Adapt the snake_case backend close payload into the journal
+  // modal's `TradeSummary` shape. Defensive defaults because the
+  // auto-close path can omit fields if the backend skipped them
+  // (legacy quirk — mirrored from `TradeCardModal`).
+  const tradeJournalSummary: TradeSummary | null = useMemo(() => {
+    if (!recentClosedTrade) return null;
+    return {
+      id:        String(recentClosedTrade.id ?? ''),
+      symbol:    recentClosedTrade.symbol ?? '',
+      direction: recentClosedTrade.side === 'sell' ? 'short' : 'long',
+      pnl:       typeof recentClosedTrade.pnl === 'number' ? recentClosedTrade.pnl : 0,
+    };
+  }, [recentClosedTrade]);
   const [newsOpen, setNewsOpen] = useState(false);
   const [closeConfirmId, setCloseConfirmId] = useState<string | null>(null);
 
@@ -1017,10 +1033,22 @@ export default function TradingScreen() {
       {/* Per-drawing settings — appears whenever a drawing on the chart is selected. */}
       <DrawingSettingsModal />
 
-      {/* Trade summary card — pops after every closed trade (manual or SL/TP hit). */}
-      <TradeCardModal
-        trade={recentClosedTrade}
-        onClose={() => setRecentClosedTrade(null)}
+      {/* Trade journal — auto-pops after every closed trade (manual
+          close or SL/TP hit). Pressing Save persists the grade /
+          emotions / note into `tradeJournalStore` keyed by trade id;
+          Skip just dismisses. Onboarding screen 9's first-trade
+          flow does NOT route through this screen, so the journal
+          popup deliberately never fires there. */}
+      <TradeJournalModal
+        visible={!!recentClosedTrade}
+        trade={tradeJournalSummary}
+        onSave={(data) => {
+          if (recentClosedTrade?.id) {
+            saveTradeJournalEntry(recentClosedTrade.id, data);
+          }
+          setRecentClosedTrade(null);
+        }}
+        onSkip={() => setRecentClosedTrade(null)}
       />
 
       {/* Display-timezone picker — purely cosmetic; never feeds the seek logic. */}

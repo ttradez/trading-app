@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing, fontSize, fontWeight, labelStyle } from '../theme';
 import { useJournalStore, JournalEntry, Emotion } from '../store/journalStore';
 import TradeCard from '../components/TradeCard';
+import { useTradeJournalStore } from '../store/tradeJournalStore';
 
 const EMOTIONS: { id: Emotion; label: string; icon: string; color: string }[] = [
   { id: 'fear',         label: 'Fear',         icon: 'eye-off-outline',     color: '#A855F7' },
@@ -106,18 +107,7 @@ export default function JournalScreen() {
           contentContainerStyle={styles.listContent}
           ItemSeparatorComponent={() => <View style={styles.listGap} />}
           renderItem={({ item }) => (
-            <TradeCard
-              symbol={item.symbol}
-              direction={item.side === 'buy' ? 'long' : 'short'}
-              entryPrice={item.entryPrice}
-              exitPrice={item.exitPrice}
-              pnl={item.pnl}
-              entryTime={item.openedAt}
-              exitTime={item.closedAt}
-              contracts={item.lots}
-              status="closed"
-              onPress={() => setEditing(item)}
-            />
+            <JournalTradeCard entry={item} onPress={() => setEditing(item)} />
           )}
         />
       )}
@@ -125,6 +115,31 @@ export default function JournalScreen() {
       {/* Edit modal */}
       <EntryEditModal entry={editing} onClose={() => setEditing(null)} />
     </SafeAreaView>
+  );
+}
+
+/** Per-row wrapper that looks the journaled grade up by entry id
+ *  and forwards it into TradeCard. Defined as its own component so
+ *  the hook call is legal (one per row, not one per iteration in
+ *  a render callback). */
+function JournalTradeCard({
+  entry, onPress,
+}: { entry: JournalEntry; onPress: () => void }) {
+  const grade = useTradeJournalStore((s) => s.entries[entry.id]?.grade);
+  return (
+    <TradeCard
+      symbol={entry.symbol}
+      direction={entry.side === 'buy' ? 'long' : 'short'}
+      entryPrice={entry.entryPrice}
+      exitPrice={entry.exitPrice}
+      pnl={entry.pnl}
+      entryTime={entry.openedAt}
+      exitTime={entry.closedAt}
+      contracts={entry.lots}
+      status="closed"
+      grade={grade}
+      onPress={onPress}
+    />
   );
 }
 

@@ -10,6 +10,7 @@ import { colors, radius, spacing, fontSize, fontWeight, labelStyle } from '../th
 import { EquityCurve, WinLossBar, DailyPnlSpark, StreakTracker } from '../components/DashboardCharts';
 import StreakBadge from '../components/StreakBadge';
 import TradeCard from '../components/TradeCard';
+import { useTradeJournalStore } from '../store/tradeJournalStore';
 import { computeRank } from '../utils/ranks';
 
 type MCIName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
@@ -229,18 +230,7 @@ export default function DashboardScreen({ navigation }: any) {
       ) : (
         <View style={styles.tradeList}>
           {trades.slice(0, 20).map((t) => (
-            <TradeCard
-              key={t.id}
-              symbol={t.symbol}
-              direction={t.side === 'buy' ? 'long' : 'short'}
-              entryPrice={t.entryPrice}
-              exitPrice={t.exitPrice}
-              pnl={t.pnl}
-              entryTime={t.openedAt}
-              exitTime={t.closedAt}
-              contracts={t.lots}
-              status="closed"
-            />
+            <DashboardTradeCard key={t.id} trade={t} />
           ))}
         </View>
       )}
@@ -255,6 +245,28 @@ function StatCard({ label, value, color }: { label: string; value: string; color
       <Text style={styles.statLabel}>{label}</Text>
       <Text style={[styles.statValue, color && { color }]}>{value}</Text>
     </View>
+  );
+}
+
+/** Thin wrapper that looks the journaled grade up per-trade and
+ *  forwards everything else to TradeCard. Defined as its own
+ *  component (not an inline render in the .map) so each iteration
+ *  legally calls a hook. */
+function DashboardTradeCard({ trade }: { trade: any }) {
+  const grade = useTradeJournalStore((s) => s.entries[trade.id]?.grade);
+  return (
+    <TradeCard
+      symbol={trade.symbol}
+      direction={trade.side === 'buy' ? 'long' : 'short'}
+      entryPrice={trade.entryPrice}
+      exitPrice={trade.exitPrice}
+      pnl={trade.pnl}
+      entryTime={trade.openedAt}
+      exitTime={trade.closedAt}
+      contracts={trade.lots}
+      status="closed"
+      grade={grade}
+    />
   );
 }
 

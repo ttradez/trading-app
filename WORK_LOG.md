@@ -5,6 +5,154 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-14 — Trade journal: auto-popup on trade close with grade + emotions + notes
+
+Builds the post-trade reflection habit by design: every trade
+close auto-opens a modal that captures grade / emotions /
+optional note. Low-friction (one required field, two optional);
+modal subsumes the older "click to journal" affordance.
+
+### New file — `src/store/tradeJournalStore.ts`
+
+Persisted Zustand store, AsyncStorage-backed, key
+`trade-journal-storage-v1`. Shape:
+
+```ts
+entries: Record<tradeId, {
+  grade: 'A+' | 'A' | 'B' | 'C' | 'F',
+  emotions: string[],           // 0-3 entries
+  note: string | null,          // max 280 chars
+  journaledAt: string,          // ISO datetime
+}>
+```
+
+Actions: `saveEntry(tradeId, data)` (stamps `journaledAt`),
+`getEntry(tradeId)`, `reset()`. The convenience hook
+`useTradeJournalGrade(tradeId)` is exported for TradeCard
+consumers — selects `entries[id]?.grade` so re-renders are
+narrow.
+
+Deliberately **separate from the legacy `journalStore`**, which
+still carries the older `notes / mistakes / wentWell / emotion /
+confidence / strategy / tags` schema (captured manually via
+`EntryEditModal`). Both stores can hold data for the same trade
+id; the two will be reconciled when the analytics pass lands.
+
+### New file — `src/components/TradeJournalModal.tsx`
+
+Full-screen overlay (`rgba(0,0,0,0.85)` backdrop, centered card,
+`maxWidth: 480`, `maxHeight: 90 %`). `KeyboardAvoidingView` with
+`behavior: 'padding'` on iOS so the note input lifts above the
+keyboard. Content is wrapped in a `ScrollView` with
+`keyboardShouldPersistTaps="handled"` so chip taps work while
+the keyboard is up.
+
+Sections (top → bottom):
+
+1. **Trade summary row** — symbol + LONG/SHORT pill + P&L on
+   one line. Direction pill matches the TradeCard variant (green
+   pill with black text for LONG, red pill with white text for
+   SHORT). P&L sized 22 px / 800 weight, color-keyed by sign.
+2. **GRADE YOUR EXECUTION** — single-select radio row of 5
+   chips (A+ / A / B / C / F). 48 px tall, `flex: 1` so they
+   share width. Selected = 2 px gold border; default = 1 px
+   `#2A2A2A` border. Setting any grade unlocks Save.
+3. **HOW DID YOU FEEL?** — multi-select grid of 8 chips in a
+   wrapping row. 4 positive tags accent green when selected;
+   4 negative tags accent red. Cap of 3 — tapping a 4th drops
+   the oldest selection (no silent dead-end).
+4. **QUICK NOTE** — multiline `TextInput`, 80 px min-height,
+   `maxLength: 280`. Placeholder "What did you learn?" at 30 %
+   white. `selectionColor` set to gold so the cursor matches
+   the brand.
+5. **Save** (full-width gold CTA, disabled until a grade is
+   picked) and **Skip** (centered text link, white at 40 %
+   opacity).
+
+Pure-presentation: takes a `trade: TradeSummary | null` (just
+`id / symbol / direction / pnl`) plus `onSave / onSkip`
+callbacks. Doesn't touch any store directly — the consumer
+threads the data into `tradeJournalStore.saveEntry`. State
+(grade / emotions / note) resets on every modal open via a
+`useEffect` on `visible + trade.id`, so a previous trade's
+selections don't bleed into the next one.
+
+### Wiring — `src/screens/TradingScreen.tsx`
+
+- Existing `recentClosedTrade` state (set on both the manual
+  close at line 720 and the TP/SL auto-close at line 652) is
+  the modal trigger — `visible={!!recentClosedTrade}`.
+- The snake_case backend payload (`{ id, symbol, side, pnl, ...}`)
+  is adapted to the modal's `TradeSummary` via a `useMemo` —
+  defensive defaults match the legacy `TradeCardModal` pattern
+  in case the auto-close path omits fields.
+- Save handler: `saveTradeJournalEntry(recentClosedTrade.id, ...)`
+  then `setRecentClosedTrade(null)`. Skip: just clear the state.
+- The legacy `<TradeCardModal trade=... onClose=... />` JSX
+  is replaced. The component file `TradeCardModal.tsx` is
+  preserved (not deleted) — same pattern as `NewsPanel.tsx`
+  earlier; the file is unused now but available for future
+  re-wire if the rich-stats panel becomes useful again.
+- Onboarding screen 9 never mounts `TradingScreen` (its own
+  `OnboardingFirstTradeScreen` renders the activation event +
+  result overlay), so the journal modal is structurally
+  prevented from firing there.
+
+### Wiring — `src/components/TradeCard.tsx`
+
+- New optional `grade?: TradeGrade` prop.
+- Top-right status area now renders a small **gold-bordered
+  grade pill** to the left of the "CLOSED" / "OPEN" label
+  when `grade` is set (e.g. `[A+] CLOSED`). Unjournaled
+  trades render nothing in that slot — explicitly no "missing"
+  / shame marker per the spec.
+- Pill: `1 px` gold border, `rgba(255,184,0,0.12)` tinted fill,
+  11 px / 900 weight gold text, 7 px horizontal / 2 px vertical
+  padding. Sized to read as a chip, not a button.
+
+### Wiring — `DashboardScreen.tsx` + `JournalScreen.tsx`
+
+- Both screens grew a small wrapper component
+  (`DashboardTradeCard` / `JournalTradeCard`) that takes the
+  raw trade row, calls
+  `useTradeJournalStore((s) => s.entries[id]?.grade)` exactly
+  once per row, and forwards everything else to `TradeCard`.
+  Required so each row's hook call is legal — hooks can't run
+  inside a `.map` render callback.
+- Mapping from the raw row → `TradeCard` props is identical
+  to the prior commit (`side → direction`, `lots → contracts`,
+  `openedAt → entryTime`, `closedAt → exitTime`); only the
+  added `grade` prop is new.
+
+### Out of scope (deliberate)
+
+- Journal analytics (win rate by grade, P&L by emotion) — the
+  data lands now, the rollups are a follow-up.
+- Editing a journal entry after Save (`saveEntry` overwrites if
+  called again, but there's no UI affordance yet).
+- Detail view of a journal entry.
+- Screen 9 / onboarding journal (the activation event has its
+  own result overlay).
+- Trade placement / closing logic — only the post-close popup
+  trigger was changed.
+- Firebase sync — the new store is local-only.
+
+### Files touched
+
+- `src/store/tradeJournalStore.ts` (new)
+- `src/components/TradeJournalModal.tsx` (new)
+- `src/components/TradeCard.tsx` (optional `grade` prop + pill)
+- `src/screens/TradingScreen.tsx` (swap close-modal target,
+  adapt the close payload to `TradeSummary`)
+- `src/screens/DashboardScreen.tsx` (per-row grade lookup
+  wrapper)
+- `src/screens/JournalScreen.tsx` (per-row grade lookup
+  wrapper)
+- `PROJECT_CONTEXT.md`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-14 — Trade card redesign: professional trade history cards
 
 Replaces three different trade-row implementations (inline
