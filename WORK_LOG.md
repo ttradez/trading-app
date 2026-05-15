@@ -5,6 +5,136 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-14 — Streak visual system: StreakBadge + streakStore + dashboard placement + screen 12 teaser
+
+Ben specifically asked for a fire icon with a day-count; the audit
+spec'd 5 visual states. This commit ships the **visual layer**
+only — the actual increment / reset / freeze-consumption logic is
+deferred (see PROJECT_CONTEXT follow-up #2). Visual is split
+across two new files plus two screen edits so the logic follow-up
+can hook into a stable component surface.
+
+### New file — `src/components/StreakBadge.tsx`
+
+Reusable component. Props: `count`, `status`, `size`.
+
+Five visual states (`status`):
+
+| State | Flame | Overlay | Count |
+|---|---|---|---|
+| `'active'` | gold `#FFB800` filled | — | white bold |
+| `'milestone'` | orange-gold `#FF9500` filled + `textShadow` glow | gold sparkle (`star-four-points`) top-right | gold bold |
+| `'at_risk'` | gold filled @ **0.35 opacity** | — | white @ 0.5 |
+| `'frozen'` | gold filled | snowflake (`snowflake`, `#87CEEB`) bottom-right | white bold |
+| `'broken'` | grey `#666` | red X (`close-thick`, `#FF4757`) bottom-right | grey `"0"` |
+
+A sixth status `'new'` is an alias that renders identically to
+`'at_risk'` — a brand-new user "has" an at-risk streak of 0
+("train today to start") rather than a broken streak they never
+had.
+
+Two sizes (driven by a single `SIZES` config map at the top of
+the file so future call sites can re-skin without forking):
+
+- `'small'` — flame 24 px / count 14 px (dashboard header)
+- `'large'` — flame 48 px / count 24 px (future celebration /
+  profile)
+
+#### Icon library caveat (recorded so the next reader doesn't trip on it)
+
+The prompt referenced `lucide-react-native` (Flame, Snowflake, X,
+Sparkles, Zap). That library is **not installed in this project**
+— `@expo/vector-icons` is. Mapped to nearest MaterialCommunityIcons
+glyphs:
+
+| Lucide | MCI | Used for |
+|---|---|---|
+| Flame (filled) | `fire` | active / milestone / frozen / broken |
+| Flame (outline) | *(no glyph)* | see below |
+| Snowflake | `snowflake` | frozen overlay |
+| X mark | `close-thick` | broken overlay |
+| Sparkles | `star-four-points` | milestone sparkle |
+| Zap | `lightning-bolt` | screen 12 teaser |
+
+MCI doesn't expose `fire-outline` (verified against the type
+definitions — TS error: "Did you mean 'file-outline'?"). For the
+`'at_risk'` state we render the filled `fire` glyph at opacity
+0.35 — reads as "ghosted flame", same intent ("streak alive but
+dim, train today"). Documented inline.
+
+#### Milestone glow without a new dep
+
+Native RN doesn't have an icon-glow primitive; `expo-linear-
+gradient` would be a new install. Workaround: MCI renders its
+glyph as a `<Text>` element under the hood, so `textShadowColor /
+textShadowOffset / textShadowRadius` propagate through to it and
+produce a cross-platform halo at zero cost. Used here with an
+orange-tinted shadow at `radius: 8` for a subtle bloom.
+
+### New file — `src/store/streakStore.ts`
+
+Zustand store, same pattern as `onboardingStore`. State:
+
+```ts
+currentStreak: number             // default 0
+streakStatus: StreakStatus        // default 'new'
+freezesRemaining: number          // default 2 (matches screen-12 copy)
+lastCompletedDate: string | null  // default null
+```
+
+Plus `setStreak / setFreezes / setLastCompletedDate / reset`
+mutators. **No business-logic actions yet** — the daily check /
+increment / freeze consumption / milestone detection all live in
+the deferred follow-up. The top-of-file doc-comment explicitly
+flags this so a future reader doesn't expect them.
+
+### Dashboard placement — `src/screens/DashboardScreen.tsx`
+
+Header is a flex row with `space-between`. The right side
+previously held one round gold + button; it's now a `headerRight`
+flex row of two children: `<StreakBadge size="small">` (reading
+live from `streakStore`) on the left, the existing add button on
+the right. 14 px gap between them, vertically centered.
+
+With the default store state (`0` / `'new'`), the dashboard
+renders the ghosted flame + faded `0` — first-load reads as
+"your streak is at 0, train today to start" rather than something
+celebratory the user hasn't earned yet.
+
+### Screen 12 teaser — `src/screens/OnboardingWelcomeScreen.tsx`
+
+Inserted between the DAILY TRAINING GOAL card and the "Enter app"
+CTA — a one-row flex with a small gold `lightning-bolt` (16 px,
+the Zap equivalent) + "Your streak starts today." in white at 0.5
+opacity, 13 px / 500 weight. Shares the existing `buttonOp`
+fade-in so it appears at the same beat as the CTA.
+
+**Deliberately NOT a StreakBadge with `"0"`** — per the prompt,
+a literal zero count right before the user enters the app for the
+first time reads as deflating. The spark + text is the right tone
+for "this is about to start".
+
+### Out of scope (deliberate)
+
+- Streak increment / reset / freeze-consumption logic (deferred —
+  PROJECT_CONTEXT follow-up #2).
+- Milestone celebration screens (separate feature).
+- Streak display anywhere beyond the dashboard header (profile,
+  leaderboard, etc. — later).
+- No new dependencies. (Specifically: no `lucide-react-native`,
+  no `expo-linear-gradient`.)
+
+### Files touched
+
+- `src/components/StreakBadge.tsx` (new)
+- `src/store/streakStore.ts` (new)
+- `src/screens/DashboardScreen.tsx` (header right side)
+- `src/screens/OnboardingWelcomeScreen.tsx` (teaser row)
+- `PROJECT_CONTEXT.md`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-14 — Polish: splash timing + simulator trust line + auth button hierarchy
 
 Three one-line-level fixes from `docs/ONBOARDING_AUDIT.md`, each

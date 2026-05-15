@@ -3,6 +3,7 @@ import {
   View, Text, Pressable, Animated, StyleSheet, StatusBar, ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useOnboardingStore } from '../store/onboardingStore';
 
@@ -162,6 +163,20 @@ export default function OnboardingWelcomeScreen({ navigation }: Props) {
             You start with 2 freezes.
           </Text>
         </Animated.View>
+
+        {/* Streak teaser — small gold spark + line below the card.
+            Intentionally NOT a StreakBadge with "0" here; a literal
+            zero feels deflating right before the user enters the app
+            for the first time. */}
+        <Animated.View style={[styles.teaserRow, { opacity: buttonOp }]}>
+          <MaterialCommunityIcons
+            name="lightning-bolt"
+            size={16}
+            color={GOLD}
+            style={styles.teaserIcon}
+          />
+          <Text style={styles.teaserText}>Your streak starts today.</Text>
+        </Animated.View>
       </ScrollView>
 
       <Animated.View
@@ -238,6 +253,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '400',
     lineHeight: 17,
+  },
+
+  // Streak teaser — small gold spark + muted line between the card
+  // and the CTA. Deliberately fine-print weight; a literal "0"-count
+  // StreakBadge here would read as deflating right before the user
+  // enters the app.
+  teaserRow: {
+    marginTop: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  teaserIcon: {
+    marginRight: 6,
+  },
+  teaserText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 13,
+    fontWeight: '500',
+    letterSpacing: 0.1,
   },
 
   // Chips — single vertical stack, full-width

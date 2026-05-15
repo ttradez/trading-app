@@ -4,8 +4,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { getAccount, getTrades } from '../services/api';
 import { useAuthStore } from '../store/authStore';
+import { useStreakStore } from '../store/streakStore';
 import { colors, radius, spacing, fontSize, fontWeight, labelStyle } from '../theme';
 import { EquityCurve, WinLossBar, DailyPnlSpark, StreakTracker } from '../components/DashboardCharts';
+import StreakBadge from '../components/StreakBadge';
 import { computeRank } from '../utils/ranks';
 
 const RANK_COLORS: Record<string, string> = {
@@ -26,6 +28,8 @@ const RANK_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
 
 export default function DashboardScreen({ navigation }: any) {
   const { uid, username } = useAuthStore();
+  const streakCount  = useStreakStore((s) => s.currentStreak);
+  const streakStatus = useStreakStore((s) => s.streakStatus);
   const [account, setAccount] = useState<any>(null);
   const [trades, setTrades] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -80,9 +84,12 @@ export default function DashboardScreen({ navigation }: any) {
           <Text style={styles.username}>@{username}</Text>
           <Text style={styles.subtitle}>Your trading dashboard</Text>
         </View>
-        <TouchableOpacity style={styles.headerIconBtn} onPress={() => navigation.navigate('Chart')}>
-          <Ionicons name="add" size={22} color={colors.bg} />
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <StreakBadge count={streakCount} status={streakStatus} size="small" />
+          <TouchableOpacity style={styles.headerIconBtn} onPress={() => navigation.navigate('Chart')}>
+            <Ionicons name="add" size={22} color={colors.bg} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Rank Badge — driven by XP from total trades / win rate / return */}
@@ -230,6 +237,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
   username: { color: colors.textPrimary, fontSize: fontSize.xxl, fontWeight: fontWeight.black },
   subtitle: { color: colors.textSecondary, fontSize: fontSize.sm, marginTop: 2 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   headerIconBtn: {
     width: 40, height: 40, borderRadius: 20,
     backgroundColor: colors.gold, alignItems: 'center', justifyContent: 'center',
