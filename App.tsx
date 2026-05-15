@@ -25,6 +25,7 @@ import JournalScreen      from './src/screens/JournalScreen';
 // dashboard's "Challenges" section is the placeholder for now.
 // Component file is preserved for a future re-wire.
 import DisclaimerScreen   from './src/screens/DisclaimerScreen';
+import SettingsScreen     from './src/screens/SettingsScreen';
 import { useJournalStore } from './src/store/journalStore';
 import OnboardingSplashScreen    from './src/screens/OnboardingSplashScreen';
 import OnboardingPremiseScreen   from './src/screens/OnboardingPremiseScreen';
@@ -209,6 +210,9 @@ export default function App() {
                 user lands on the bottom-tab navigator and can't
                 navigate back into onboarding. */}
             <Stack.Screen name="Main"                  component={MainTabs}                    options={{ gestureEnabled: false }} />
+            {/* Pushed from the dashboard gear icon — slides in over
+                the tab navigator with its own in-screen back button. */}
+            <Stack.Screen name="Settings"              component={SettingsScreen} />
           </Stack.Navigator>
         </NavigationContainer>
       </SafeAreaProvider>
@@ -236,6 +240,7 @@ export default function App() {
           ) : (
             <>
               <Stack.Screen name="Main"         component={MainTabs} />
+              <Stack.Screen name="Settings"     component={SettingsScreen} />
               <Stack.Screen name="FeatureTour"  component={FeatureTourScreen} />
             </>
           )}

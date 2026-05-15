@@ -226,7 +226,22 @@ export default function DashboardScreen({ navigation }: any) {
               <Text style={styles.archetypeName}>Trader</Text>
             )}
           </View>
-          <StreakBadge count={streakCount} status={streakStatus} size="small" />
+          <View style={styles.headerRight}>
+            <StreakBadge count={streakCount} status={streakStatus} size="small" />
+            <Pressable
+              onPress={() => navigation.navigate('Settings')}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityRole="button"
+              accessibilityLabel="Settings"
+              style={styles.gearBtn}
+            >
+              <Ionicons
+                name="settings-outline"
+                size={20}
+                color="rgba(255,255,255,0.5)"
+              />
+            </Pressable>
+          </View>
         </View>
 
         {/* TODAY'S MISSION — the cold-start solver, top card. */}
@@ -461,6 +476,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   headerLeft: { flexShrink: 1, paddingRight: 12 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  gearBtn: { padding: 2 },
   archetypeRow: { flexDirection: 'row', alignItems: 'center' },
   archetypeIcon: { marginRight: 6 },
   archetypeName: {

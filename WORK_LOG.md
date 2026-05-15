@@ -5,6 +5,111 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-15 — Settings screen: profile + training + preferences + data management + about
+
+No settings surface existed. Adding one telegraphs maturity and
+gives the user control; the high-value piece per research is CSV
+export for traders who track P&L externally.
+
+### New file — `src/store/settingsStore.ts`
+
+Persisted Zustand (`zustand/middleware` + AsyncStorage, key
+`settings-storage-v1`). Fields: `hapticsEnabled` (default true),
+`defaultContractSize` (default 1). Exports `maybeHaptic(style)`
+and `maybeNotificationHaptic(type)` — enabled-gated wrappers that
+read the store via `getState()` so non-React call sites can use
+them. **Existing `Haptics.*` call sites are intentionally NOT
+refactored onto these** (explicit follow-up, per the prompt).
+
+### `journalStore` — added `reset()`
+
+`AsyncStorage.removeItem(KEY)` + `set({ entries: [] })`. Needed
+for Settings → Reset Everything. The other stores already had
+resets (`onboardingStore.reset`, `streakStore.reset`,
+`tradeJournalStore.reset`, `dailySetupStore.reset`).
+
+### New file — `src/screens/SettingsScreen.tsx`
+
+Pure-black `SafeAreaView` + `ScrollView`. In-screen header with a
+back chevron (`navigation.goBack()`), since the stack runs
+`headerShown: false`. Reusable `Section` / `Row` / `Separator` /
+`SelectModal` primitives.
+
+**Profile** — Display Name (tap → inline `TextInput` with a
+Save action → `onboardingStore.setDisplayName`); Handle
+(read-only `@handle`, lock icon + "Change requires sign-in" —
+editing needs a Firebase uniqueness check, deferred); Archetype
+(name + sigil icon, read-only — 4th inline copy of the
+ARCHETYPE_META map, convergence still deferred); Rank ("Gambler",
+read-only, matches the dashboard's hardcoded post-onboarding
+state).
+
+**Training** — Daily Time Goal (SelectModal 15/30/60/90/120 →
+`setDailyTimeGoal`), Daily Commitment (SelectModal
+light/steady/pro with full descriptive labels → `setDailyCommitment`,
+displayed short), Default Contract Size (SelectModal 1-10 →
+`settingsStore.setDefaultContractSize`).
+
+**Preferences** — "Haptic feedback" RN `Switch` (gold
+`#FFB800` on, `#333` off) + sublabel, bound to
+`settingsStore.hapticsEnabled`.
+
+**Data** —
+- *Export Trades (CSV)*: joins `journalStore.entries` (trade
+  data) with `tradeJournalStore.entries` (grade/emotions/note)
+  by `tradeId`. Columns: Date, Symbol, Direction, Entry Price,
+  Exit Price, P&L, Duration, Grade, Emotions, Note. RFC-4180
+  cell quoting (`csvCell` quotes + doubles internal quotes when
+  a cell has `,`/`"`/newline — the free-text note especially).
+  Shared via **`Share.share({ message: csv })`** — works in
+  Expo Go with zero new deps (a true file share would need
+  expo-file-system/expo-sharing; the prompt explicitly chose
+  the no-dependency path). Empty history → `Alert('No trades
+  to export yet.')`.
+- *Reset Streak*: single confirm → `streakStore.reset()`.
+- *Reset Everything*: **double** confirm → wipes
+  onboarding/streak/settings/journal/tradeJournal/dailySetup
+  stores, then `navigation.reset({ routes: [{ name:
+  'OnboardingSplash' }] })`.
+
+**About** — Version (`app.json` → `expo.version`, "Pocket Trade
+v1.0.0"), Support (`mailto:ben@sitesbyben.ca` via `Linking`),
+Terms / Privacy (console.log stubs — real links later).
+
+### Wiring
+
+- `App.tsx`: imported `SettingsScreen`, registered
+  `<Stack.Screen name="Settings">` as a sibling of `Main` in
+  BOTH the FORCE_ONBOARDING_FLOW stack and the production
+  authed stack. From the tab-nested dashboard,
+  `navigation.navigate('Settings')` bubbles up to the parent
+  stack (React Navigation v6 behavior), so it slides in over
+  the tabs with the screen's own back button.
+- `DashboardScreen.tsx`: gear icon (`Ionicons settings-outline`,
+  20 px, white-50 %) added to the header right side, to the
+  right of the `StreakBadge`, inside a new `headerRight` flex
+  row. `lucide-react-native` still not installed — Ionicons is
+  the substitute (consistent with the rest of the dashboard).
+
+### Out of scope (deliberate, per prompt)
+
+- Handle editing (Firebase uniqueness check).
+- Sound toggle (no sound system), notification prefs (dev build).
+- Refactoring existing haptic calls onto `maybeHaptic`.
+- No screen changed beyond the dashboard gear icon.
+
+### Files touched
+
+- `src/store/settingsStore.ts` (new)
+- `src/store/journalStore.ts` (+`reset()`)
+- `src/screens/SettingsScreen.tsx` (new)
+- `App.tsx` (Settings route ×2 stacks)
+- `src/screens/DashboardScreen.tsx` (gear icon)
+- `PROJECT_CONTEXT.md`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-15 — Daily Setup of the Day: curated scenarios + dashboard card + completion tracking
 
 The #1 retention recommendation: kill the cold-start problem.

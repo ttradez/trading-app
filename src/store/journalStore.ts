@@ -36,6 +36,9 @@ interface JournalState {
   addEntry: (e: JournalEntry) => void;
   updateEntry: (id: string, patch: Partial<JournalEntry>) => void;
   removeEntry: (id: string) => void;
+  /** Wipe all entries + the persisted blob. Used by Settings →
+   *  Reset Everything. */
+  reset: () => void;
   hydrate: () => Promise<void>;
 }
 
@@ -64,6 +67,11 @@ export const useJournalStore = create<JournalState>((set, get) => ({
     const next = get().entries.filter((e) => e.id !== id);
     persist(next);
     set({ entries: next });
+  },
+
+  reset: () => {
+    AsyncStorage.removeItem(KEY).catch(() => {});
+    set({ entries: [] });
   },
 
   hydrate: async () => {
