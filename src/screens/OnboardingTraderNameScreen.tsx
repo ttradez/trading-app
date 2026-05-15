@@ -6,29 +6,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const Filter: any = require('bad-words');
 import { useOnboardingStore, Archetype } from '../store/onboardingStore';
 import PlayerCardPreview from '../components/onboarding/PlayerCardPreview';
-
-/** Single shared filter instance — bad-words@3 default export is a
- *  constructable class; `isProfane()` is the side-effect-free check
- *  we want (vs `clean()` which substitutes). v3 was pinned (not v4)
- *  because v4.0.0 ships a broken dist/index.js that fails Metro
- *  resolution — see WORK_LOG for details. */
-const profanityFilter = new Filter();
-
-/** Returns true if the input contains profanity OR if its
- *  separator-stripped form does. Handles allow `.` and `_`, so an
- *  obvious evasion like `f.u.c.k` or `sh_it` would slip past
- *  `isProfane(rawInput)` — strip those characters and re-check. */
-function containsProfanity(input: string): boolean {
-  if (!input) return false;
-  if (profanityFilter.isProfane(input)) return true;
-  const stripped = input.replace(/[._]/g, '');
-  if (stripped.length > 0 && profanityFilter.isProfane(stripped)) return true;
-  return false;
-}
+import { containsProfanity } from '../utils/profanityFilter';
 
 /** Safety pass over the archetype suggestion pools at module load.
  *  Pools are hand-curated and shouldn't trip the filter, but if a
