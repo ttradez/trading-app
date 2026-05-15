@@ -1,14 +1,30 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, ScrollView, StyleSheet, RefreshControl, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { getAccount, getTrades } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { useStreakStore, computeDisplayStatus } from '../store/streakStore';
+import { useOnboardingStore, Archetype } from '../store/onboardingStore';
 import { colors, radius, spacing, fontSize, fontWeight, labelStyle } from '../theme';
 import { EquityCurve, WinLossBar, DailyPnlSpark, StreakTracker } from '../components/DashboardCharts';
 import StreakBadge from '../components/StreakBadge';
 import { computeRank } from '../utils/ranks';
+
+type MCIName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+
+/** Archetype display name + sigil glyph. Same 4-entry mapping the
+ *  archetype reveal screen + Plan Summary screen use. Inlined here
+ *  (third inline copy) per the convention established earlier:
+ *  the mapping is short, stable, and consolidating it would require
+ *  touching the onboarding screens — explicitly out of scope for
+ *  this prompt. The convergence pass is logged as a follow-up. */
+const ARCHETYPE_META: Record<Archetype, { name: string; icon: MCIName }> = {
+  scalper:         { name: 'Scalper',         icon: 'lightning-bolt' },
+  day_trader:      { name: 'Day Trader',      icon: 'clock-outline' },
+  swing_trader:    { name: 'Swing Trader',    icon: 'chart-line-variant' },
+  position_trader: { name: 'Position Trader', icon: 'anchor' },
+};
 
 const RANK_COLORS: Record<string, string> = {
   'Gambler':       colors.rankGambler,
@@ -33,6 +49,8 @@ export default function DashboardScreen({ navigation }: any) {
   // computeDisplayStatus reads `new Date()` so the badge always
   // reflects the device's current day, not a stale persisted status.
   const streakStatus = useStreakStore(computeDisplayStatus);
+  const archetype    = useOnboardingStore((s) => s.archetype);
+  const archetypeMeta = archetype ? ARCHETYPE_META[archetype] : null;
   const [account, setAccount] = useState<any>(null);
   const [trades, setTrades] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -81,11 +99,25 @@ export default function DashboardScreen({ navigation }: any) {
       contentContainerStyle={styles.container}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.gold} />}
     >
-      {/* Header */}
+      {/* Header — archetype identity (left) balances StreakBadge (right).
+          The archetype is the user's "who am I" anchor; identity-based
+          motivation only works if the identity is invoked repeatedly. */}
       <View style={styles.header}>
-        <View>
+        <View style={styles.headerLeft}>
           <Text style={styles.username}>@{username}</Text>
-          <Text style={styles.subtitle}>Your trading dashboard</Text>
+          {archetypeMeta && (
+            <View style={styles.archetypeRow}>
+              <MaterialCommunityIcons
+                name={archetypeMeta.icon}
+                size={20}
+                color={colors.gold}
+                style={styles.archetypeIcon}
+              />
+              <Text style={styles.archetypeName} numberOfLines={1}>
+                {archetypeMeta.name}
+              </Text>
+            </View>
+          )}
         </View>
         <View style={styles.headerRight}>
           <StreakBadge count={streakCount} status={streakStatus} size="small" />
@@ -238,8 +270,19 @@ const styles = StyleSheet.create({
   emptyText: { color: colors.textSecondary },
 
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
+  headerLeft: { flexShrink: 1, paddingRight: 12 },
   username: { color: colors.textPrimary, fontSize: fontSize.xxl, fontWeight: fontWeight.black },
   subtitle: { color: colors.textSecondary, fontSize: fontSize.sm, marginTop: 2 },
+  // Archetype identity — gold sigil + bold name. Sits where the
+  // generic "Your trading dashboard" subtitle used to live.
+  archetypeRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
+  archetypeIcon: { marginRight: 6 },
+  archetypeName: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: -0.1,
+  },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   headerIconBtn: {
     width: 40, height: 40, borderRadius: 20,

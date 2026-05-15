@@ -5,6 +5,83 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-14 — Dashboard: surface archetype identity in header
+
+`docs/ONBOARDING_AUDIT.md` flagged that the archetype is revealed
+during the quiz and then essentially forgotten. Identity-based
+motivation only works if the identity is invoked repeatedly; the
+Plan Summary screen already references it, this commit surfaces
+it on the dashboard so the user sees "who they are" every time
+they open the app.
+
+### Placement
+
+Top-left of the dashboard header, beneath the `@username` line —
+replaces the generic "Your trading dashboard" subtitle that used
+to live there. Layout:
+
+```
+┌──────────────────────────────────────────────────┐
+│  @userhandle                  🔥 0    [ + ]      │
+│  ⚡ Day Trader                                    │
+└──────────────────────────────────────────────────┘
+```
+
+- Sigil glyph (20 px, gold #FFB800) — same `MaterialCommunityIcons`
+  glyph each archetype uses on the reveal + Plan Summary screens.
+- Archetype name in white 15 px / 700 weight beside it.
+- 4 px top margin so it tucks under the handle without crowding.
+- `numberOfLines={1}` on the name — paranoia against a future
+  archetype with a longer label squeezing the streak badge.
+- `headerLeft` gets `flexShrink: 1` + `paddingRight: 12` so a long
+  handle can't push the StreakBadge off the screen.
+
+Renders **only if `archetype` is set** — `archetype ?
+ARCHETYPE_META[archetype] : null`. If it's somehow unset (broken
+state restoration, deep link past onboarding) the header just
+shows `@username` alone with no error.
+
+### Icon source
+
+`MaterialCommunityIcons` (already imported elsewhere in the
+project via `@expo/vector-icons`) — same 4 glyphs as the
+archetype reveal screen and the Plan Summary card:
+
+| Archetype | Glyph |
+|---|---|
+| Scalper | `lightning-bolt` |
+| Day Trader | `clock-outline` |
+| Swing Trader | `chart-line-variant` |
+| Position Trader | `anchor` |
+
+### DRY note
+
+This is the third inline copy of the archetype `name + icon`
+mapping (the others live in `OnboardingArchetypeScreen` and
+`OnboardingPlanSummaryScreen`). The prompt explicitly forbids
+touching the onboarding screens, so consolidating them all into
+a shared `src/data/archetypeMeta.ts` is deliberately deferred.
+A short top-of-block comment in `DashboardScreen.tsx` flags the
+convergence pass as a known follow-up. The mapping is 4 entries
+of 2 fields — small and stable — so the cost of duplication is
+low until we touch the archetype screen again.
+
+### Out of scope (deliberate)
+
+- No identity ("The Patient Sniper") here — just the archetype
+  per the prompt; archetype is shorter and more personal.
+- StreakBadge + add-button position unchanged.
+- Rank badge, stats row, and all dashboard content below the
+  header untouched.
+- Onboarding screens untouched.
+
+### Files touched
+
+- `src/screens/DashboardScreen.tsx`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-14 — Streak system: time tracking + daily check + increment/reset + freeze mechanics
 
 The visual layer shipped this morning; this commit fills in the
