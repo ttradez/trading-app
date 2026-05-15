@@ -9,6 +9,7 @@ import { useOnboardingStore, Archetype } from '../store/onboardingStore';
 import { colors, radius, spacing, fontSize, fontWeight, labelStyle } from '../theme';
 import { EquityCurve, WinLossBar, DailyPnlSpark, StreakTracker } from '../components/DashboardCharts';
 import StreakBadge from '../components/StreakBadge';
+import TradeCard from '../components/TradeCard';
 import { computeRank } from '../utils/ranks';
 
 type MCIName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
@@ -221,32 +222,27 @@ export default function DashboardScreen({ navigation }: any) {
 
       {trades.length === 0 ? (
         <View style={styles.emptyTradesBox}>
-          <Ionicons name="document-text-outline" size={40} color={colors.textTertiary} />
-          <Text style={styles.emptyTradesText}>No trades yet</Text>
-          <TouchableOpacity style={styles.startCta} onPress={() => navigation.navigate('Chart')}>
-            <Text style={styles.startCtaText}>START TRADING</Text>
-          </TouchableOpacity>
+          <Text style={styles.emptyTradesText}>
+            No trades yet. Start a replay session to place your first trade.
+          </Text>
         </View>
       ) : (
-        trades.slice(0, 20).map((t) => (
-          <View key={t.id} style={styles.tradeCard}>
-            <View style={styles.tradeRow1}>
-              <View style={styles.tradeLeft}>
-                <Text style={styles.tradeSymbol}>{t.symbol}</Text>
-                <View style={[styles.tradeSideBadge, t.side === 'buy' ? styles.badgeLong : styles.badgeShort]}>
-                  <Text style={styles.tradeSideText}>{t.side === 'buy' ? 'LONG' : 'SHORT'}</Text>
-                </View>
-              </View>
-              <Text style={[styles.tradePnl, t.pnl >= 0 ? styles.green : styles.red]}>
-                {t.pnl >= 0 ? '+' : ''}${t.pnl.toFixed(2)}
-              </Text>
-            </View>
-            <Text style={styles.tradeMeta}>
-              {t.lots} lots · {t.pips.toFixed(1)} pips
-              {t.r_multiple != null ? `  ·  ${t.r_multiple > 0 ? '+' : ''}${t.r_multiple}R` : ''}
-            </Text>
-          </View>
-        ))
+        <View style={styles.tradeList}>
+          {trades.slice(0, 20).map((t) => (
+            <TradeCard
+              key={t.id}
+              symbol={t.symbol}
+              direction={t.side === 'buy' ? 'long' : 'short'}
+              entryPrice={t.entryPrice}
+              exitPrice={t.exitPrice}
+              pnl={t.pnl}
+              entryTime={t.openedAt}
+              exitTime={t.closedAt}
+              contracts={t.lots}
+              status="closed"
+            />
+          ))}
+        </View>
       )}
     </ScrollView>
     </SafeAreaView>
@@ -323,33 +319,23 @@ const styles = StyleSheet.create({
   sectionHeader: { marginTop: spacing.xl, marginBottom: spacing.sm },
   sectionTitle: { ...labelStyle, color: colors.textPrimary },
 
+  // Recent-trades section
   emptyTradesBox: {
-    backgroundColor: colors.card, borderRadius: radius.lg,
-    borderWidth: 1, borderColor: colors.border,
-    padding: spacing.xxl, alignItems: 'center', gap: spacing.md,
+    paddingVertical: spacing.xxl,
+    paddingHorizontal: spacing.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  emptyTradesText: { color: colors.textSecondary, fontSize: fontSize.md },
-  startCta: {
-    backgroundColor: colors.gold, borderRadius: radius.md,
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
-    marginTop: spacing.sm,
+  emptyTradesText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 15,
+    fontWeight: '500',
+    lineHeight: 22,
+    textAlign: 'center',
+    maxWidth: 280,
   },
-  startCtaText: { color: colors.bg, fontWeight: fontWeight.bold, letterSpacing: 1.5, fontSize: fontSize.sm },
-
-  tradeCard: {
-    backgroundColor: colors.card, borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.border,
-    padding: spacing.md, marginBottom: spacing.sm,
-  },
-  tradeRow1: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
-  tradeLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  tradeSymbol: { color: colors.textPrimary, fontWeight: fontWeight.bold, fontSize: fontSize.md },
-  tradeSideBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.sm },
-  badgeLong:  { backgroundColor: colors.greenDim },
-  badgeShort: { backgroundColor: colors.redDim },
-  tradeSideText: { color: '#fff', fontSize: 10, fontWeight: fontWeight.bold, letterSpacing: 1 },
-  tradePnl: { fontSize: fontSize.lg, fontWeight: fontWeight.bold, fontVariant: ['tabular-nums'] },
-  tradeMeta: { color: colors.textSecondary, fontSize: fontSize.xs },
+  // 10 px vertical gap between cards, matching the spec.
+  tradeList: { gap: 10 },
 
   green: { color: colors.green },
   red:   { color: colors.red },

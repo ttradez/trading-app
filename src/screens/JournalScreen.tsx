@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing, fontSize, fontWeight, labelStyle } from '../theme';
 import { useJournalStore, JournalEntry, Emotion } from '../store/journalStore';
+import TradeCard from '../components/TradeCard';
 
 const EMOTIONS: { id: Emotion; label: string; icon: string; color: string }[] = [
   { id: 'fear',         label: 'Fear',         icon: 'eye-off-outline',     color: '#A855F7' },
@@ -21,7 +22,7 @@ const EMOTIONS: { id: Emotion; label: string; icon: string; color: string }[] = 
 type Filter = 'all' | 'wins' | 'losses';
 
 export default function JournalScreen() {
-  const { entries, removeEntry } = useJournalStore();
+  const { entries } = useJournalStore();
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<JournalEntry | null>(null);
@@ -94,59 +95,36 @@ export default function JournalScreen() {
       {/* List */}
       {filtered.length === 0 ? (
         <View style={styles.empty}>
-          <Ionicons name="journal-outline" size={48} color={colors.textTertiary} />
-          <Text style={styles.emptyTitle}>No entries yet</Text>
-          <Text style={styles.emptySub}>Close a trade and tap "Journal Trade" to save it here.</Text>
+          <Text style={styles.emptyMessage}>
+            No trades yet. Start a replay session to place your first trade.
+          </Text>
         </View>
       ) : (
         <FlatList
           data={filtered}
           keyExtractor={(e) => e.id}
-          contentContainerStyle={{ paddingHorizontal: spacing.md, paddingBottom: spacing.xl }}
-          renderItem={({ item }) => <EntryRow entry={item} onPress={() => setEditing(item)} onDelete={() => removeEntry(item.id)} />}
+          contentContainerStyle={styles.listContent}
+          ItemSeparatorComponent={() => <View style={styles.listGap} />}
+          renderItem={({ item }) => (
+            <TradeCard
+              symbol={item.symbol}
+              direction={item.side === 'buy' ? 'long' : 'short'}
+              entryPrice={item.entryPrice}
+              exitPrice={item.exitPrice}
+              pnl={item.pnl}
+              entryTime={item.openedAt}
+              exitTime={item.closedAt}
+              contracts={item.lots}
+              status="closed"
+              onPress={() => setEditing(item)}
+            />
+          )}
         />
       )}
 
       {/* Edit modal */}
       <EntryEditModal entry={editing} onClose={() => setEditing(null)} />
     </SafeAreaView>
-  );
-}
-
-function EntryRow({ entry, onPress, onDelete }: { entry: JournalEntry; onPress: () => void; onDelete: () => void }) {
-  const win = entry.pnl >= 0;
-  return (
-    <TouchableOpacity style={[styles.row, win ? styles.rowWin : styles.rowLoss]} onPress={onPress} activeOpacity={0.85}>
-      <View style={[styles.rowAccent, { backgroundColor: win ? colors.green : colors.red }]} />
-      <View style={{ flex: 1 }}>
-        <View style={styles.rowTop}>
-          <Text style={styles.rowSymbol}>{entry.symbol}</Text>
-          <Text style={[styles.rowSide, { color: entry.side === 'buy' ? colors.green : colors.red }]}>
-            {entry.side.toUpperCase()}
-          </Text>
-          <Text style={styles.rowDate}>{new Date(entry.closedAt).toLocaleDateString()}</Text>
-        </View>
-        <View style={styles.rowMid}>
-          <Text style={[styles.rowPnl, win ? styles.green : styles.red]}>
-            {win ? '+' : ''}${Math.abs(entry.pnl).toFixed(2)}
-          </Text>
-          {entry.rMultiple != null && (
-            <Text style={[styles.rowR, win ? styles.green : styles.red]}>
-              {entry.rMultiple >= 0 ? '+' : ''}{entry.rMultiple.toFixed(2)}R
-            </Text>
-          )}
-          {entry.emotion && (
-            <View style={styles.emotionTag}>
-              <Text style={styles.emotionTagText}>{entry.emotion.toUpperCase()}</Text>
-            </View>
-          )}
-        </View>
-        {entry.notes ? <Text style={styles.rowNotes} numberOfLines={1}>{entry.notes}</Text> : null}
-      </View>
-      <TouchableOpacity onPress={onDelete} style={styles.delBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-        <Ionicons name="trash-outline" size={16} color={colors.textTertiary} />
-      </TouchableOpacity>
-    </TouchableOpacity>
   );
 }
 
@@ -268,34 +246,22 @@ const styles = StyleSheet.create({
   summaryValue: { color: colors.textPrimary, fontSize: fontSize.lg, fontWeight: fontWeight.bold, fontVariant: ['tabular-nums'], marginTop: 2 },
 
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xl },
-  emptyTitle: { color: colors.textPrimary, fontSize: fontSize.md, fontWeight: fontWeight.bold, marginTop: spacing.md },
-  emptySub:   { color: colors.textTertiary, fontSize: fontSize.sm, textAlign: 'center', marginTop: spacing.xs },
-
-  row: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.card, borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.border,
-    marginTop: spacing.sm,
-    overflow: 'hidden',
+  emptyMessage: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 15,
+    fontWeight: '500',
+    lineHeight: 22,
+    textAlign: 'center',
+    maxWidth: 280,
   },
-  rowWin:  { borderColor: '#1a3a25' },
-  rowLoss: { borderColor: '#3a1a1a' },
-  rowAccent: { width: 4, alignSelf: 'stretch' },
-  rowTop:  { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingTop: spacing.sm, paddingHorizontal: spacing.md },
-  rowMid:  { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, marginTop: 2 },
-  rowSymbol: { color: colors.textPrimary, fontSize: fontSize.md, fontWeight: fontWeight.bold },
-  rowSide: { fontSize: fontSize.xs, fontWeight: fontWeight.bold, letterSpacing: 0.5 },
-  rowDate: { flex: 1, textAlign: 'right', color: colors.textTertiary, fontSize: fontSize.xs },
-  rowPnl: { fontSize: fontSize.lg, fontWeight: fontWeight.bold, fontVariant: ['tabular-nums'] },
-  rowR:   { fontSize: fontSize.sm, fontWeight: fontWeight.semibold, fontVariant: ['tabular-nums'] },
-  rowNotes: { color: colors.textSecondary, fontSize: fontSize.xs, paddingHorizontal: spacing.md, paddingBottom: spacing.sm, marginTop: 2 },
-  delBtn: { padding: spacing.md },
 
-  emotionTag: {
-    backgroundColor: colors.cardAlt,
-    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 3,
+  // Trade-card list — vertical stack with 10 px gap, matching spec.
+  listContent: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xl,
   },
-  emotionTagText: { color: colors.textSecondary, fontSize: 9, fontWeight: fontWeight.bold, letterSpacing: 0.5 },
+  listGap: { height: 10 },
 
   // Edit modal
   editBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },

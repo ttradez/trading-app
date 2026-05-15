@@ -5,6 +5,150 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-14 — Trade card redesign: professional trade history cards
+
+Replaces three different trade-row implementations (inline
+dashboard markup, the journal's `EntryRow`, etc.) with a single
+shared `TradeCard` component matching the brand and the
+"TradeLocker / Tradovate / TopstepX" professional density the
+prompt asked for. The visual is information-dense but
+scannable, with the P&L number as the unambiguous hero element.
+
+### New file — `src/components/TradeCard.tsx`
+
+One component, both states (open + closed). Reads its data from
+explicit props — the call sites do the mapping from
+`ClosedTrade` / `JournalEntry` so the underlying trade model is
+untouched.
+
+#### Props
+
+```ts
+{ symbol: string,
+  direction: 'long' | 'short',
+  entryPrice: number,
+  exitPrice: number | null,         // null = open
+  pnl: number,                      // unrealized when open
+  entryTime: number,                // unix ms
+  exitTime: number | null,
+  contracts: number,
+  status: 'open' | 'closed',
+  onPress?: () => void }
+```
+
+`entryTime` / `exitTime` are unix-ms numbers (not ISO strings as
+the prompt sketched) — matches the existing `openedAt` /
+`closedAt` shape in the project's `ClosedTrade` type. The card
+handles all formatting internally.
+
+#### Layout
+
+```
+┌─┬────────────────────────────────────────────────┐
+│ │ NQ  [LONG]                          🟢 OPEN    │  ← top row
+│ │                                                │
+│ │ Entry: 15,230.50  →  Exit: 15,260.75           │  ← prices @ 70%
+│ │ +$605.00     unrealized                        │  ← hero P&L (24 px)
+│ │                                                │
+│ │ Sep 13, 2022 · 8:34 AM · 12m 30s    1 contract │  ← metadata
+└─┴────────────────────────────────────────────────┘
+ │
+ └─ 3 px left accent — green / red / gold by P&L sign
+```
+
+- Card surface `#0F0F0F`, border `1px #1F1F1F`, 14 px radius.
+- 3 px left-edge accent stripe, full card height, keyed to
+  `Math.sign(pnl)` (green / red / gold).
+- Direction pill — LONG = green pill with black text, SHORT =
+  red pill with white text. 11 px / 900 weight / 1 px tracking.
+- Status indicator (top-right):
+  - **Open** → 8 px green dot pulsing 0.4 ↔ 1.0 opacity every
+    700 ms (native-driver loop), "OPEN" label in green.
+  - **Closed** → faded "CLOSED" label at 50 % white opacity.
+- Prices line: tabular-nums for stable widths during a session.
+- P&L: 24 px / 800 weight / -0.5 letter-spacing — the spec's
+  hero number. `formatUSD(pnl)` does `+$X.XX` / `-$X.XX` /
+  `$0.00`. Color tracks the value (green / red / white).
+- Open trades append a small lowercase "unrealized" suffix.
+- Metadata row: entry date+time (e.g. "Sep 13, 2022 · 8:34 AM",
+  format hand-rolled to avoid `Date.toLocaleString` device
+  locale variance), duration (`Xs` / `Xm Ys` / `Xh MMm` / `Xd
+  Yh`, "Running" while open), contracts.
+- Optional `onPress` wraps the card in a `Pressable`; pressed
+  state is 0.85 opacity.
+
+### Wiring — `DashboardScreen.tsx`
+
+- Imported `TradeCard`. Replaced the inline tradeCard markup
+  (and all the related `tradeRow1` / `tradeSideBadge` / `badgeLong`
+  / etc. styles) with a `<TradeCard ... />` per trade. Mapping:
+  - `side: 'buy'` → `direction: 'long'`; `'sell'` → `'short'`.
+  - `lots` → `contracts`; `openedAt` → `entryTime`; `closedAt`
+    → `exitTime`. Pass through `entryPrice` / `exitPrice` /
+    `pnl` / `symbol`. `status="closed"` (the dashboard's
+    `trades` list is closed-trades-only from the API).
+- 10 px vertical gap between cards via a new `tradeList`
+  wrapper with `gap: 10`.
+- New empty state: centered, 50 % white opacity, 15 px,
+  capped at 280 px width: **"No trades yet. Start a replay
+  session to place your first trade."** Replaces the older
+  icon + "START TRADING" CTA box (out per spec — "centered
+  message"). The icon + button styles were removed.
+- All 10 dead `tradeCard` / `tradeRow*` / `tradeSideBadge*` /
+  `badgeLong` / `badgeShort` / `tradeSideText` / `tradePnl` /
+  `tradeMeta` / `startCta` / `startCtaText` style entries
+  deleted to keep the StyleSheet honest.
+
+### Wiring — `JournalScreen.tsx`
+
+- Imported `TradeCard`. Replaced the entire `EntryRow` component
+  (and its style block: `row` / `rowWin` / `rowLoss` /
+  `rowAccent` / `rowTop` / `rowMid` / `rowSymbol` / `rowSide` /
+  `rowDate` / `rowPnl` / `rowR` / `rowNotes` / `delBtn` /
+  `emotionTag` / `emotionTagText`) with a `<TradeCard ... />`
+  inside `FlatList`'s `renderItem`. Mapping identical to the
+  dashboard.
+- `ItemSeparatorComponent` renders a 10 px spacer between cards
+  (FlatList's separator pattern; `gap` on `contentContainerStyle`
+  isn't supported uniformly across versions).
+- Tap on the card opens the existing `EntryEditModal` (passed
+  via `onPress`) — the modal + edit flow are completely
+  unchanged.
+- New empty-state copy matches the dashboard's, replacing the
+  prior "No entries yet" / "Close a trade and tap…" pair.
+- `useJournalStore`'s `removeEntry` is no longer destructured
+  here — the row-level trash button is gone with `EntryRow`.
+  The store action is unchanged and will be re-wired through
+  the journal/notes/grading redesign (the next prompt).
+
+### What the next prompt will need
+
+Stuff temporarily missing from the JournalScreen list as of this
+commit (logged so the next prompt knows what to restore):
+
+- Per-row emotion pill, notes preview, R-multiple chip.
+- Per-row delete affordance (or a swipe-to-delete pattern).
+- Win/loss border-tint variant (currently the 3 px accent
+  stripe carries that signal; if the next prompt's design
+  wants a fuller tint, it can use the same color computation).
+
+### Out of scope (deliberate)
+
+- Trade journal / notes / grading (next prompt).
+- Trade detail screen (tap-to-expand later).
+- Filter / sort controls (later).
+- Charts on the card (later).
+- Trade placement logic + data model unchanged.
+
+### Files touched
+
+- `src/components/TradeCard.tsx` (new)
+- `src/screens/DashboardScreen.tsx`
+- `src/screens/JournalScreen.tsx`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-14 — News button: economic calendar panel + 2022 event dataset
 
 Pocket Trade replays historical dates; without economic-event
