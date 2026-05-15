@@ -5,6 +5,110 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-14 — News button: economic calendar panel + 2022 event dataset
+
+Pocket Trade replays historical dates; without economic-event
+context, a 2 % move on CPI day looks identical to a 2 % move on
+any other day. Surfacing the day's catalysts on the chart screen
+is one of the moves that separates a training app from a toy.
+
+### New file — `src/data/economicCalendar.ts`
+
+**36 hardcoded 2022 events**, all U.S. Eastern time, schema:
+
+```ts
+{ date: 'YYYY-MM-DD', time: 'HH:MM', name: string,
+  impact: 'high' | 'medium' | 'low', category: string }
+```
+
+| Category | Events | Time | Impact |
+|---|---:|---|---|
+| CPI (Inflation) | 12 monthly | 08:30 ET | high |
+| NFP (Employment, first Friday) | 12 monthly | 08:30 ET | high |
+| FOMC (Interest Rates) | 8 meetings | 14:00 ET | high |
+| GDP Advance (Growth) | 4 quarterly | 08:30 ET | medium |
+
+`getEventsForDate(dateString)` returns a fresh array sorted by
+`time` (ascending). Empty array on a miss — callers don't have
+to null-check. `ECONOMIC_EVENT_COUNT` constant exposed for
+analytics + smoke checks.
+
+Top-of-file comment flags 2022-only coverage; expand to 2021 /
+2023 / 2024 as more historical replay scenarios land.
+
+### New file — `src/components/EconomicCalendarPanel.tsx`
+
+Slide-up `Modal` (animationType `'slide'`, `transparent`).
+Backdrop tap dismisses; X-button in the header dismisses; the
+`onRequestClose` handler covers the Android system back gesture.
+
+Layout:
+- Drag-handle pill at the top (visual sheet affordance).
+- Header: `'ECONOMIC CALENDAR'` eyebrow + the pretty date
+  (`'September 13, 2022'`, format hand-rolled to avoid
+  `new Date()` device-timezone surprises) + X close button.
+- Each event row: 10 px impact dot left of column (red /
+  gold / 40-% white) + time (`'8:30 AM ET'`) + name + small
+  category line (`'Inflation'`).
+- Empty-day: centered `"No major events scheduled for this date."`
+  at 50 % opacity.
+
+Sheet bg `#0F0F0F`, top-border 1 px `#1F1F1F`. Matches the
+project's panel chrome.
+
+### Wiring — `src/screens/TradingScreen.tsx`
+
+- The chart screen already had a News button in the top ribbon
+  (between MagnetToggle and NEXT BAR). That button used to open
+  the legacy `NewsPanel` (backend `/news` headlines, hidden in
+  v1 per `PROJECT_CONTEXT`); its destination is now
+  `EconomicCalendarPanel`. The `NewsPanel.tsx` component file is
+  **preserved** (not deleted) — if a per-symbol headlines source
+  becomes useful later, the wiring can be restored without
+  rewriting the panel.
+- Replay date is derived from `candles[N-1].time` (unix seconds)
+  via the in-file `tzPartsOf(unixMs, 'America/New_York')` helper
+  → composed into `YYYY-MM-DD`. ET because that's the event
+  dataset's native zone, and the chart's session-clock is already
+  ET-aligned for futures.
+- `hasEventsToday = getEventsForDate(replayDateYMD).length > 0`
+  drives a small 7 × 7 gold dot positioned absolutely in the
+  top-right corner of the News button. Both `replayDateYMD` and
+  `hasEventsToday` are `useMemo`'d on `candles` so each `NEXT
+  BAR` re-evaluates if the date crossed midnight.
+- Button `accessibilityLabel` flips between "News — economic
+  events scheduled for this date" and "News — no events for
+  this date" so screen readers convey the indicator's state.
+
+### Icon library note
+
+Spec specified the `Newspaper` glyph from `lucide-react-native`,
+which still isn't installed in the project. The chart screen's
+existing News button already uses Ionicons `newspaper-outline`
+— that glyph stays. No new dependency.
+
+### Out of scope (deliberate)
+
+- Actual / forecast / previous numeric values (richer dataset
+  needed — deferred).
+- Live / real-time news (this is historical-replay only).
+- Backend API for events (static client-side dataset for v1).
+- Years other than 2022.
+- Replay-date detection beyond the last candle's timestamp —
+  the chart's session-time logic owns that; we just read it.
+
+### Files touched
+
+- `src/data/economicCalendar.ts` (new)
+- `src/components/EconomicCalendarPanel.tsx` (new)
+- `src/screens/TradingScreen.tsx` (import swap, replay-date
+  derivation, gold-dot indicator on the News button, panel JSX
+  replacement)
+- `PROJECT_CONTEXT.md`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-14 — Dashboard: surface archetype identity in header
 
 `docs/ONBOARDING_AUDIT.md` flagged that the archetype is revealed

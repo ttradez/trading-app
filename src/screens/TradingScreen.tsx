@@ -13,7 +13,8 @@ import DrawingSettingsModal from '../components/chart/DrawingSettingsModal';
 import DrawingFavoritesBar from '../components/chart/DrawingFavoritesBar';
 import MagnetToggle from '../components/chart/MagnetToggle';
 import TradeCardModal from '../components/TradeCardModal';
-import NewsPanel from '../components/NewsPanel';
+import EconomicCalendarPanel from '../components/EconomicCalendarPanel';
+import { getEventsForDate } from '../data/economicCalendar';
 import { useDrawingsStore } from '../store/drawingsStore';
 import { useJournalStore } from '../store/journalStore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -601,6 +602,22 @@ export default function TradingScreen() {
 
   const currentPrice = candles.length > 0 ? candles[candles.length - 1].close : 0;
 
+  // Replay date in U.S. Eastern time — drives the economic-calendar
+  // lookup and the gold-dot indicator on the News button. ET is the
+  // native zone of the event dataset; the user's device zone doesn't
+  // affect which date's events show.
+  const replayDateYMD = useMemo(() => {
+    const last = candles.length ? candles[candles.length - 1] : null;
+    const unixMs = ((last?.time as number | undefined) ?? Math.floor(Date.now() / 1000)) * 1000;
+    const parts = tzPartsOf(unixMs, 'America/New_York');
+    const pad = (n: number) => (n < 10 ? '0' + n : '' + n);
+    return `${parts.y}-${pad(parts.mo)}-${pad(parts.d)}`;
+  }, [candles]);
+  const hasEventsToday = useMemo(
+    () => getEventsForDate(replayDateYMD).length > 0,
+    [replayDateYMD],
+  );
+
   const pnl = useMemo(() => {
     const realized = closedTrades.reduce((sum, t) => sum + t.pnl, 0);
     const unrealized = positions.reduce((sum, p) => {
@@ -897,8 +914,15 @@ export default function TradingScreen() {
           style={styles.newsBtn}
           onPress={() => setNewsOpen(true)}
           hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          accessibilityRole="button"
+          accessibilityLabel={
+            hasEventsToday
+              ? 'News — economic events scheduled for this date'
+              : 'News — no events for this date'
+          }
         >
           <Ionicons name="newspaper-outline" size={16} color={colors.textPrimary} />
+          {hasEventsToday && <View style={styles.newsBtnDot} />}
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.nextBarBtn, (advancing || !!pendingPosition) && { opacity: 0.4 }]}
@@ -1037,12 +1061,16 @@ export default function TradingScreen() {
         onSave={(next) => { saveCustomSessions(next); setCustomConfigOpen(false); }}
       />
 
-      {/* Historical news panel — shows headlines up to (and only including) the current session time. */}
-      <NewsPanel
+      {/* Economic-calendar panel — slides up to show CPI / NFP /
+          FOMC / GDP events for the replay date (NY-time). The
+          legacy symbol-headline NewsPanel was retired from this
+          button (it was hidden in v1 per PROJECT_CONTEXT — the
+          component file is preserved for a future re-wire if the
+          FRED/headlines source becomes useful). */}
+      <EconomicCalendarPanel
         visible={newsOpen}
         onClose={() => setNewsOpen(false)}
-        symbol={market.symbol}
-        currentTime={candles.length ? (candles[candles.length - 1].time ?? Math.floor(Date.now() / 1000)) : Math.floor(Date.now() / 1000)}
+        date={replayDateYMD}
       />
 
       {/* Timeframe wheel — small floating popup centered on the button. */}
@@ -1587,6 +1615,17 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center',
     marginRight: spacing.sm,
+  },
+  // Gold notification dot — sits in the top-right corner of the
+  // News button when there are economic events for the replay date.
+  newsBtnDot: {
+    position: 'absolute',
+    top: 3,
+    right: 3,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: colors.gold,
   },
 
   // Single rolling timeframe button — replaces the old pill row
