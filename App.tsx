@@ -15,6 +15,7 @@ import { useStreakManager } from './src/hooks/useStreakManager';
 import { useWeeklyRecapTrigger } from './src/hooks/useWeeklyRecapTrigger';
 import WeeklyRecapModal from './src/components/WeeklyRecapModal';
 import { useBadgeWatchers } from './src/hooks/useBadgeWatchers';
+import { useXpWatchers } from './src/hooks/useXpWatchers';
 import BadgeToastHost from './src/components/BadgeToastHost';
 import { colors } from './src/theme';
 
@@ -72,6 +73,10 @@ function MainTabs() {
   // subscription. Trade/journal/daily-setup/watchlist triggers fire
   // at their call sites in TradingScreen.
   useBadgeWatchers();
+
+  // Streak XP (daily-goal / maintain / milestone) via a streakStore
+  // subscription — keeps streakStore free of an xpStore import.
+  useXpWatchers();
 
   // Load persisted journal entries from AsyncStorage so the
   // dashboard's stats + recent-trades section have real data on

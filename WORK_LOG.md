@@ -5,6 +5,123 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-15 — XP system + rank sub-tiers: 15-beat progression with XP-per-action wiring
+
+The progression foundation. XP rewards PROCESS over OUTCOME — a
+journaled loss earns the same trade-close XP as a win. No decay,
+no derank, no prestige (deliberate per research; commented in the
+store). Challenge XP is the next prompt (challenges don't exist
+yet); this covers every non-challenge source.
+
+### New — `src/data/rankConfig.ts`
+
+15 beats (5 ranks × 3 sub-tiers). `RANK_BEATS` ladder +
+`getRankForXP(xp)` pure lookup → `{ rank, subTier, label,
+xpInTier, xpNeededForNext, isRankPromotion, next }`. Cumulative
+thresholds exactly per spec (0/150/300 · 500/1100/1800 ·
+3000/5000/7500 · 10500/15000/20500 · 27500/36500/48500).
+`isRankPromotion = subTier === 1` (tier I of a rank = a rank-up).
+Node-tested across boundaries: 0→Gambler I, 149→Gambler I,
+150→Gambler II, 300→Gambler III (next is a rank promotion),
+7500→Sniper III, 48500/60000→Market Maker III capped.
+
+### New — `src/store/xpStore.ts`
+
+Persist (`xp-storage-v1`). `currentXP/Rank/SubTier` + daily
+trackers (`tradesToday`, `todayDate`, `dailySetupCompletedToday`,
+`firstTradeToday`). Internal `ensureToday()` resets the trackers
+on date rollover (reuses `getTodayYMD` from streakStore — single
+"today" source, no cycle since streakStore doesn't import xp).
+`addXP(amount, source)` → `console.log("+N XP (source)")` then
+auto `checkRankUp()`. `checkRankUp()` snaps to
+`getRankForXP(currentXP)` so it can cross multiple beats at once;
+logs `RANK UP (rank|sub_tier): prev → new` (celebration screens
+are a later prompt). `registerTrade()` returns the soft-capped
+base (+10, →+5 once `tradesToday >= 20`) and `isFirstOfDay`,
+bumping the trackers. `tryClaimDailySetup()` gates the once/day
++50. `getCurrentProgress()` for the dashboard. `reset()` for
+Settings. Header comment documents the no-decay design decision.
+
+### XP-per-action wiring (trigger points)
+
+| Source | XP | Where wired |
+|---|---|---|
+| Place a trade (base) | +10 (→+5 after 20/day) | TradeJournalModal `onSave`/`onSkip` → `registerTrade()` |
+| First trade of day | +15 | same, `isFirstOfDay` |
+| Win | +5 | same, `closedPnl > 0` |
+| Journaled loss | +5 (== win) | `onSave` only, `closedPnl <= 0` |
+| Journal a trade | +15 | `onSave` |
+| Daily Setup | +50 (1/day) | close effect's once-per-day guard, `tryClaimDailySetup()` |
+| Streak: daily goal | +25 | `useXpWatchers` streak subscription |
+| Streak: maintain | +10 + min(day,40) | same |
+| Streak: milestone d7/14/30/60/100/365 | +100/200/500/1000/2000/5000 | same |
+| Badge unlock | +100 each | inside `evaluateBadges` (badgeChecker) |
+| Weekly recap viewed | +25 | `useWeeklyRecapTrigger.dismiss` |
+
+`onSave` flow: registerTrade → +base → (+15 first) → (+5 win |
++5 journaled-loss) → +15 journal. `onSkip` flow: same minus the
+loss bonus + journal (an unjournaled loss = base only). Both fire
+AFTER `setRecentClosedTrade(null)` (same dismiss point as the
+badge checks) so XP logs/celebrations don't race the modal.
+
+### New — `src/hooks/useXpWatchers.ts`
+
+Mounted in MainTabs. Subscribes to streakStore; on a
+`currentStreak` increase (== one `completeDaily`, always +1 —
+freeze-preserved days hold it flat) grants daily-goal + maintain
++ milestone XP. Done as a subscription rather than editing
+`streakStore.completeDaily` so streakStore stays free of an
+xpStore import (no cycle, no behaviour change).
+
+### RankBanner — sub-tier pips
+
+New optional `subTier?: 1|2|3` prop. When set, 3 SVG `Circle`
+pips render below the rank name inside the banner art (filled
+gold for earned tiers, hollow `#333` stroke otherwise — e.g.
+Sniper II → ●●○). **Opt-in**: omitting `subTier` renders exactly
+as before, so the onboarding / auth / plan-summary call sites are
+unchanged (no layout regression). The dashboard passes the real
+`rankInfo.subTier`. Capability is universal; other call sites can
+opt in later.
+
+### Dashboard — real XP progress
+
+The hardcoded "10% toward Paper Hands" + `RANK_PROGRESS_PCT`
+constant are gone. Section 4 now reads
+`getRankForXP(useXpStore().currentXP)` (memoised on currentXP):
+RankBanner gets `rank={rankInfo.rank} subTier={rankInfo.subTier}`,
+the bar fills `xpInTier / xpNeededForNext`, and the caption reads
+`"{xpInTier} / {xpNeededForNext} XP to {next.label}"` (or "Max
+rank reached" at the cap). No other dashboard section changed.
+
+### Settings
+
+`useXpStore.getState().reset()` added to Reset Everything
+(9 stores wiped now).
+
+### Out of scope (per prompt)
+
+- Challenge XP (next prompt), rank-up celebration screens,
+  goal-gradient nudges, leaderboard/Firebase, season/prestige.
+- No existing feature behaviour changed — only additive XP grants
+  at the trigger points + the dashboard progress display + the
+  opt-in RankBanner pip prop.
+
+### Files touched
+
+- `src/data/rankConfig.ts` (new), `src/store/xpStore.ts` (new),
+  `src/hooks/useXpWatchers.ts` (new)
+- `src/screens/TradingScreen.tsx` (trade/journal/daily-setup XP)
+- `src/utils/badgeChecker.ts` (+100/badge)
+- `src/hooks/useWeeklyRecapTrigger.ts` (+25 recap)
+- `src/components/RankBanner.tsx` (subTier pips)
+- `src/screens/DashboardScreen.tsx` (real progress)
+- `App.tsx` (useXpWatchers in MainTabs)
+- `src/screens/SettingsScreen.tsx` (reset)
+- `PROJECT_CONTEXT.md`, `WORK_LOG.md`
+
+---
+
 ## 2026-05-15 — Achievement system: 30 badges + trophy case + unlock detection + celebration toast
 
 Research feature #8 — Zeigarnik / collection-completion (Pokémon

@@ -20,6 +20,7 @@ import { getTodaySetup } from '../data/dailySetups';
 import { useWatchlistStore, useSavedSetup } from '../store/watchlistStore';
 import { maybeHaptic } from '../store/settingsStore';
 import { getTodayYMD } from '../store/streakStore';
+import { useXpStore } from '../store/xpStore';
 import { useBadgeStore } from '../store/badgeStore';
 import {
   checkTradeCloseBadges, checkJournalBadges,
@@ -352,6 +353,9 @@ export default function TradingScreen({ route }: any) {
         markDailySetupComplete();
         if (!alreadyDone) {
           useBadgeStore.getState().incrementDailySetupsCompleted();
+          if (useXpStore.getState().tryClaimDailySetup()) {
+            useXpStore.getState().addXP(50, 'daily setup');
+          }
           checkDailySetupBadges();
         }
       }
@@ -1215,9 +1219,18 @@ export default function TradingScreen({ route }: any) {
             saveTradeJournalEntry(recentClosedTrade.id, data);
           }
           setRecentClosedTrade(null);
-          // Fire badge checks AFTER the journal modal is dismissed so
-          // the celebration toast isn't hidden behind it. A grade was
-          // just saved → journal badges too.
+          // XP — process over outcome: a journaled loss earns the
+          // same trade-close XP as a win (base + 5), then +15 for
+          // the journal action itself.
+          const xp = useXpStore.getState();
+          const { base, isFirstOfDay } = xp.registerTrade();
+          xp.addXP(base, 'trade');
+          if (isFirstOfDay) xp.addXP(15, 'first trade of day');
+          if (closedPnl > 0) xp.addXP(5, 'win');
+          else xp.addXP(5, 'journaled loss');
+          xp.addXP(15, 'journal');
+          // Badge checks AFTER the modal is dismissed so the toast
+          // isn't hidden behind it; a grade was saved → journal badges.
           checkTradeCloseBadges(closedPnl);
           checkJournalBadges();
         }}
@@ -1225,6 +1238,12 @@ export default function TradingScreen({ route }: any) {
           const closedPnl =
             typeof recentClosedTrade?.pnl === 'number' ? recentClosedTrade.pnl : 0;
           setRecentClosedTrade(null);
+          const xp = useXpStore.getState();
+          const { base, isFirstOfDay } = xp.registerTrade();
+          xp.addXP(base, 'trade');
+          if (isFirstOfDay) xp.addXP(15, 'first trade of day');
+          if (closedPnl > 0) xp.addXP(5, 'win');
+          // Unjournaled loss: no bonus (base only).
           checkTradeCloseBadges(closedPnl);
         }}
       />

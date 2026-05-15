@@ -258,10 +258,16 @@ interface Props {
   /** Render the whole banner at 0.5 opacity — signals "future rank,
    *  not yet earned" on rank-progression screens. */
   locked?: boolean;
+  /** Sub-tier (1|2|3). When provided, 3 pip dots render below the
+   *  rank name — filled gold for earned tiers, hollow for the rest
+   *  (e.g. Sniper II → ●●○). Omit to render no pips (backward-
+   *  compatible: existing call sites are unchanged). */
+  subTier?: 1 | 2 | 3;
 }
 
 export default function RankBanner({
   rank, width, showYouIndicator = false, upNext = false, locked = false,
+  subTier,
 }: Props) {
   const d = DESIGN[rank];
 
@@ -328,6 +334,23 @@ export default function RankBanner({
           >
             <TSpan letterSpacing={4}>{d.label}</TSpan>
           </SvgText>
+
+          {/* Sub-tier pips below the label (only when subTier set). */}
+          {subTier != null && [0, 1, 2].map((i) => {
+            const earned = i < subTier;
+            const cx = ICON_BOX + 50 + 14 + i * 42;
+            return (
+              <Circle
+                key={i}
+                cx={cx}
+                cy={170}
+                r={13}
+                fill={earned ? '#FFB800' : 'none'}
+                stroke={earned ? '#FFB800' : '#333333'}
+                strokeWidth={4}
+              />
+            );
+          })}
 
           {/* Outer border on top of everything. */}
           <Rect

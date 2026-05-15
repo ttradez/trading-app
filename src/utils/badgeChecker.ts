@@ -5,6 +5,7 @@ import { useJournalStore } from '../store/journalStore';
 import { useTradeJournalStore } from '../store/tradeJournalStore';
 import { useStreakStore } from '../store/streakStore';
 import { useWatchlistStore } from '../store/watchlistStore';
+import { useXpStore } from '../store/xpStore';
 
 /**
  * Badge detection. Every trigger builds a fresh context from the
@@ -214,6 +215,9 @@ export function evaluateBadges(): string[] {
   }
   if (newly.length > 0) {
     useBadgeToastStore.getState().enqueue(newly);
+    // +100 XP per badge unlocked.
+    const xp = useXpStore.getState();
+    for (const id of newly) xp.addXP(100, `badge: ${id}`);
   }
   return newly;
 }

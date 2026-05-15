@@ -3,6 +3,7 @@ import { useJournalStore } from '../store/journalStore';
 import { useStreakStore } from '../store/streakStore';
 import { useTradeJournalStore, TradeGrade } from '../store/tradeJournalStore';
 import { useRecapStore } from '../store/recapStore';
+import { useXpStore } from '../store/xpStore';
 import {
   generateWeeklyRecap, isoWeekId, weekBounds, WeeklyRecap, RecapTrade,
 } from '../utils/weeklyRecap';
@@ -122,7 +123,13 @@ export function useWeeklyRecapTrigger() {
 
   const dismiss = useCallback(() => {
     setRecap((cur) => {
-      if (cur) useRecapStore.getState().markViewed(cur.weekId);
+      if (cur) {
+        useRecapStore.getState().markViewed(cur.weekId);
+        // +25 XP for viewing the weekly wrap (once — the recap is
+        // marked viewed and never auto-shows again; Journal-tab
+        // re-opens of past recaps don't route through here).
+        useXpStore.getState().addXP(25, 'weekly recap');
+      }
       return null;
     });
   }, []);

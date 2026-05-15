@@ -14,6 +14,8 @@ import { useIsTodaySetupComplete } from '../store/dailySetupStore';
 import { useWatchlistStore, savedSetupStartUnixSeconds } from '../store/watchlistStore';
 import { useUnlockedCount } from '../store/badgeStore';
 import { BADGE_COUNT } from '../data/badges';
+import { useXpStore } from '../store/xpStore';
+import { getRankForXP } from '../data/rankConfig';
 import {
   getTodaySetup, setupStartUnixSeconds, SetupDifficulty,
 } from '../data/dailySetups';
@@ -68,11 +70,6 @@ const ARCHETYPE_META: Record<Archetype, { name: string; icon: MCIName }> = {
   swing_trader:    { name: 'Swing Trader',    icon: 'chart-line-variant' },
   position_trader: { name: 'Position Trader', icon: 'anchor' },
 };
-
-// Rank progression — for v1 the post-onboarding state is the only
-// state we visualise. Real XP wiring lands when the rank system
-// is built out (see PROJECT_CONTEXT follow-ups).
-const RANK_PROGRESS_PCT = 10;
 
 function formatUSD(n: number): string {
   const sign = n > 0 ? '+' : n < 0 ? '-' : '';
@@ -195,6 +192,10 @@ export default function DashboardScreen({ navigation }: any) {
 
   // Achievement badge progress (counter near rank progression).
   const unlockedBadges = useUnlockedCount();
+
+  // Real XP / rank progression (replaces the old hardcoded 10%).
+  const currentXP = useXpStore((s) => s.currentXP);
+  const rankInfo = useMemo(() => getRankForXP(currentXP), [currentXP]);
 
   // Trade history — auto-persisted on close by TradingScreen.
   const entries = useJournalStore((s) => s.entries);
@@ -461,20 +462,38 @@ export default function DashboardScreen({ navigation }: any) {
           </View>
         )}
 
-        {/* SECTION 4 — Rank Progression */}
+        {/* SECTION 4 — Rank Progression (real XP data) */}
         <View style={[styles.card, styles.rankCard]}>
           <View style={styles.rankBannerWrap}>
-            <RankBanner rank="gambler" width={130} />
+            <RankBanner
+              rank={rankInfo.rank}
+              width={130}
+              subTier={rankInfo.subTier}
+            />
           </View>
           <View style={styles.rankTextWrap}>
-            <Text style={styles.rankName}>Gambler</Text>
+            <Text style={styles.rankName}>{rankInfo.label}</Text>
             <View style={styles.rankBarTrack}>
               <View
-                style={[styles.rankBarFill, { width: `${RANK_PROGRESS_PCT}%` }]}
+                style={[
+                  styles.rankBarFill,
+                  {
+                    width: `${
+                      rankInfo.next
+                        ? Math.round(
+                            (rankInfo.xpInTier /
+                              Math.max(1, rankInfo.xpNeededForNext)) * 100,
+                          )
+                        : 100
+                    }%`,
+                  },
+                ]}
               />
             </View>
             <Text style={styles.rankSub}>
-              {RANK_PROGRESS_PCT}% toward Paper Hands
+              {rankInfo.next
+                ? `${rankInfo.xpInTier} / ${rankInfo.xpNeededForNext} XP to ${rankInfo.next.label}`
+                : 'Max rank reached'}
             </Text>
           </View>
         </View>
