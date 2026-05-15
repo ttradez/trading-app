@@ -6,8 +6,37 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const Filter: any = require('bad-words');
 import { useOnboardingStore, Archetype } from '../store/onboardingStore';
 import PlayerCardPreview from '../components/onboarding/PlayerCardPreview';
+
+/** Single shared filter instance — bad-words@3 default export is a
+ *  constructable class; `isProfane()` is the side-effect-free check
+ *  we want (vs `clean()` which substitutes). v3 was pinned (not v4)
+ *  because v4.0.0 ships a broken dist/index.js that fails Metro
+ *  resolution — see WORK_LOG for details. */
+const profanityFilter = new Filter();
+
+/** Returns true if the input contains profanity OR if its
+ *  separator-stripped form does. Handles allow `.` and `_`, so an
+ *  obvious evasion like `f.u.c.k` or `sh_it` would slip past
+ *  `isProfane(rawInput)` — strip those characters and re-check. */
+function containsProfanity(input: string): boolean {
+  if (!input) return false;
+  if (profanityFilter.isProfane(input)) return true;
+  const stripped = input.replace(/[._]/g, '');
+  if (stripped.length > 0 && profanityFilter.isProfane(stripped)) return true;
+  return false;
+}
+
+/** Safety pass over the archetype suggestion pools at module load.
+ *  Pools are hand-curated and shouldn't trip the filter, but if a
+ *  future contributor adds an entry that does, this drops it silently
+ *  rather than offering it to the user. */
+function sanitizePool(pool: string[]): string[] {
+  return pool.filter((s) => !containsProfanity(s));
+}
 
 /**
  * Onboarding screen 7 — Pick your trader name.
@@ -41,22 +70,22 @@ const NAME_MAX = 24;
  *  not generic animal-noun chaff. The refresh button shuffles 3 out
  *  of the pool, so each tap shows a different cut. */
 const ARCHETYPE_SUGGESTIONS: Record<Archetype, string[]> = {
-  scalper: [
+  scalper: sanitizePool([
     'scalp.07', 'tick.hunter', 'fast.hands', 'quick.draw',
     'blade.runner', 'micro.moves', 'knife.edge', 'in.n.out',
-  ],
-  day_trader: [
+  ]),
+  day_trader: sanitizePool([
     'tape.reader', 'intraday.ace', 'price.action', 'the.close',
     'session.07', 'chart.eyes', 'day.grind', 'market.hours',
-  ],
-  swing_trader: [
+  ]),
+  swing_trader: sanitizePool([
     'trend.rider', 'swing.state', 'multi.day', 'wave.rider',
     'the.swing', 'hold.steady', 'trend.07', 'swing.king',
-  ],
-  position_trader: [
+  ]),
+  position_trader: sanitizePool([
     'big.picture', 'long.game', 'the.thesis', 'conviction',
     'macro.mind', 'long.haul', 'position.07', 'slow.steady',
-  ],
+  ]),
 };
 
 /** Generic fallback pool used if `archetype` is somehow null on entry
@@ -137,14 +166,17 @@ export default function OnboardingTraderNameScreen({ navigation }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleValid = useMemo(() => isHandleValid(handle), [handle]);
-  const nameValid   = useMemo(() => isNameValid(displayName), [displayName]);
-  const ctaEnabled  = handleValid && nameValid;
+  const handleValid    = useMemo(() => isHandleValid(handle), [handle]);
+  const nameValid      = useMemo(() => isNameValid(displayName), [displayName]);
+  const handleProfane  = useMemo(() => containsProfanity(handle), [handle]);
+  const nameProfane    = useMemo(() => containsProfanity(displayName), [displayName]);
+  const ctaEnabled     = handleValid && nameValid && !handleProfane && !nameProfane;
 
   // Don't nag with red error text while the user is still typing from
   // empty — only show after they've typed at least one character.
   const handleHasInput = handle.length > 0;
-  const nameTooLong = displayName.length > NAME_MAX;
+  const nameHasInput   = displayName.length > 0;
+  const nameTooLong    = displayName.length > NAME_MAX;
 
   const onHandleChange = (t: string) => {
     // Don't auto-correct or auto-cap — let users type what they typed.
@@ -228,7 +260,7 @@ export default function OnboardingTraderNameScreen({ navigation }: Props) {
                   selectionColor={GOLD}
                   returnKeyType="next"
                 />
-                {handleValid && (
+                {handleValid && !handleProfane && (
                   <Ionicons
                     name="checkmark-circle"
                     size={22}
@@ -237,7 +269,9 @@ export default function OnboardingTraderNameScreen({ navigation }: Props) {
                   />
                 )}
               </View>
-              {handleHasInput && !handleValid ? (
+              {handleHasInput && handleProfane ? (
+                <Text style={styles.errorText}>This name isn't allowed.</Text>
+              ) : handleHasInput && !handleValid ? (
                 <Text style={styles.errorText}>Invalid handle format</Text>
               ) : (
                 <Text style={styles.helperText}>
@@ -298,7 +332,7 @@ export default function OnboardingTraderNameScreen({ navigation }: Props) {
                   returnKeyType="done"
                   onSubmitEditing={Keyboard.dismiss}
                 />
-                {nameValid && (
+                {nameValid && !nameProfane && (
                   <Ionicons
                     name="checkmark-circle"
                     size={22}
@@ -307,7 +341,9 @@ export default function OnboardingTraderNameScreen({ navigation }: Props) {
                   />
                 )}
               </View>
-              {nameTooLong ? (
+              {nameHasInput && nameProfane ? (
+                <Text style={styles.errorText}>This name isn't allowed.</Text>
+              ) : nameTooLong ? (
                 <Text style={styles.errorText}>Too long</Text>
               ) : (
                 <Text style={styles.helperText}>
