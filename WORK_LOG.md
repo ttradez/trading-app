@@ -5,6 +5,18 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-15 — Shorten "LEADERBOARD" tab label to "RANKS"
+
+"LEADERBOARD" still truncated even at 4 tabs / 10 px. Added
+`options={{ tabBarLabel: 'Ranks' }}` to the Leaderboard
+`Tab.Screen` — the existing `textTransform: 'uppercase'` style
+renders it "RANKS", which fits. Route name stays `Leaderboard`
+so the icon mapping (keyed by `route.name`) and any
+`navigation.navigate('Leaderboard')` calls are untouched. Screen
++ icon unchanged. One-line change in `App.tsx`.
+
+---
+
 ## 2026-05-14 — Dashboard redesign + remove Challenges tab (4 tabs)
 
 Two coupled fixes: a 5th tab was truncating labels to 6 chars

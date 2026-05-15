@@ -109,7 +109,7 @@ function MainTabs() {
       <Tab.Screen name="Dashboard"   component={DashboardScreen} />
       <Tab.Screen name="Chart"       component={TradingScreen} />
       <Tab.Screen name="Journal"     component={JournalScreen} />
-      <Tab.Screen name="Leaderboard" component={LeaderboardScreen} />
+      <Tab.Screen name="Leaderboard" component={LeaderboardScreen} options={{ tabBarLabel: 'Ranks' }} />
     </Tab.Navigator>
   );
 }
