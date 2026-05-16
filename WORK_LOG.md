@@ -5,6 +5,41 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-16 — Trade card visual upgrade
+
+Pure visual redesign of `TradeCard` — no prop/data-model change,
+so the dashboard + journal call sites are untouched.
+
+- Surface: `expo-linear-gradient` (already a dep) vertical
+  #0F0F0F→#141414, 16px radius, 4px P&L-colored left stripe + a
+  faint same-color "energy" glow bleeding from the left edge,
+  subtle base shadow.
+- Hierarchy: symbol 22px; bolder padded direction pill (LONG
+  green/black, SHORT red/white); P&L is the hero at 28px with a
+  color-matched text glow; prices demoted to a clean unlabeled
+  "a → b" line at white@0.5; metadata white@0.4 (date·time left,
+  duration · N ct right).
+- Journaled trades: circular 28px grade badge in the top-right
+  corner (A/A+ gold, B white, C/F red@0.7); top row reserves
+  right padding so it never collides. Closed+ungraded shows a
+  muted "CLOSED"; the badge implies closed when present.
+- Open trades: looping gold border pulse (~2s, 0.3→0.6),
+  gold "OPEN", "unrealized" under the number.
+- Press: springs to 0.98 and back (native-driver scale).
+
+Type-check clean (only the 3 pre-existing iapService errors).
+
+### Files touched
+
+- `src/components/TradeCard.tsx`
+- `WORK_LOG.md`
+
+### Deferred (out of scope)
+
+Trade-detail screen on tap, on-card sparkline.
+
+---
+
 ## 2026-05-16 — Edge Stats: "Your Tendencies" insights screen
 
 Research Feature #5 — local behavioral analysis of trade history.

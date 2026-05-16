@@ -2,42 +2,33 @@ import React, { useEffect, useRef } from 'react';
 import {
   View, Text, Pressable, Animated, Easing, StyleSheet,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { TradeGrade } from '../store/tradeJournalStore';
 
 /**
- * TradeCard — single-row presentation of a closed or open trade.
+ * TradeCard — premium presentation of a closed or open trade.
  * Used by the dashboard recent-trades section and the journal list.
- * Aligns with the locked Pocket Trade brand (pure-black surface,
- * white type, gold/green/red accents) and the "TradeLocker-style"
- * professional density specified in the redesign.
  *
- * Layout (top → bottom):
- *  1. Symbol + direction pill (LONG green / SHORT red) on the left,
- *     status indicator on the right (pulsing green dot + "OPEN" or
- *     faded "CLOSED").
- *  2. Entry → Exit price line at 70% white opacity.
- *  3. Hero P&L number — the biggest, most prominent element. Green
- *     for wins, red for losses, white for breakeven. Open trades
- *     append a small "unrealized" suffix.
- *  4. Bottom row metadata — entry date/time | duration | contracts.
+ * Visual language (2026-05-16 upgrade):
+ *  - Vertical gradient surface (#0F0F0F→#141414), 16px radius, a
+ *    4px P&L-colored left stripe + a faint same-color "energy"
+ *    glow bleeding in from the left edge.
+ *  - Symbol is large; the direction pill is bold and padded.
+ *  - P&L is the undeniable hero (~28px) with a color-matched glow.
+ *  - Prices are a clean unlabeled "a → b" support line.
+ *  - Journaled trades get a circular grade badge in the corner.
+ *  - Open trades pulse a gold border and show "unrealized".
+ *  - Press → springs to 0.98 for tactile feedback.
  *
- * Left edge of the card carries a 3-px accent stripe (green / red /
- * gold) keyed to the P&L sign, so the win/loss read is parsable at
- * a glance even when scrolling fast.
- *
- * The card reads ONLY the fields listed in `Props`. Mapping from
- * `ClosedTrade` / `JournalEntry` (which use `side: 'buy' | 'sell'`,
- * `lots`, `openedAt`, `closedAt`) is done at the call sites.
+ * Props (and the data model) are unchanged — call sites map
+ * `JournalEntry` / `ClosedTrade` fields exactly as before.
  */
 
-const SURFACE       = '#0F0F0F';
-const BORDER        = '#1F1F1F';
-const GREEN         = '#00D395';
-const RED           = '#FF4757';
-const GOLD          = '#FFB800';
-const WHITE         = '#FFFFFF';
-const TEXT_FADED_70 = 'rgba(255,255,255,0.7)';
-const TEXT_FADED_50 = 'rgba(255,255,255,0.5)';
+const GREEN  = '#00D395';
+const RED     = '#FF4757';
+const GOLD    = '#FFB800';
+const WHITE   = '#FFFFFF';
+const TAG_BG  = '#2A2A2A';
 
 export type TradeDirection = 'long' | 'short';
 export type TradeStatus    = 'open' | 'closed';
@@ -57,13 +48,10 @@ export interface TradeCardProps {
   contracts: number;
   status: TradeStatus;
   /** Optional execution grade (from tradeJournalStore). Undefined
-   *  if the trade hasn't been journaled — no shame marker is shown
-   *  in that case, just no pill at all. */
+   *  if the trade hasn't been journaled — no badge in that case. */
   grade?: TradeGrade;
-  /** Pre-trade plan setup type (e.g. 'breakout'). When set, a small
-   *  pill is shown under the symbol/direction row so the user can
-   *  see what they planned. Absent for trades placed without a
-   *  plan (skipped / checklist off / legacy). */
+  /** Pre-trade plan setup type (e.g. 'breakout'). Shown as a small
+   *  tag in the top row; absent for plan-less trades. */
   planSetupType?: string | null;
   /** Optional tap handler. Used by JournalScreen to open the edit
    *  modal; Dashboard passes nothing. */
@@ -110,7 +98,6 @@ function formatEntryDate(unixMs: number): string {
 function formatDuration(entryMs: number, exitMs: number | null): string {
   if (exitMs == null) return 'Running';
   const totalSec = Math.max(0, Math.floor((exitMs - entryMs) / 1000));
-  // Never show "0s" — reads as a calc failure.
   if (totalSec <= 0)         return '<1s';
   if (totalSec < 60)         return `${totalSec}s`;
   if (totalSec < 3600) {
@@ -133,39 +120,27 @@ function pnlColor(pnl: number): string {
   if (pnl < 0) return RED;
   return WHITE;
 }
-
 function accentColor(pnl: number): string {
   if (pnl > 0) return GREEN;
   if (pnl < 0) return RED;
   return GOLD;
 }
+/** rgba() for the known accent hexes — used for the P&L text glow
+ *  and the left-edge energy bleed. */
+function glow(color: string, alpha: number): string {
+  const rgb =
+    color === GREEN ? '0,211,149' :
+    color === RED   ? '255,71,87' :
+    color === GOLD  ? '255,184,0' :
+                      '255,255,255';
+  return `rgba(${rgb},${alpha})`;
+}
 
-// ── Open-state pulsing dot ─────────────────────────────────────────────────
-
-function OpenDot() {
-  const pulse = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: 1,
-          duration: 700,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulse, {
-          toValue: 0,
-          duration: 700,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [pulse]);
-  const opacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] });
-  return <Animated.View style={[styles.openDot, { opacity }]} />;
+/** Grade badge palette: A/A+ gold, B white, C/F red @0.7. */
+function gradeColor(grade: TradeGrade): string {
+  if (grade === 'A+' || grade === 'A') return GOLD;
+  if (grade === 'B') return WHITE;
+  return 'rgba(255,71,87,0.7)'; // C / F
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -179,13 +154,86 @@ export default function TradeCard(props: TradeCardProps) {
   const isOpen = status === 'open';
   const isLong = direction === 'long';
   const accent = accentColor(pnl);
+  const pColor = pnlColor(pnl);
+  const showGrade = !isOpen && !!grade;
 
-  const body = (
-    <View style={styles.card}>
-      <View style={[styles.accent, { backgroundColor: accent }]} />
+  // Open-trade gold border pulse (~2s cycle, 0.3 → 0.6).
+  const pulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!isOpen) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1, duration: 1000,
+          easing: Easing.inOut(Easing.ease), useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0, duration: 1000,
+          easing: Easing.inOut(Easing.ease), useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [isOpen, pulse]);
+  const pulseOpacity = pulse.interpolate({
+    inputRange: [0, 1], outputRange: [0.3, 0.6],
+  });
+
+  // Press → spring to 0.98 and back.
+  const scale = useRef(new Animated.Value(1)).current;
+  const pressIn = () =>
+    Animated.spring(scale, {
+      toValue: 0.98, useNativeDriver: true, speed: 50, bounciness: 0,
+    }).start();
+  const pressOut = () =>
+    Animated.spring(scale, {
+      toValue: 1, useNativeDriver: true, speed: 40, bounciness: 6,
+    }).start();
+
+  const card = (
+    <View style={styles.cardOuter}>
+      <LinearGradient
+        colors={['#0F0F0F', '#141414']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      {/* Left energy glow bleeding in from the stripe. */}
+      <LinearGradient
+        pointerEvents="none"
+        colors={[glow(accent, 0.13), 'transparent']}
+        start={{ x: 0, y: 0.5 }}
+        end={{ x: 1, y: 0.5 }}
+        style={styles.leftGlow}
+      />
+      {/* 4px P&L-colored left stripe. */}
+      <View style={[styles.stripe, { backgroundColor: accent }]} />
+
+      {/* Open-trade pulsing gold border. */}
+      {isOpen && (
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.pulseBorder, { opacity: pulseOpacity }]}
+        />
+      )}
+
+      {/* Circular grade badge — top-right corner, journaled only. */}
+      {showGrade && (
+        <View
+          style={[styles.gradeBadge, { borderColor: gradeColor(grade!) }]}
+        >
+          <Text style={[styles.gradeBadgeText, { color: gradeColor(grade!) }]}>
+            {grade}
+          </Text>
+        </View>
+      )}
+
       <View style={styles.inner}>
-        {/* Top row — symbol + direction pill + status */}
-        <View style={styles.topRow}>
+        {/* Top row — identity + setup tag */}
+        <View
+          style={[styles.topRow, showGrade && styles.topRowGraded]}
+        >
           <View style={styles.topLeft}>
             <Text style={styles.symbol}>{symbol}</Text>
             <View
@@ -205,58 +253,53 @@ export default function TradeCard(props: TradeCardProps) {
             </View>
           </View>
 
-          <View style={styles.statusRow}>
-            {!isOpen && grade && (
-              <View style={styles.gradePill}>
-                <Text style={styles.gradePillText}>{grade}</Text>
+          <View style={styles.topRight}>
+            {planSetupType ? (
+              <View style={styles.setupTag}>
+                <Text style={styles.setupTagText}>
+                  {planSetupType.charAt(0).toUpperCase()
+                    + planSetupType.slice(1)}
+                </Text>
               </View>
-            )}
+            ) : null}
             {isOpen ? (
-              <>
-                <OpenDot />
-                <Text style={styles.statusOpenText}>OPEN</Text>
-              </>
-            ) : (
-              <Text style={styles.statusClosedText}>CLOSED</Text>
-            )}
+              <Text style={styles.openText}>OPEN</Text>
+            ) : !showGrade ? (
+              <Text style={styles.closedText}>CLOSED</Text>
+            ) : null}
           </View>
         </View>
 
-        {/* Pre-trade plan tag — what setup the user planned. */}
-        {planSetupType ? (
-          <View style={styles.planRow}>
-            <View style={styles.planPill}>
-              <Text style={styles.planPillText}>
-                {planSetupType.charAt(0).toUpperCase() + planSetupType.slice(1)}
-              </Text>
-            </View>
-          </View>
-        ) : null}
+        {/* P&L — the hero */}
+        <Text
+          style={[
+            styles.pnl,
+            {
+              color: pColor,
+              textShadowColor: glow(pColor, 0.5),
+            },
+          ]}
+          allowFontScaling={false}
+        >
+          {formatUSD(pnl)}
+        </Text>
+        {isOpen && <Text style={styles.unrealized}>unrealized</Text>}
 
-        {/* Middle — prices + hero P&L */}
+        {/* Price support line */}
         <Text style={styles.prices} numberOfLines={1}>
-          Entry: {formatPrice(entryPrice)}  →  Exit:{' '}
+          {formatPrice(entryPrice)}
+          {'  →  '}
           {exitPrice == null ? '—' : formatPrice(exitPrice)}
         </Text>
-        <View style={styles.pnlRow}>
-          <Text style={[styles.pnl, { color: pnlColor(pnl) }]} allowFontScaling={false}>
-            {formatUSD(pnl)}
-          </Text>
-          {isOpen && (
-            <Text style={styles.unrealized}>unrealized</Text>
-          )}
-        </View>
 
-        {/* Bottom — metadata */}
+        {/* Metadata */}
         <View style={styles.bottomRow}>
           <Text style={styles.metaText} numberOfLines={1}>
             {formatEntryDate(entryTime)}
           </Text>
-          <Text style={styles.metaText}>·</Text>
-          <Text style={styles.metaText}>{formatDuration(entryTime, exitTime)}</Text>
           <View style={{ flex: 1 }} />
-          <Text style={styles.metaText}>
-            {contracts} {contracts === 1 ? 'contract' : 'contracts'}
+          <Text style={styles.metaText} numberOfLines={1}>
+            {formatDuration(entryTime, exitTime)} · {contracts} ct
           </Text>
         </View>
       </View>
@@ -267,36 +310,55 @@ export default function TradeCard(props: TradeCardProps) {
     return (
       <Pressable
         onPress={onPress}
-        style={({ pressed }) => [pressed && styles.cardPressed]}
+        onPressIn={pressIn}
+        onPressOut={pressOut}
         accessibilityRole="button"
         accessibilityLabel={`${symbol} ${direction} ${formatUSD(pnl)}`}
       >
-        {body}
+        <Animated.View style={{ transform: [{ scale }] }}>
+          {card}
+        </Animated.View>
       </Pressable>
     );
   }
-  return body;
+  return card;
 }
 
 const styles = StyleSheet.create({
-  card: {
-    flexDirection: 'row',
-    backgroundColor: SURFACE,
-    borderColor: BORDER,
+  cardOuter: {
+    position: 'relative',
+    borderRadius: 16,
     borderWidth: 1,
-    borderRadius: 14,
+    borderColor: '#1F1F1F',
     overflow: 'hidden',
+    // Subtle base lift so the card sits above the black canvas.
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  cardPressed: { opacity: 0.85 },
-
-  accent: {
-    width: 3,
-    // Pulled by parent flex: stretches full card height.
+  stripe: {
+    position: 'absolute',
+    left: 0, top: 0, bottom: 0,
+    width: 4,
+  },
+  leftGlow: {
+    position: 'absolute',
+    left: 0, top: 0, bottom: 0,
+    width: 64,
+  },
+  pulseBorder: {
+    position: 'absolute',
+    left: 0, right: 0, top: 0, bottom: 0,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: GOLD,
   },
   inner: {
-    flex: 1,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
+    paddingVertical: 16,
+    paddingLeft: 18,
+    paddingRight: 16,
   },
 
   // Top row
@@ -305,132 +367,120 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  // Clear the absolute corner badge when present.
+  topRowGraded: { paddingRight: 36 },
   topLeft: {
     flexDirection: 'row',
     alignItems: 'center',
   },
+  topRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   symbol: {
     color: WHITE,
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: '800',
-    letterSpacing: -0.3,
+    letterSpacing: -0.4,
   },
   dirPill: {
     marginLeft: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
   },
   dirPillLong:  { backgroundColor: GREEN },
   dirPillShort: { backgroundColor: RED },
   dirPillText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '900',
     letterSpacing: 1,
   },
   dirPillTextLong:  { color: '#000000' },
   dirPillTextShort: { color: WHITE },
 
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  openDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: GREEN,
-    marginRight: 6,
-  },
-  statusOpenText: {
-    color: GREEN,
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
-  statusClosedText: {
-    color: TEXT_FADED_50,
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
-
-  // Journaled-trade grade pill — gold border + gold text, sits to
-  // the left of the "CLOSED" label. Only renders when `grade` is
-  // set; unjournaled trades show nothing here (no shame marker).
-  gradePill: {
-    marginRight: 8,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: GOLD,
-    backgroundColor: 'rgba(255,184,0,0.12)',
-  },
-  gradePillText: {
-    color: GOLD,
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-
-  // Pre-trade plan tag
-  planRow: {
-    flexDirection: 'row',
-    marginTop: 8,
-  },
-  planPill: {
+  setupTag: {
+    backgroundColor: TAG_BG,
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 4,
     borderRadius: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
   },
-  planPillText: {
+  setupTagText: {
     color: 'rgba(255,255,255,0.6)',
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.3,
   },
-
-  // Middle
-  prices: {
-    marginTop: 10,
-    color: TEXT_FADED_70,
-    fontSize: 13,
-    fontWeight: '500',
-    fontVariant: ['tabular-nums'],
-  },
-  pnlRow: {
-    marginTop: 6,
-    flexDirection: 'row',
-    alignItems: 'baseline',
-  },
-  pnl: {
-    fontSize: 24,
+  openText: {
+    color: GOLD,
+    fontSize: 12,
     fontWeight: '800',
-    letterSpacing: -0.5,
+    letterSpacing: 1,
+  },
+  closedText: {
+    color: 'rgba(255,255,255,0.35)',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+
+  // Circular grade badge
+  gradeBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  gradeBadgeText: {
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.2,
+  },
+
+  // P&L hero
+  pnl: {
+    marginTop: 10,
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.6,
     fontVariant: ['tabular-nums'],
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 14,
   },
   unrealized: {
-    marginLeft: 8,
-    color: TEXT_FADED_50,
+    marginTop: 2,
+    color: 'rgba(255,255,255,0.45)',
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: 0.5,
     textTransform: 'lowercase',
   },
 
-  // Bottom
+  // Price support line
+  prices: {
+    marginTop: 8,
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 13,
+    fontWeight: '500',
+    fontVariant: ['tabular-nums'],
+  },
+
+  // Metadata
   bottomRow: {
     marginTop: 12,
     flexDirection: 'row',
     alignItems: 'center',
   },
   metaText: {
-    color: TEXT_FADED_50,
+    color: 'rgba(255,255,255,0.4)',
     fontSize: 12,
     fontWeight: '500',
-    marginRight: 6,
   },
 });
