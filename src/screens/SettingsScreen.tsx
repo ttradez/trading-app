@@ -181,6 +181,26 @@ export default function SettingsScreen({ navigation }: any) {
     );
   };
 
+  const redoOnboarding = () => {
+    Alert.alert(
+      'Redo onboarding?',
+      "You'll go through onboarding again. Your trades, streak, and badges are kept.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Redo',
+          onPress: () => {
+            useOnboardingStore.getState().setOnboardingComplete(false);
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'OnboardingSplash' }],
+            });
+          },
+        },
+      ],
+    );
+  };
+
   const resetEverything = () => {
     Alert.alert(
       'Reset everything?',
@@ -357,6 +377,13 @@ export default function SettingsScreen({ navigation }: any) {
             label="Reset Streak"
             onPress={resetStreak}
             leftIcon="warning-outline"
+            leftIconColor={GOLD}
+          />
+          <Separator />
+          <Row
+            label="Redo Onboarding"
+            onPress={redoOnboarding}
+            leftIcon="refresh-outline"
             leftIconColor={GOLD}
           />
           <Separator />

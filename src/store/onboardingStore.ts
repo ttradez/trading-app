@@ -1,10 +1,14 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 /**
- * Onboarding-only state. Not persisted to Firebase yet (deferred-auth
- * strategy — we migrate everything captured during onboarding when the
- * user signs up at screen 11). For now in-memory only; survives screen
- * transitions but not app reloads.
+ * Onboarding state. Persisted via `zustand/middleware` +
+ * AsyncStorage so `onboardingComplete` (and the captured
+ * archetype / handle / goal / etc.) survive an app reload — the
+ * routing guard in App.tsx reads `onboardingComplete` to skip the
+ * onboarding flow for returning users. Firebase migration of this
+ * payload at signup is still a deferred follow-up.
  */
 
 export type Archetype =
@@ -140,7 +144,9 @@ const DEFAULT_ACCOUNT_SIZE = 50_000;
 
 const DEFAULT_DAILY_TIME_GOAL_MIN = 30;
 
-export const useOnboardingStore = create<OnboardingState>((set) => ({
+export const useOnboardingStore = create<OnboardingState>()(
+  persist(
+    (set) => ({
   archetype: null,
   archetypeAnswers: [],
   identity: null,
@@ -205,4 +211,10 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
     dailyTimeGoalMinutes: DEFAULT_DAILY_TIME_GOAL_MIN,
     onboardingComplete: false,
   }),
-}));
+    }),
+    {
+      name: 'onboarding-storage-v1',
+      storage: createJSONStorage(() => AsyncStorage),
+    }
+  )
+);

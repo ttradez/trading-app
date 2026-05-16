@@ -5,6 +5,44 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-15 — Routing guard: skip onboarding when onboardingComplete is true
+
+Returning users were forced through onboarding every launch
+(`FORCE_ONBOARDING_FLOW=true`) AND onboardingStore wasn't even
+persisted, so the flag couldn't have worked anyway.
+
+- **onboardingStore**: wrapped in `persist` (AsyncStorage,
+  `onboarding-storage-v1`). Actions drop out of JSON; shallow
+  merge keeps them — same pattern as the other persisted stores.
+- **App.tsx**: deleted `FORCE_ONBOARDING_FLOW`, the
+  disclaimer/Firebase-auth-gated legacy render branch, the FORCE
+  force-sign-out hack, and the now-unused
+  Login/AccountSetup/FeatureTour/Disclaimer imports + AsyncStorage
+  disclaimer code. Single guarded stack: gate first paint on
+  `useOnboardingStore.persist.hasHydrated()` (+ `onFinishHydration`
+  subscription, 2.5 s safety timeout) → `LoadingSplash` until
+  rehydrated, then `Stack.Navigator initialRouteName =
+  onboardingComplete ? 'Main' : 'OnboardingSplash'`. All
+  onboarding screens stay registered (screen-12 + Redo Onboarding
+  reset between them). Auth `useEffect` slimmed to only populate
+  authStore `uid/username` when a Firebase session exists (no
+  routing role, no sign-out).
+- **SettingsScreen**: new non-destructive "Redo Onboarding" row
+  in Data (between Reset Streak and Reset Everything) — confirm
+  alert → `setOnboardingComplete(false)` + `navigation.reset` to
+  `OnboardingSplash`; trades/streak/badges untouched.
+
+Type-check clean (only the pre-existing iapService errors).
+
+### Files touched
+
+- `src/store/onboardingStore.ts` (persist)
+- `App.tsx` (routing guard, legacy removal, slim auth effect)
+- `src/screens/SettingsScreen.tsx` (Redo Onboarding row)
+- `PROJECT_CONTEXT.md`, `WORK_LOG.md`
+
+---
+
 ## 2026-05-15 — Progression celebrations: rank-up modals + goal-gradient nudge + particle burst
 
 The *feel* layer on top of the XP/challenge engines: celebrate
