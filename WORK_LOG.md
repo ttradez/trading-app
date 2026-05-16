@@ -5,6 +5,72 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-15 — Critical fixes from app review (12-item batch)
+
+Isolated correctness/honesty fixes from a review pass. No new
+features; misleading placeholder content removed.
+
+- **FIX 1 — Epoch dates ("Jan 21, 1970"):** backend
+  `opened_at`/`closed_at` are unix *seconds*; they were stored raw
+  and `new Date()` read them as ms → 1970. Added a `toEpochMs()`
+  normalizer at write-time in TradingScreen, a render guard in
+  TradeCard (`year < 2010 → "Today"`), and a `hydrate()` migration
+  in journalStore that backfills existing bad timestamps
+  (seconds→ms, junk→savedAt/now).
+- **FIX 2 — XP not granting on trade close (the #1 progression
+  bug):** wiring was correct but lived *only* in the journal
+  modal's `onSave`/`onSkip`; if the modal was never dismissed
+  (tab switch unmounts the screen) XP never granted. Moved base
+  (+10) / win (+5) / first-trade-of-day (+15) into the
+  always-running trade-close effect, guarded by an
+  `xpProcessedRef` set so effect re-runs can't double-grant.
+  Journal-only XP (+15 journal, +5 journaled loss) stays in
+  `onSave`. **XP now flows on every close.**
+- **FIX 3 — "0s" duration:** sub-second trades render `<1s`.
+- **FIX 4 — "100%" win rate with no context:** shows sample size,
+  e.g. `100% (2)`.
+- **FIX 5 — Fake "MAY TOURNAMENT / LIVE / $2,500 / countdown"
+  card:** replaced with an honest "Tournaments — Coming Soon"
+  placeholder (gold trophy @0.3, no LIVE/prize/countdown).
+- **FIX 6+7 — Friends / Trade Feed tabs:** removed the inner
+  LEADERBOARD/TRADE FEED/FRIENDS tab row entirely; Ranks is now
+  just the LEADERBOARD | BADGES toggle.
+- **FIX 8 — Leaderboard empty state:** "Personal Leaderboard —
+  Your best weeks will appear here as you trade."
+- **FIX 9 — Naming collision:** dashboard lower section
+  "Today's Missions" → "Daily Challenges" (disambiguates from the
+  singular "TODAY'S MISSION" curated-setup card).
+- **FIX 10 — Duplicate badge counter:** investigated; current
+  source has only ONE counter (near rank progression). No-op —
+  the reviewer saw an older build.
+- **FIX 11 — Streak fire showing "0":** at streak 0 the badge now
+  renders a hollow `flame-outline` (Ionicons) + a small neutral
+  dot instead of a punishing "0"; dashboard header streak is
+  tappable → alert "Train today to start your streak."
+- **FIX 12 — Drawing tools on empty chart:** DrawingToolbar takes
+  a `disabled` prop; greyed out (opacity 0.3) + `pointerEvents
+  none` until `sessionId && candles.length > 0`.
+
+Type-check clean (only the 3 pre-existing iapService errors).
+
+### Files touched
+
+- `src/screens/TradingScreen.tsx` (FIX 1, 2, 12)
+- `src/components/TradeCard.tsx` (FIX 1, 3)
+- `src/store/journalStore.ts` (FIX 1 backfill)
+- `src/screens/DashboardScreen.tsx` (FIX 4, 9, 11)
+- `src/components/StreakBadge.tsx` (FIX 11)
+- `src/screens/LeaderboardScreen.tsx` (FIX 5, 6, 7, 8)
+- `src/components/chart/DrawingToolbar.tsx` (FIX 12)
+- `WORK_LOG.md`
+
+### Deferred (explicitly out of scope for this batch)
+
+Dashboard reorder/restructure, stat-tile metric changes, training
+ring resizing, header improvements, chart bottom-bar reorg.
+
+---
+
 ## 2026-05-15 — Routing guard: skip onboarding when onboardingComplete is true
 
 Returning users were forced through onboarding every launch

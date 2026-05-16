@@ -268,6 +268,18 @@ function CustomSessionConfig({
   );
 }
 
+/**
+ * Normalise a backend timestamp to unix MILLISECONDS. The session
+ * API returns unix SECONDS (same convention as candle.time); JS
+ * `Date` wants ms, so a raw seconds value renders as ~Jan 1970.
+ * Values already in ms (≥ 1e12 ≈ year 2001) pass through; missing /
+ * invalid → "now".
+ */
+function toEpochMs(v: unknown): number {
+  if (typeof v !== 'number' || !isFinite(v) || v <= 0) return Date.now();
+  return v < 1e12 ? v * 1000 : v;
+}
+
 export default function TradingScreen({ route }: any) {
   // Streak training timer — ticks every 10 s while this screen is
   // mounted + the app is foregrounded; pauses on background; flushes
@@ -300,6 +312,9 @@ export default function TradingScreen({ route }: any) {
   const [recentClosedTrade, setRecentClosedTrade] = useState<any | null>(null);
   const saveTradeJournalEntry = useTradeJournalStore((s) => s.saveEntry);
   const addJournalEntry       = useJournalStore((s) => s.addEntry);
+  // Per-close XP/badge guard so the effect can't double-grant if it
+  // re-runs for the same trade.
+  const xpProcessedRef = useRef<Set<string>>(new Set());
 
   // Auto-persist every closed trade into `journalStore` so the
   // dashboard's recent-trades + stats sections always have real
@@ -326,14 +341,29 @@ export default function TradingScreen({ route }: any) {
       takeProfit: t.take_profit ?? null,
       pnl:        typeof t.pnl === 'number' ? t.pnl : 0,
       rMultiple:  typeof t.r_multiple === 'number' ? t.r_multiple : null,
-      openedAt:   typeof t.opened_at === 'number' ? t.opened_at : Date.now(),
-      closedAt:   typeof t.closed_at === 'number' ? t.closed_at : Date.now(),
+      openedAt:   toEpochMs(t.opened_at),
+      closedAt:   toEpochMs(t.closed_at),
       notes: '', mistakes: '', wentWell: '',
       emotion: null, confidence: null,
       strategy: '', tags: [],
       savedAt: Date.now(),
     };
     addJournalEntry(entry);
+
+    // Grant the core trade XP HERE (once per close) rather than on
+    // journal-modal dismiss — if the user closes a trade then
+    // switches tabs, the modal unmounts and the dismiss handlers
+    // never run, so XP would never flow. This is the #1
+    // progression path; it must not depend on UI interaction.
+    // (The journal +15 and journaled-loss +5 still happen on Save.)
+    if (!xpProcessedRef.current.has(id)) {
+      xpProcessedRef.current.add(id);
+      const xp = useXpStore.getState();
+      const { base, isFirstOfDay } = xp.registerTrade();
+      xp.addXP(base, 'trade');
+      if (isFirstOfDay) xp.addXP(15, 'first trade of day');
+      if (entry.pnl > 0) xp.addXP(5, 'win');
+    }
 
     // Mark the daily mission complete if this trade is on the
     // curated scenario's symbol AND its NY-time calendar date.
@@ -979,8 +1009,9 @@ export default function TradingScreen({ route }: any) {
 
       {/* Chart row: LEFT drawing-tools sidebar + chart + OHLC overlay */}
       <View style={styles.chartRow}>
-        {/* Left vertical drawing tools — full TradingView-style palette. */}
-        <DrawingToolbar />
+        {/* Left vertical drawing tools — full TradingView-style palette.
+            Greyed out + non-tappable until the chart has real data. */}
+        <DrawingToolbar disabled={!(sessionId && candles.length > 0)} />
 
         {/* Chart with OHLC overlay */}
         <View style={styles.chartArea}>
@@ -1223,16 +1254,13 @@ export default function TradingScreen({ route }: any) {
             saveTradeJournalEntry(recentClosedTrade.id, data);
           }
           setRecentClosedTrade(null);
-          // XP — process over outcome: a journaled loss earns the
-          // same trade-close XP as a win (base + 5), then +15 for
-          // the journal action itself.
+          // Base/win/first-of-day XP was already granted at close
+          // (see the close effect). Here only the journal-specific
+          // XP: +15 for journaling, and the "journaled loss == win"
+          // bonus (+5) — a win already got its +5 at close.
           const xp = useXpStore.getState();
-          const { base, isFirstOfDay } = xp.registerTrade();
-          xp.addXP(base, 'trade');
-          if (isFirstOfDay) xp.addXP(15, 'first trade of day');
-          if (closedPnl > 0) xp.addXP(5, 'win');
-          else xp.addXP(5, 'journaled loss');
           xp.addXP(15, 'journal');
+          if (closedPnl <= 0) xp.addXP(5, 'journaled loss');
           // Badge checks AFTER the modal is dismissed so the toast
           // isn't hidden behind it; a grade was saved → journal badges.
           checkTradeCloseBadges(closedPnl);
@@ -1246,12 +1274,8 @@ export default function TradingScreen({ route }: any) {
           const closedPnl =
             typeof recentClosedTrade?.pnl === 'number' ? recentClosedTrade.pnl : 0;
           setRecentClosedTrade(null);
-          const xp = useXpStore.getState();
-          const { base, isFirstOfDay } = xp.registerTrade();
-          xp.addXP(base, 'trade');
-          if (isFirstOfDay) xp.addXP(15, 'first trade of day');
-          if (closedPnl > 0) xp.addXP(5, 'win');
-          // Unjournaled loss: no bonus (base only).
+          // Base/win/first-of-day XP already granted at close; an
+          // unjournaled trade earns no journal bonus.
           checkTradeCloseBadges(closedPnl);
           detectAfterTradeClose(recentClosedTrade ?? {}, timeframe);
         }}

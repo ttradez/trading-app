@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, ViewStyle, TextStyle } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 
 /**
  * StreakBadge — fire-icon-plus-count visual for the user's training
@@ -83,6 +83,12 @@ export default function StreakBadge({ count, status, size = 'small' }: Props) {
   let countOpacity = 1;
   let overlay: React.ReactNode = null;
   let sparkle: React.ReactNode = null;
+  // 'at_risk' / 'new' (streak 0): a true hollow OUTLINE flame + no
+  // "0" digit. A filled flame with "0" is the punishing
+  // anti-pattern — this reads as "not started yet", not "you
+  // failed".
+  let outlineFlame = false;
+  let hideCount = false;
 
   switch (effective) {
     case 'active':
@@ -118,11 +124,10 @@ export default function StreakBadge({ count, status, size = 'small' }: Props) {
     }
 
     case 'at_risk':
-      // Ghosted flame — no `fire-outline` glyph in MCI, so we lean on
-      // opacity to convey "streak alive but dim". Slightly lower than
-      // the count opacity so the flame fades back more than the digit.
-      iconOpacity = 0.35;
-      countOpacity = 0.5;
+      // Hollow Ionicons flame (MCI has no flame-outline), no digit.
+      outlineFlame = true;
+      hideCount = true;
+      iconOpacity = 0.55;
       break;
 
     case 'frozen':
@@ -173,29 +178,50 @@ export default function StreakBadge({ count, status, size = 'small' }: Props) {
       accessibilityLabel={`${countText}-day streak, ${effective}`}
     >
       <View style={styles.flameWrap}>
-        <MaterialCommunityIcons
-          name={iconName}
-          size={cfg.flame}
-          color={iconColor}
-          style={[{ opacity: iconOpacity }, flameShadow as ViewStyle]}
-        />
+        {outlineFlame ? (
+          <Ionicons
+            name="flame-outline"
+            size={cfg.flame}
+            color={GOLD}
+            style={{ opacity: iconOpacity }}
+          />
+        ) : (
+          <MaterialCommunityIcons
+            name={iconName}
+            size={cfg.flame}
+            color={iconColor}
+            style={[{ opacity: iconOpacity }, flameShadow as ViewStyle]}
+          />
+        )}
         {sparkle}
         {overlay}
       </View>
-      <Text
-        style={[
-          styles.count,
-          {
-            fontSize: cfg.count,
-            color: countColor,
-            opacity: countOpacity,
-            marginTop: cfg.gap,
-          },
-        ]}
-        allowFontScaling={false}
-      >
-        {countText}
-      </Text>
+      {hideCount ? (
+        // Small neutral dot instead of a "0" — keeps the vertical
+        // rhythm without the demoralising zero.
+        <View
+          style={{
+            width: 4, height: 4, borderRadius: 2,
+            backgroundColor: 'rgba(255,255,255,0.35)',
+            marginTop: cfg.gap + 3,
+          }}
+        />
+      ) : (
+        <Text
+          style={[
+            styles.count,
+            {
+              fontSize: cfg.count,
+              color: countColor,
+              opacity: countOpacity,
+              marginTop: cfg.gap,
+            },
+          ]}
+          allowFontScaling={false}
+        >
+          {countText}
+        </Text>
+      )}
     </View>
   );
 }

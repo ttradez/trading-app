@@ -132,114 +132,39 @@ export default function LeaderboardScreen({ route }: any) {
     </View>
   );
 
+  // Inner LEADERBOARD / TRADE FEED / FRIENDS tab row removed — no
+  // Firebase means feed/friends are empty shells that imply an
+  // ecosystem that doesn't exist. The Ranks screen is just the
+  // top-level LEADERBOARD | BADGES toggle; this view shows the
+  // personal-leaderboard placeholder directly.
   const renderHeader = () => (
     <>
-      {/* Trophy header */}
       <View style={styles.trophyHeader}>
         <Ionicons name="trophy" size={32} color={colors.gold} />
       </View>
 
-      {/* Top tab bar */}
-      <View style={styles.tabBar}>
-        {(['leaderboard', 'feed', 'friends'] as Tab[]).map((t) => (
-          <TouchableOpacity
-            key={t}
-            style={[styles.tabBtn, tab === t && styles.tabBtnActive]}
-            onPress={() => setTab(t)}
-          >
-            <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
-              {t === 'leaderboard' ? 'LEADERBOARD' : t === 'feed' ? 'TRADE FEED' : 'FRIENDS'}
-            </Text>
-          </TouchableOpacity>
-        ))}
+      {/* Tournaments — placeholder (no real tournament / prize pool
+          exists yet; the old "MAY TOURNAMENT · LIVE · $2,500" card
+          implied otherwise). */}
+      <View style={styles.tourneyCard}>
+        <Ionicons
+          name="trophy-outline"
+          size={40}
+          color="rgba(255,184,0,0.3)"
+          style={styles.comingSoonIcon}
+        />
+        <Text style={styles.comingSoonTitle}>Tournaments — Coming Soon</Text>
+        <Text style={styles.comingSoonSub}>
+          The first season launches when 100 traders join.
+        </Text>
       </View>
 
-      {/* Period sub-tabs (only on leaderboard tab) */}
-      {tab === 'leaderboard' && (
-        <View style={styles.periodRow}>
-          {PERIODS.map((p) => (
-            <TouchableOpacity
-              key={p}
-              style={[styles.periodBtn, period === p && styles.periodBtnActive]}
-              onPress={() => setPeriod(p)}
-            >
-              <Text style={[styles.periodText, period === p && styles.periodTextActive]}>
-                {p === 'weekly' ? 'WEEKLY' : p === 'monthly' ? 'MONTHLY' : 'ALL TIME'}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-
-      {/* Tournament card (only on leaderboard tab) */}
-      {tab === 'leaderboard' && (
-        <View style={styles.tourneyCard}>
-          <View style={styles.tourneyHeader}>
-            <Ionicons name="trophy" size={20} color={colors.gold} />
-            <Text style={styles.tourneyTitle}>MAY TOURNAMENT</Text>
-            <View style={styles.liveBadge}>
-              <View style={styles.liveDot} />
-              <Text style={styles.liveText}>LIVE</Text>
-            </View>
-          </View>
-          <View style={styles.tourneyStats}>
-            <View style={styles.tourneyStat}>
-              <Text style={styles.tourneyStatLabel}>ENDS IN</Text>
-              <Text style={styles.tourneyStatValue}>12D 18H 47M</Text>
-            </View>
-            <View style={[styles.tourneyStat, { alignItems: 'flex-end' }]}>
-              <Text style={styles.tourneyStatLabel}>PRIZE POOL</Text>
-              <Text style={[styles.tourneyStatValue, { color: colors.gold }]}>$2,500 USD</Text>
-            </View>
-          </View>
-        </View>
-      )}
-
-      {/* Leaderboard column headers */}
-      {tab === 'leaderboard' && data.length > 0 && (
+      {data.length > 0 && (
         <View style={styles.lbHeader}>
           <Text style={[styles.lbHeaderText, { width: 32 }]}>RANK</Text>
           <Text style={[styles.lbHeaderText, { flex: 1, marginLeft: spacing.sm }]}>TRADER</Text>
           <Text style={[styles.lbHeaderText, { width: 80, textAlign: 'right' }]}>EQUITY</Text>
           <Text style={[styles.lbHeaderText, { width: 60, textAlign: 'right' }]}>SCORE</Text>
-        </View>
-      )}
-
-      {/* Friends tab inputs */}
-      {tab === 'friends' && (
-        <View style={styles.friendsBox}>
-          <Text style={styles.fieldLabel}>CREATE A GROUP</Text>
-          <View style={styles.friendsInputRow}>
-            <TextInput
-              style={[styles.friendsInput, { flex: 1 }]}
-              value={groupName}
-              onChangeText={setGroupName}
-              placeholder="Group name"
-              placeholderTextColor={colors.textTertiary}
-            />
-            <TouchableOpacity style={styles.friendsBtn} onPress={handleCreateGroup}>
-              <Text style={styles.friendsBtnText}>CREATE</Text>
-            </TouchableOpacity>
-          </View>
-
-          <Text style={[styles.fieldLabel, { marginTop: spacing.lg }]}>JOIN WITH CODE</Text>
-          <View style={styles.friendsInputRow}>
-            <TextInput
-              style={[styles.friendsInput, { flex: 1 }]}
-              value={inviteCode}
-              onChangeText={setInviteCode}
-              placeholder="XXXXXXXX"
-              placeholderTextColor={colors.textTertiary}
-              autoCapitalize="characters"
-            />
-            <TouchableOpacity style={styles.friendsBtn} onPress={handleJoinGroup}>
-              <Text style={styles.friendsBtnText}>JOIN</Text>
-            </TouchableOpacity>
-          </View>
-
-          {groupLb.length > 0 && (
-            <Text style={[styles.fieldLabel, { marginTop: spacing.xl }]}>GROUP RANKINGS</Text>
-          )}
         </View>
       )}
     </>
@@ -286,18 +211,17 @@ export default function LeaderboardScreen({ route }: any) {
     <FlatList
       style={styles.container}
       contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.xxxl }}
-      data={tab === 'leaderboard' ? data : tab === 'feed' ? feed : groupLb}
+      data={data}
       keyExtractor={(_, i) => `${i}`}
-      renderItem={tab === 'feed' ? renderFeedRow : renderLeaderboardRow}
+      renderItem={renderLeaderboardRow}
       ListHeaderComponent={renderHeader}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.gold} />}
       ListEmptyComponent={
         !loading ? (
           <View style={styles.emptyBox}>
+            <Text style={styles.emptyTitle}>Personal Leaderboard</Text>
             <Text style={styles.emptyText}>
-              {tab === 'leaderboard' ? 'No results yet — start trading!' :
-               tab === 'feed' ? 'No public trades yet.' :
-               !myGroupId ? 'Create or join a group above.' : ''}
+              Your best weeks will appear here as you trade.
             </Text>
           </View>
         ) : null
@@ -483,6 +407,16 @@ const styles = StyleSheet.create({
   tourneyStatLabel: { color: colors.textSecondary, fontSize: 9, fontWeight: fontWeight.bold, letterSpacing: 1.2, marginBottom: 2 },
   tourneyStatValue: { color: colors.textPrimary, fontSize: fontSize.md, fontWeight: fontWeight.bold, fontVariant: ['tabular-nums'] },
 
+  comingSoonIcon: { alignSelf: 'center', marginBottom: spacing.sm },
+  comingSoonTitle: {
+    color: colors.textPrimary, fontSize: fontSize.md, fontWeight: fontWeight.bold,
+    textAlign: 'center',
+  },
+  comingSoonSub: {
+    color: colors.textSecondary, fontSize: fontSize.sm, textAlign: 'center',
+    marginTop: 4,
+  },
+
   lbHeader: { flexDirection: 'row', paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border, marginBottom: spacing.sm },
   lbHeaderText: { color: colors.textSecondary, fontSize: 10, fontWeight: fontWeight.bold, letterSpacing: 1.2 },
 
@@ -527,8 +461,9 @@ const styles = StyleSheet.create({
   },
   friendsBtnText: { color: colors.bg, fontWeight: fontWeight.bold, letterSpacing: 1.5, fontSize: fontSize.xs },
 
-  emptyBox: { alignItems: 'center', paddingVertical: spacing.xxl },
-  emptyText: { color: colors.textSecondary, fontSize: fontSize.sm },
+  emptyBox: { alignItems: 'center', paddingVertical: spacing.xxl, paddingHorizontal: spacing.xl },
+  emptyTitle: { color: colors.textPrimary, fontSize: fontSize.md, fontWeight: fontWeight.bold, marginBottom: 4 },
+  emptyText: { color: colors.textSecondary, fontSize: fontSize.sm, textAlign: 'center' },
 
   green: { color: colors.green },
   red:   { color: colors.red },

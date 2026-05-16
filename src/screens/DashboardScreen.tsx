@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Pressable, Animated,
-  Easing,
+  Easing, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -313,7 +313,22 @@ export default function DashboardScreen({ navigation }: any) {
             )}
           </View>
           <View style={styles.headerRight}>
-            <StreakBadge count={streakCount} status={streakStatus} size="small" />
+            <Pressable
+              onPress={() => {
+                if (streakCount === 0) {
+                  Alert.alert('Streak', 'Train today to start your streak.');
+                }
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel={
+                streakCount === 0
+                  ? 'No streak yet — train today to start'
+                  : `${streakCount}-day streak`
+              }
+            >
+              <StreakBadge count={streakCount} status={streakStatus} size="small" />
+            </Pressable>
             <Pressable
               onPress={() => navigation.navigate('Settings')}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -465,7 +480,9 @@ export default function DashboardScreen({ navigation }: any) {
           />
           <StatCard
             label="Win Rate"
-            value={stats.hasTrades ? `${Math.round(stats.winRate)}%` : '—'}
+            value={stats.hasTrades
+              ? `${Math.round(stats.winRate)}% (${stats.total})`
+              : '—'}
             color={stats.hasTrades
               ? (stats.winRate >= 50 ? GREEN : RED)
               : undefined}
@@ -749,7 +766,7 @@ function MissionsSection() {
   return (
     <View>
       <Text style={[styles.sectionTitle, styles.missionsTitle]}>
-        Today's Missions
+        Daily Challenges
       </Text>
 
       {allComplete && (

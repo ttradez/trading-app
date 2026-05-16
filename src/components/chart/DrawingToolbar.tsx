@@ -17,7 +17,7 @@ import { useDrawingsStore } from '../../store/drawingsStore';
  *  - Long-pressing (or tapping the ★ next to) a tool toggles it as a favorite.
  *  - Bottom section: lock / hide / clear-all
  */
-export default function DrawingToolbar() {
+export default function DrawingToolbar({ disabled = false }: { disabled?: boolean }) {
   const {
     setActiveTool, favorites, toggleFavorite,
   } = useDrawingsStore();
@@ -49,7 +49,10 @@ export default function DrawingToolbar() {
   };
 
   return (
-    <View style={styles.rail}>
+    <View
+      style={[styles.rail, disabled && styles.railDisabled]}
+      pointerEvents={disabled ? 'none' : 'auto'}
+    >
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ alignItems: 'center' }}>
         {/* Category buttons */}
         {CATEGORY_BUTTONS.map((c) => (
@@ -164,6 +167,12 @@ const styles = StyleSheet.create({
     width: 32, height: 30,
     alignItems: 'center', justifyContent: 'center',
     marginVertical: 1, borderRadius: 4,
+  },
+  railDisabled: {
+    // Chart not loaded yet ("Loading market…") — grey the palette out
+    // and make it non-tappable so users don't hit dead tools on an
+    // empty canvas.
+    opacity: 0.3,
   },
   btnActive: {
     backgroundColor: colors.cardAlt,

@@ -79,7 +79,32 @@ export const useJournalStore = create<JournalState>((set, get) => ({
       const raw = await AsyncStorage.getItem(KEY);
       if (!raw) return;
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) set({ entries: parsed });
+      if (!Array.isArray(parsed)) return;
+      // Backfill timestamps written before the seconds→ms fix:
+      // a value < 1e12 is either unix-seconds (≥1e9 → ×1000) or
+      // junk/0 (→ savedAt, else now). Keeps old trades from
+      // rendering as "Jan 1970".
+      let changed = false;
+      const fix = (v: unknown, fallback: number): number => {
+        if (typeof v === 'number' && v >= 1e12) return v; // already ms
+        if (typeof v === 'number' && v >= 1e9 && v < 1e12) {
+          changed = true; return v * 1000; // unix seconds
+        }
+        changed = true; return fallback;
+      };
+      const migrated = parsed.map((e: JournalEntry) => {
+        const savedAt =
+          typeof e.savedAt === 'number' && e.savedAt >= 1e12
+            ? e.savedAt
+            : Date.now();
+        return {
+          ...e,
+          openedAt: fix(e.openedAt, savedAt),
+          closedAt: fix(e.closedAt, savedAt),
+        };
+      });
+      set({ entries: migrated });
+      if (changed) persist(migrated);
     } catch {}
   },
 }));

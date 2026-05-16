@@ -88,6 +88,9 @@ const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct
 function formatEntryDate(unixMs: number): string {
   const d = new Date(unixMs);
   if (isNaN(d.getTime())) return '—';
+  // Guard against epoch / seconds-as-ms bugs: anything before 2010
+  // is a bad timestamp — show "Today" rather than "Jan 1970".
+  if (d.getFullYear() < 2010) return 'Today';
   const month = MONTHS_SHORT[d.getMonth()];
   const day   = d.getDate();
   const year  = d.getFullYear();
@@ -102,6 +105,8 @@ function formatEntryDate(unixMs: number): string {
 function formatDuration(entryMs: number, exitMs: number | null): string {
   if (exitMs == null) return 'Running';
   const totalSec = Math.max(0, Math.floor((exitMs - entryMs) / 1000));
+  // Never show "0s" — reads as a calc failure.
+  if (totalSec <= 0)         return '<1s';
   if (totalSec < 60)         return `${totalSec}s`;
   if (totalSec < 3600) {
     const m = Math.floor(totalSec / 60);
