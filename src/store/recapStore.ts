@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -76,11 +77,21 @@ export const useRecapStore = create<RecapState>()(
   )
 );
 
-/** Recaps newest-first, for the Journal "Weekly Recaps" list. */
+/** Recaps newest-first, for the Journal "Weekly Recaps" list.
+ *
+ *  The selector returns the RAW `recaps` object (a stable
+ *  reference Zustand only swaps when it actually mutates) and the
+ *  sorted array is derived in `useMemo`. Doing the
+ *  `Object.values().sort()` INSIDE the selector built a fresh
+ *  array every render → new snapshot reference every time →
+ *  "getSnapshot should be cached" → infinite re-render loop. */
 export function useRecapList(): StoredRecap[] {
-  return useRecapStore((s) =>
-    Object.values(s.recaps).sort(
-      (a, b) => b.recap.weekStart - a.recap.weekStart,
-    )
+  const recaps = useRecapStore((s) => s.recaps);
+  return useMemo(
+    () =>
+      Object.values(recaps).sort(
+        (a, b) => b.recap.weekStart - a.recap.weekStart,
+      ),
+    [recaps],
   );
 }
