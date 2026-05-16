@@ -5,6 +5,69 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-15 — Setup Library: 15 trading patterns + library/detail screens
+
+Research Feature #4 — the curriculum layer. Users can now study
+named patterns and tap a historical example straight into a
+replay.
+
+- **`src/data/setupLibrary.ts`** (new): 15 setups across 5
+  categories — momentum (Opening Range Breakout, Gap and Go,
+  Trend Continuation), reversal (Failed Breakout, Double Bottom /
+  Top, V-Bottom Recovery), range (Range Fade, Opening Range
+  Hold), news (CPI Reaction, FOMC Fade, NFP Momentum), pattern
+  (Bull/Bear Flag, Head and Shoulders, Liquidity Sweep, VWAP
+  Reclaim). Each has description / howToTrade / 3-4 keyRules /
+  2-3 examples. All example dates are real 2022 NQ/ES sessions;
+  news examples use dates that exist in `economicCalendar.ts`
+  (CPI/NFP/FOMC). Difficulty per spec: momentum + range =
+  beginner, reversal + pattern = intermediate, news = advanced.
+  Category/difficulty color maps + `getLibrarySetup` exported.
+- **`SetupLibraryScreen`** (new, root-stack): "Setup Library"
+  header + subheader, horizontal category filter chips (All /
+  Momentum / Reversal / Range / News / Pattern, All default),
+  vertical card list (name + difficulty badge + colored category
+  tag + description + "Learn & Practice →"). Tap → detail.
+- **`SetupDetailScreen`** (new, root-stack): name + difficulty
+  badge + category tag, sections "What is this setup?" / "How to
+  trade it" / "Rules" (numbered checklist) / "Practice this
+  setup" (example cards: symbol·date·tf + context + gold "Trade
+  this →"). "Trade this" deep-links via
+  `navigate('Main', { screen: 'Chart', params: { dailySetup }})`
+  reusing `savedSetupStartUnixSeconds` — the exact mechanism
+  Daily Mission / Saved Setups use; navigating to the existing
+  `Main` route also unwinds the library screens off the stack.
+- **App.tsx**: registered `SetupLibrary` + `SetupDetail` as root
+  Stack screens (same level as `Settings`).
+- **Dashboard entry point**: a compact card in Zone 1, between
+  Daily Challenges and the Training ring — gold `book-outline`
+  icon + "Setup Library" / "15 patterns to learn" + chevron →
+  `navigate('SetupLibrary')`.
+- **Chart entry point**: a `book-outline` icon (white@0.5) added
+  to the top bar beside the bookmark icon; `TradingScreen` now
+  also receives `navigation` →
+  `navigate('SetupLibrary')`. (lucide BookOpen isn't installed —
+  used the nearest Ionicons glyph, per project convention.)
+
+Type-check clean (only the 3 pre-existing iapService errors).
+
+### Files touched
+
+- `src/data/setupLibrary.ts` (new)
+- `src/screens/SetupLibraryScreen.tsx` (new)
+- `src/screens/SetupDetailScreen.tsx` (new)
+- `App.tsx` (screen registration)
+- `src/screens/DashboardScreen.tsx` (Zone 1 entry card)
+- `src/screens/TradingScreen.tsx` (header book icon + navigation prop)
+- `PROJECT_CONTEXT.md`, `WORK_LOG.md`
+
+### Deferred (explicitly out of scope)
+
+Per-setup completion tracking (badges/XP), user-created setups
+(Firebase), video explanations, >15 setups, AI recommendations.
+
+---
+
 ## 2026-05-15 — Pre-trade checklist: plan card before BUY/SELL
 
 Research Feature #9. Tapping BUY/SELL now opens a "Plan your

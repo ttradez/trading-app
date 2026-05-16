@@ -282,7 +282,7 @@ function toEpochMs(v: unknown): number {
   return v < 1e12 ? v * 1000 : v;
 }
 
-export default function TradingScreen({ route }: any) {
+export default function TradingScreen({ route, navigation }: any) {
   // Streak training timer — ticks every 10 s while this screen is
   // mounted + the app is foregrounded; pauses on background; flushes
   // any partial interval on unmount. Auto-fires completeDaily() the
@@ -1032,6 +1032,20 @@ export default function TradingScreen({ route }: any) {
           <Text style={styles.symbolText}>{market.symbol}</Text>
           <Ionicons name="chevron-down" size={14} color={colors.textPrimary} style={{ marginLeft: 4 }} />
         </View>
+
+        <TouchableOpacity
+          style={styles.bookmarkBtn}
+          onPress={() => navigation.navigate('SetupLibrary')}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Open Setup Library"
+        >
+          <Ionicons
+            name="book-outline"
+            size={18}
+            color="rgba(255,255,255,0.5)"
+          />
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.bookmarkBtn}

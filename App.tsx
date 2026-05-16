@@ -30,6 +30,8 @@ import JournalScreen      from './src/screens/JournalScreen';
 // dashboard's "Challenges" section is the placeholder for now.
 // Component file is preserved for a future re-wire.
 import SettingsScreen     from './src/screens/SettingsScreen';
+import SetupLibraryScreen from './src/screens/SetupLibraryScreen';
+import SetupDetailScreen  from './src/screens/SetupDetailScreen';
 import { useJournalStore } from './src/store/journalStore';
 import OnboardingSplashScreen    from './src/screens/OnboardingSplashScreen';
 import OnboardingPremiseScreen   from './src/screens/OnboardingPremiseScreen';
@@ -221,6 +223,11 @@ export default function App() {
           {/* Pushed from the dashboard gear icon — slides in over
               the tab navigator with its own in-screen back button. */}
           <Stack.Screen name="Settings"              component={SettingsScreen} />
+          {/* Setup Library — pushed from the dashboard card and the
+              chart header book icon. Detail deep-links into a replay
+              via the nested Chart tab. */}
+          <Stack.Screen name="SetupLibrary"          component={SetupLibraryScreen} />
+          <Stack.Screen name="SetupDetail"           component={SetupDetailScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>

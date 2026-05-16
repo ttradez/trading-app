@@ -32,6 +32,10 @@ PROJECT_CONTEXT.md is the shared state. Anything important must be written here 
 
 Shows: rank badge, total trades, win rate, profit factor, expectancy, avg win, avg loss, R:R, max drawdown, equity curve, best/worst trade, full trade journal with notes + filtering, tournament history.
 
+## SETUP LIBRARY
+
+Browseable encyclopedia of named trading patterns — the "curriculum" layer. **Ships with 15 setups** across 5 categories (momentum / reversal / range / news / pattern), each with a description, how-to-trade, numbered key rules, and 2-3 real 2022 NQ/ES historical examples that deep-link straight into a replay (same `dailySetup` route param as Daily Mission / Saved Setups). Data in `src/data/setupLibrary.ts`; **expandable** — add entries to `SETUP_LIBRARY` (no screen changes needed). Entry points: a Zone-1 dashboard card and a book icon in the chart header. Deferred: per-setup completion tracking (badges/XP), user-created setups (Firebase), >15 setups.
+
 ## TRADE JOURNAL
 
 Auto-popup on trade close. Auto-fills: symbol, direction, entry/exit, size, SL/TP, P&L, R-multiple, session date (revealed only here), news snapshot. User adds optional notes.

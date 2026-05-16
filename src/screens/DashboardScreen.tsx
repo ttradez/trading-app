@@ -15,6 +15,7 @@ import { useIsTodaySetupComplete } from '../store/dailySetupStore';
 import { useWatchlistStore, savedSetupStartUnixSeconds } from '../store/watchlistStore';
 import { useBadgeStore } from '../store/badgeStore';
 import { BADGES, BADGE_COUNT, Badge } from '../data/badges';
+import { SETUP_LIBRARY_COUNT } from '../data/setupLibrary';
 import { buildBadgeContext, getBadgeProgress } from '../utils/badgeChecker';
 import { useXpStore } from '../store/xpStore';
 import { getRankForXP } from '../data/rankConfig';
@@ -435,6 +436,27 @@ export default function DashboardScreen({ navigation }: any) {
         <View style={styles.sectionGap}>
           <ChallengesSection />
         </View>
+
+        {/* Setup Library entry — the curriculum layer. */}
+        <Pressable
+          style={[styles.card, styles.libCard, styles.sectionGap]}
+          onPress={() => navigation.navigate('SetupLibrary')}
+          accessibilityRole="button"
+          accessibilityLabel={`Setup Library, ${SETUP_LIBRARY_COUNT} patterns to learn`}
+        >
+          <Ionicons name="book-outline" size={24} color={GOLD} />
+          <View style={styles.libText}>
+            <Text style={styles.libTitle}>Setup Library</Text>
+            <Text style={styles.libSub}>
+              {SETUP_LIBRARY_COUNT} patterns to learn
+            </Text>
+          </View>
+          <Ionicons
+            name="chevron-forward"
+            size={18}
+            color="rgba(255,255,255,0.3)"
+          />
+        </Pressable>
 
         {/* SECTION 3 — Training Progress (small inline) */}
         <Pressable
@@ -1011,6 +1033,28 @@ const styles = StyleSheet.create({
   },
   missionCtaTextDone: {
     color: GREEN,
+  },
+
+  // Setup Library entry card
+  libCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    gap: 14,
+  },
+  libText: { flex: 1 },
+  libTitle: {
+    color: WHITE,
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  libSub: {
+    marginTop: 3,
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 13,
+    fontWeight: '600',
   },
 
   // Training (compact, inline)
