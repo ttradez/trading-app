@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Pressable, FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors, radius, spacing, fontSize, fontWeight, labelStyle } from '../theme';
 import { useJournalStore, JournalEntry, Emotion } from '../store/journalStore';
 import TradeCard from '../components/TradeCard';
@@ -25,7 +25,7 @@ const EMOTIONS: { id: Emotion; label: string; icon: string; color: string }[] = 
 
 type Filter = 'all' | 'wins' | 'losses';
 
-export default function JournalScreen() {
+export default function JournalScreen({ navigation }: any) {
   const { entries } = useJournalStore();
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
@@ -96,6 +96,26 @@ export default function JournalScreen() {
           <Text style={styles.summaryValue}>{wins}/{losses}</Text>
         </View>
       </View>
+
+      {/* Your Tendencies — entry to the Insights screen. */}
+      <TouchableOpacity
+        style={styles.insightsCard}
+        activeOpacity={0.85}
+        onPress={() => navigation.navigate('Insights')}
+        accessibilityRole="button"
+        accessibilityLabel="Your Tendencies — see your trading patterns"
+      >
+        <MaterialCommunityIcons name="brain" size={24} color={colors.gold} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.insightsTitle}>Your Tendencies</Text>
+          <Text style={styles.insightsSub}>See your trading patterns →</Text>
+        </View>
+        <Ionicons
+          name="chevron-forward"
+          size={18}
+          color="rgba(255,255,255,0.3)"
+        />
+      </TouchableOpacity>
 
       {/* List */}
       {filtered.length === 0 ? (
@@ -324,6 +344,32 @@ const styles = StyleSheet.create({
   summaryItem: { flex: 1, alignItems: 'center' },
   summaryLabel: { fontSize: 9 },
   summaryValue: { color: colors.textPrimary, fontSize: fontSize.lg, fontWeight: fontWeight.bold, fontVariant: ['tabular-nums'], marginTop: 2 },
+
+  insightsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.md,
+    backgroundColor: colors.card,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  insightsTitle: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  insightsSub: {
+    marginTop: 3,
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 13,
+    fontWeight: '600',
+  },
 
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xl },
   emptyMessage: {

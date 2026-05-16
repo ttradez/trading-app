@@ -636,6 +636,17 @@ export default function DashboardScreen({ navigation }: any) {
           />
         </View>
 
+        {/* "Your Tendencies" — behavioral insights from history. */}
+        <Pressable
+          onPress={() => navigation.navigate('Insights')}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={({ pressed }) => [styles.insightsLink, pressed && { opacity: 0.6 }]}
+          accessibilityRole="button"
+          accessibilityLabel="View trading insights"
+        >
+          <Text style={styles.insightsLinkText}>View trading insights →</Text>
+        </Pressable>
+
         {/* ── zone divider ── */}
         <View style={styles.zoneDivider} />
 
@@ -1274,6 +1285,15 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   badgeViewAllText: {
+    color: GOLD,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  insightsLink: {
+    marginTop: 14,
+    alignSelf: 'flex-start',
+  },
+  insightsLinkText: {
     color: GOLD,
     fontSize: 13,
     fontWeight: '700',

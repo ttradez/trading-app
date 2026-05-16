@@ -5,6 +5,60 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-16 — Edge Stats: "Your Tendencies" insights screen
+
+Research Feature #5 — local behavioral analysis of trade history.
+No backend, no AI; reads journal P&L/direction/hold-time/plan
+setup joined with journal grade/emotion tags.
+
+- **`src/utils/edgeStats.ts`** (new): pure `computeEdgeStats(trades:
+  EdgeTrade[])`. Direction bias (≥3 each side), hold duration
+  (≥3 winners AND ≥3 losers) + ratio, setup performance (≥5 with
+  setup), emotion correlation (≥5 with tags), grade correlation
+  (≥5 graded), consistency (this/last week by real `savedAt`,
+  journal rate, avg grade — always). Each gated stat returns
+  `null` below threshold. `headlineInsight` auto-selects the
+  FIRST applicable of the 9 prioritized rules (long/short edge
+  >20pt → hold ratio >2 / <0.5 → best emotion >70% → A/A+ >70%
+  → journal >80% / <30% → neutral default). `formatHold` helper
+  exported. NB: weekly counts use `savedAt` (real wall-clock),
+  not `closedAt` (replay timestamps are 2022) — hold *duration*
+  still uses closed−opened since a duration is timezone-free.
+- **`InsightsScreen`** (new, root stack): header "Your
+  Tendencies", always-on headline card (gold left-border, red
+  for warnings, type icon), then Direction Bias / Hold Duration /
+  Setup Performance / Emotional Patterns / Grade vs. Outcome
+  (each shows comparison bars or a muted "need more data" line
+  via a shared `Section`/`StatBar`), and an always-shown
+  Consistency block with a this-vs-last-week trend arrow. Bars:
+  green ≥55% / red <45% / white between; direction bars dim the
+  weaker side. Empty state (<5 trades): brain icon + copy +
+  "Start trading" → Chart tab.
+- **App.tsx**: registered `Insights` as a root Stack screen.
+- **Entry points**: a "Your Tendencies" card pinned at the top
+  of the Journal tab (brain icon + "See your trading patterns →")
+  and a "View trading insights →" gold link in dashboard Zone 2
+  below the process stats. Both `navigate('Insights')`.
+
+Type-check clean (only the 3 pre-existing iapService errors).
+
+### Files touched
+
+- `src/utils/edgeStats.ts` (new)
+- `src/screens/InsightsScreen.tsx` (new)
+- `App.tsx` (screen registration)
+- `src/screens/JournalScreen.tsx` (top entry card + navigation)
+- `src/screens/DashboardScreen.tsx` (Zone 2 insights link)
+- `WORK_LOG.md`
+
+### Deferred (explicitly out of scope)
+
+AI-generated insights, share-as-image, historical trend charts,
+peer comparison. No existing screens changed beyond the two
+entry-point links.
+
+---
+
 ## 2026-05-15 — Setup Library: 15 trading patterns + library/detail screens
 
 Research Feature #4 — the curriculum layer. Users can now study

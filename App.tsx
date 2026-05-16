@@ -32,6 +32,7 @@ import JournalScreen      from './src/screens/JournalScreen';
 import SettingsScreen     from './src/screens/SettingsScreen';
 import SetupLibraryScreen from './src/screens/SetupLibraryScreen';
 import SetupDetailScreen  from './src/screens/SetupDetailScreen';
+import InsightsScreen     from './src/screens/InsightsScreen';
 import { useJournalStore } from './src/store/journalStore';
 import OnboardingSplashScreen    from './src/screens/OnboardingSplashScreen';
 import OnboardingPremiseScreen   from './src/screens/OnboardingPremiseScreen';
@@ -228,6 +229,9 @@ export default function App() {
               via the nested Chart tab. */}
           <Stack.Screen name="SetupLibrary"          component={SetupLibraryScreen} />
           <Stack.Screen name="SetupDetail"           component={SetupDetailScreen} />
+          {/* "Your Tendencies" — pushed from the Journal card and
+              the dashboard insights link. */}
+          <Stack.Screen name="Insights"              component={InsightsScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>
