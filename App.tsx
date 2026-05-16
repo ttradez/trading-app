@@ -146,9 +146,21 @@ export default function App() {
   // store finishing AsyncStorage rehydration so a returning user
   // never sees a flash of the onboarding flow.
   const onboardingComplete = useOnboardingStore((s) => s.onboardingComplete);
+  const handle = useOnboardingStore((s) => s.handle);
+  // Pre-flag users finished onboarding before `onboardingComplete`
+  // existed — a non-empty persisted `handle` proves they did.
+  const skipOnboarding = onboardingComplete || handle.trim().length > 0;
   const [hydrated, setHydrated] = useState(
     useOnboardingStore.persist.hasHydrated(),
   );
+
+  // Backfill the flag once the fallback triggers so the check
+  // isn't needed again.
+  useEffect(() => {
+    if (hydrated && !onboardingComplete && handle.trim().length > 0) {
+      useOnboardingStore.getState().setOnboardingComplete(true);
+    }
+  }, [hydrated, onboardingComplete, handle]);
 
   useEffect(() => {
     if (hydrated) return;
@@ -188,7 +200,7 @@ export default function App() {
     <SafeAreaProvider>
       <NavigationContainer>
         <Stack.Navigator
-          initialRouteName={onboardingComplete ? 'Main' : 'OnboardingSplash'}
+          initialRouteName={skipOnboarding ? 'Main' : 'OnboardingSplash'}
           screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }}
         >
           <Stack.Screen name="OnboardingSplash"    component={OnboardingSplashScreen} />
