@@ -5,6 +5,60 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-15 — Dashboard restructure: 3-zone layout (Today → Progress → Activity)
+
+Review flagged the dashboard as too long (4+ viewports), wrongly
+ordered (challenges buried, empty states in prime slots), and
+using outcome metrics (P&L) instead of process metrics. Full
+reorganization — no functionality removed, only moved/resized/
+conditionally hidden; data sources unchanged.
+
+- **Header (one compact row):** archetype icon (gold) +
+  `Archetype · DisplayName · Rank` (white/dimmed, 14px) + 3 sub-
+  tier pips (6px dots, filled to `xpStore.currentSubTier`) on the
+  left; `StreakBadge` + gear on the right. DisplayName from
+  `onboardingStore.displayName` (omitted if blank). Streak-0
+  tap-alert preserved.
+- **ZONE 1 · TODAY:** (1) Today's Mission card — untouched.
+  (2) Daily Challenges, recompressed: each daily is a single-row
+  `CompactChallengeCard` (icon · name · `2/3` · thin bar), no
+  per-card "Swap a mission" text — a single gold `refresh` icon
+  with a "1 left" tag sits on each incomplete daily and swaps
+  *that* challenge (`skipDaily`). Weekly/Monthly moved under a
+  small "LONG-TERM" label as slightly-larger compact cards.
+  Section now ~300px (was ~600px+). (3) Training ring shrunk from
+  a ~200px hero to a ~80px horizontal card: 56px ring + "12 / 30
+  min" / "minutes today" (→ "Goal hit ✓" green when done).
+- **ZONE 2 · PROGRESS:** (4) Rank progression card moved up from
+  slot ~7 (design unchanged) + goal-gradient nudge. (5) "Next
+  Badges" replaces the `0/30` counter: a row of the 3 closest
+  locked numeric-progress badges (icon + name + `current/target`,
+  tap → Ranks/Badges) above a "View all 30 →" link. (6) Process
+  stats — `Total P&L`/`Best Trade` replaced by **Journal Rate**
+  (journaled ÷ total trades) and **Avg Grade** (mean of journal
+  grades, A+=5…F=1, mapped back to a letter). `Trades` and
+  `Win Rate (n)` kept. Both new tiles show "—" with no data.
+- **ZONE 3 · ACTIVITY:** (7) Recent Trades — unchanged, just
+  lower. (8) Saved Setups now renders **only** when ≥1 setup
+  exists; the dashed-border empty placeholder was deleted
+  entirely (empty states no longer occupy dashboard space).
+- **Spacing:** ~16px intra-zone gaps, ~24px + a `#1F1F1F`
+  hairline between zones, ~100px bottom padding retained.
+
+Type-check clean (only the 3 pre-existing iapService errors).
+
+### Files touched
+
+- `src/screens/DashboardScreen.tsx` (full restructure)
+- `WORK_LOG.md`
+
+### Deferred (explicitly out of scope)
+
+Today's Mission card design, trade card design, tab bar, and any
+other screen — untouched per the prompt.
+
+---
+
 ## 2026-05-15 — Critical fixes from app review (12-item batch)
 
 Isolated correctness/honesty fixes from a review pass. No new
