@@ -19,6 +19,7 @@ import { useXpWatchers } from './src/hooks/useXpWatchers';
 import { useChallengeRotation } from './src/hooks/useChallengeRotation';
 import BadgeToastHost from './src/components/BadgeToastHost';
 import ChallengeToastHost from './src/components/ChallengeToastHost';
+import RankUpCelebrationHost from './src/components/RankUpCelebrationHost';
 import { colors } from './src/theme';
 
 import LoginScreen        from './src/screens/LoginScreen';
@@ -145,6 +146,7 @@ function MainTabs() {
     />
     <BadgeToastHost />
     <ChallengeToastHost />
+    <RankUpCelebrationHost />
     </>
   );
 }

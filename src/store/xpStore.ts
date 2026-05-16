@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getTodayYMD } from './streakStore';
+import { useCelebrationStore } from './celebrationStore';
 import {
   getRankForXP, RankId, SubTier,
 } from '../data/rankConfig';
@@ -111,10 +112,19 @@ export const useXpStore = create<XpState>()(
           if (amount <= 0) return null;
           ensureToday();
           set((s) => ({ currentXP: s.currentXP + amount }));
-          // Celebrations are a later prompt — log for now.
           // eslint-disable-next-line no-console
           console.log(`+${amount} XP (${source})`);
-          return get().checkRankUp();
+          const promo = get().checkRankUp();
+          if (promo) {
+            // Enqueue the celebration here (not in checkRankUp) so
+            // we have the triggering `amount`. The host gates
+            // display behind the toast queues.
+            useCelebrationStore.getState().enqueue({
+              ...promo,
+              xpEarned: amount,
+            });
+          }
+          return promo;
         },
 
         checkRankUp: () => {

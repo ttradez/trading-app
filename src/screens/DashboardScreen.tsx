@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useEffect } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity, Pressable,
+  View, Text, ScrollView, StyleSheet, TouchableOpacity, Pressable, Animated,
+  Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -199,6 +200,65 @@ export default function DashboardScreen({ navigation }: any) {
   const currentXP = useXpStore((s) => s.currentXP);
   const rankInfo = useMemo(() => getRankForXP(currentXP), [currentXP]);
 
+  const scrollRef = useRef<ScrollView>(null);
+
+  // Goal-gradient (Kivetz et al. 2006): the closer to the next
+  // tier, the louder the cue. ≥80 % → pulsing glow; ≥95 % → a
+  // specific, actionable nudge mapped from the XP gap.
+  const pct = rankInfo.next
+    ? Math.min(1, rankInfo.xpInTier / Math.max(1, rankInfo.xpNeededForNext))
+    : 1;
+  const gap = rankInfo.next
+    ? Math.max(0, rankInfo.xpNeededForNext - rankInfo.xpInTier)
+    : 0;
+  const showPulse = !!rankInfo.next && pct >= 0.8;
+  const showNudge = !!rankInfo.next && pct >= 0.95;
+
+  const glow = useRef(new Animated.Value(0.3)).current;
+  useEffect(() => {
+    if (!showPulse) { glow.setValue(0.3); return; }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(glow, {
+          toValue: 0.7, duration: 750, easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(glow, {
+          toValue: 0.3, duration: 750, easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [showPulse, glow]);
+
+  // Smallest gap = most specific bucket (evaluate tightest first).
+  const nudge = useMemo(() => {
+    if (!showNudge || !rankInfo.next) return null;
+    const to = rankInfo.next.label;
+    if (gap <= 15) {
+      return { text: `1 journaled trade to ${to}`, action: 'chart' as const };
+    }
+    if (gap <= 30) {
+      return { text: `2 trades to ${to}`, action: 'chart' as const };
+    }
+    if (gap <= 50) {
+      return { text: `1 Daily Setup away from ${to}`, action: 'top' as const };
+    }
+    return { text: `${gap} XP to ${to}`, action: 'challenges' as const };
+  }, [showNudge, gap, rankInfo.next]);
+
+  const onNudge = () => {
+    if (!nudge) return;
+    if (nudge.action === 'chart') { navigation.navigate('Chart'); return; }
+    if (nudge.action === 'top') {
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+      return;
+    }
+    scrollRef.current?.scrollToEnd({ animated: true });
+  };
+
   // Trade history — auto-persisted on close by TradingScreen.
   const entries = useJournalStore((s) => s.entries);
 
@@ -228,6 +288,7 @@ export default function DashboardScreen({ navigation }: any) {
   return (
     <SafeAreaView edges={['top']} style={styles.root}>
       <ScrollView
+        ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -479,18 +540,18 @@ export default function DashboardScreen({ navigation }: any) {
               <View
                 style={[
                   styles.rankBarFill,
-                  {
-                    width: `${
-                      rankInfo.next
-                        ? Math.round(
-                            (rankInfo.xpInTier /
-                              Math.max(1, rankInfo.xpNeededForNext)) * 100,
-                          )
-                        : 100
-                    }%`,
-                  },
+                  { width: `${Math.round(pct * 100)}%` },
                 ]}
               />
+              {showPulse && (
+                <Animated.View
+                  pointerEvents="none"
+                  style={[
+                    styles.rankBarGlow,
+                    { width: `${Math.round(pct * 100)}%`, opacity: glow },
+                  ]}
+                />
+              )}
             </View>
             <Text style={styles.rankSub}>
               {rankInfo.next
@@ -499,6 +560,36 @@ export default function DashboardScreen({ navigation }: any) {
             </Text>
           </View>
         </View>
+
+        {/* Goal-gradient nudge — only at ≥95 %. */}
+        {nudge && (
+          <Pressable
+            onPress={onNudge}
+            style={({ pressed }) => [
+              styles.nudgeCard,
+              pressed && { opacity: 0.8 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={nudge.text}
+          >
+            <View style={styles.nudgeAccent} />
+            <View style={styles.nudgeInner}>
+              <MaterialCommunityIcons
+                name="rocket-launch-outline"
+                size={18}
+                color={GOLD}
+                style={{ marginRight: 10 }}
+              />
+              <Text style={styles.nudgeText}>{nudge.text}</Text>
+              <View style={{ flex: 1 }} />
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color="rgba(255,255,255,0.4)"
+              />
+            </View>
+          </Pressable>
+        )}
 
         {/* Badge counter — taps through to the Ranks tab's trophy case. */}
         <Pressable
@@ -1039,6 +1130,40 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: GOLD,
     borderRadius: 2,
+  },
+  // Goal-gradient pulse — a brighter gold layer over the fill
+  // whose opacity oscillates (driven by an Animated loop) once
+  // the user is ≥80 % to the next tier.
+  rankBarGlow: {
+    position: 'absolute',
+    left: 0,
+    top: -2,
+    height: 8,
+    backgroundColor: '#FFE08A',
+    borderRadius: 4,
+  },
+  nudgeCard: {
+    marginTop: 10,
+    flexDirection: 'row',
+    backgroundColor: CARD_BG,
+    borderColor: CARD_BORDER,
+    borderWidth: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  nudgeAccent: { width: 3, backgroundColor: GOLD },
+  nudgeInner: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+  },
+  nudgeText: {
+    color: WHITE,
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: -0.1,
   },
   rankSub: {
     marginTop: 6,

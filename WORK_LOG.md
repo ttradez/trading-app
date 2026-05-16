@@ -5,6 +5,103 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-15 — Progression celebrations: rank-up modals + goal-gradient nudge + particle burst
+
+The *feel* layer on top of the XP/challenge engines: celebrate
+crossings, manufacture goal-gradient urgency near a threshold
+(Kivetz et al. 2006).
+
+### Rank-up copy config — `rankConfig.ts`
+
+`RANK_PROMOTION_COPY` (gambler null — never promoted into;
+paper_hands/sniper/inside_trader/market_maker per spec) +
+`RANK_THEME_COLOR` (silver/green/blue/purple/gold). Kept beside
+the beats so copy edits never touch components.
+
+### New — `src/store/celebrationStore.ts`
+
+Ephemeral FIFO of `{ type, newRank, newSubTier, previousRank,
+previousSubTier, xpEarned }`. `xpStore.addXP` enqueues here when
+`checkRankUp` returns a promo — done in `addXP` (not
+`checkRankUp`) so the triggering `amount` is captured as
+`xpEarned`. Not persisted (an unseen celebration isn't worth
+replaying; the rank is already in xpStore).
+
+### New — `src/components/RankUpCelebrationHost.tsx` (MainTabs)
+
+**Ordering**: the host only shows the next celebration once
+`badgeToastStore` AND `challengeToastStore` queues are empty,
+plus a ~900 ms grace so an already-dequeued (on-screen) toast
+finishes its ~3 s display. The journal popup is implicitly first
+because XP grants (hence the enqueue) only fire AFTER it's
+dismissed. → journal → toasts → rank-up, biggest moment last.
+
+**Sub-tier modal** (I→II, II→III): backdrop + card, "RANK UP"
+eyebrow, `RankBanner`, an RN `PipRow` where the just-earned pip
+(`newSubTier-1`) springs hollow→gold (scale 0.2→1, tension 140),
+"<Rank> <Roman>", "+{xpEarned} XP", Success notification haptic
+on mount, Continue.
+
+**Main-rank full-screen**: black takeover with a staggered
+sequence — (a) gold flash overlay 0→0.15→0 (~340 ms) → (c)
+banner `Animated.spring` scale 0.5→1 + fade (delay 250) with a
+**Medium impact haptic on land** → pip row (subTier I → pip 1
+filled) → (e) rank name in theme colour fades (delay 850) → (f)
+`RANK_PROMOTION_COPY` fades (delay 1250) **+ Success
+notification haptic** → (g) Continue fades (delay 1700).
+**Particle burst**: 18 plain `Animated.View` gold dots on random
+angle/distance trajectories, single shared 0→1 driver, fade out
+(no new dependency).
+
+Pips are RN Views (`PipRow`), NOT the SVG banner pips —
+`RankBanner` is untouched (the per-pip SVG animation would have
+been heavy; documented).
+
+### Goal-gradient — `DashboardScreen`
+
+`pct = xpInTier / xpNeededForNext` on the rank bar.
+- **≥80 %** → `showPulse`: an `Animated.loop` (0.3↔0.7 opacity,
+  750 ms each way) drives a brighter-gold glow layer
+  (`rankBarGlow`, slightly taller than the track) over the fill.
+  Loop stopped/reset when the condition clears.
+- **≥95 %** → `showNudge`: a gold-left-accent card under the
+  bar. Gap = `xpNeededForNext − xpInTier`, mapped tightest-first
+  (the spec's buckets overlap, so smallest wins): ≤15 → "1
+  journaled trade to <next>" → Chart tab; ≤30 → "2 trades to
+  <next>" → Chart tab; ≤50 → "1 Daily Setup away from <next>" →
+  scroll to top (Daily Mission); else → "<gap> XP to <next>" →
+  scroll to bottom (missions). Tap wired via a new `ScrollView`
+  ref + `navigation`.
+
+Encouraging, gold (not red). Only renders ≥95 %; 80-95 % is just
+the pulse; <80 % the plain bar.
+
+### Wiring
+
+- `App.tsx` MainTabs: `<RankUpCelebrationHost/>` added to the
+  overlay fragment after the two toast hosts.
+- `xpStore.ts`: import celebrationStore, enqueue in `addXP`
+  (removed the stale "celebrations are a later prompt" log
+  comment).
+
+### Out of scope (per prompt)
+
+- Celebration sound, shareable rank card, confetti on sub-tier,
+  close-to-rank-up push.
+- XP values / rank thresholds / challenge rewards unchanged.
+
+### Files touched
+
+- `src/data/rankConfig.ts` (copy + theme maps)
+- `src/store/celebrationStore.ts` (new)
+- `src/components/RankUpCelebrationHost.tsx` (new)
+- `src/store/xpStore.ts` (enqueue on promo)
+- `src/screens/DashboardScreen.tsx` (pulse + nudge + scroll ref)
+- `App.tsx` (mount host)
+- `PROJECT_CONTEXT.md`, `WORK_LOG.md`
+
+---
+
 ## 2026-05-15 — Challenge system: daily/weekly/monthly with rotation, detection, rewards, and dashboard UI
 
 Mid-game XP engine (research target ~35-45 % of total XP). 3

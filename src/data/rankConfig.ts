@@ -80,6 +80,29 @@ export interface RankForXP {
   next: RankBeat | null;
 }
 
+/**
+ * Celebration copy shown when the user is promoted INTO a rank
+ * (main-rank promotion only — sub-tier steps don't use this).
+ * `gambler` is null: you start there, never get promoted into it.
+ * Kept here so copy edits don't touch celebration components.
+ */
+export const RANK_PROMOTION_COPY: Record<RankId, string | null> = {
+  gambler: null,
+  paper_hands: "You've stopped gambling. You're learning to wait.",
+  sniper: "You're past paper hands. Now you have aim.",
+  inside_trader: 'You see what others miss. Trade with conviction.',
+  market_maker: "You've made it. You are the market.",
+};
+
+/** Theme accent per rank (matches the RankBanner palette). */
+export const RANK_THEME_COLOR: Record<RankId, string> = {
+  gambler: '#C0C0C0',
+  paper_hands: '#00D395',
+  sniper: '#4A9EFF',
+  inside_trader: '#9B59B6',
+  market_maker: '#FFB800',
+};
+
 /** Pure lookup — the highest beat the XP has reached, plus the
  *  span to the next one. */
 export function getRankForXP(xp: number): RankForXP {
