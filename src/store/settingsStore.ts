@@ -22,15 +22,21 @@ interface SettingsState {
   /** Default lot/contract size pre-filled when staging an order.
    *  Clamped 1-10 by the settings UI. */
   defaultContractSize: number;
+  /** Show the "Plan your trade" card before each BUY/SELL. On by
+   *  default — trains the "plan the trade, trade the plan" habit
+   *  and enriches the journal with intent alongside outcome. */
+  preTradeChecklistEnabled: boolean;
 
   setHapticsEnabled: (v: boolean) => void;
   setDefaultContractSize: (n: number) => void;
+  setPreTradeChecklistEnabled: (v: boolean) => void;
   reset: () => void;
 }
 
 const DEFAULTS = {
   hapticsEnabled: true,
   defaultContractSize: 1,
+  preTradeChecklistEnabled: true,
 };
 
 export const useSettingsStore = create<SettingsState>()(
@@ -41,6 +47,8 @@ export const useSettingsStore = create<SettingsState>()(
       setHapticsEnabled: (hapticsEnabled) => set({ hapticsEnabled }),
       setDefaultContractSize: (defaultContractSize) =>
         set({ defaultContractSize }),
+      setPreTradeChecklistEnabled: (preTradeChecklistEnabled) =>
+        set({ preTradeChecklistEnabled }),
 
       reset: () => set({ ...DEFAULTS }),
     }),

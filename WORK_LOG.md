@@ -5,6 +5,79 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-15 — Pre-trade checklist: plan card before BUY/SELL
+
+Research Feature #9. Tapping BUY/SELL now opens a "Plan your
+trade" card first (when enabled) — trains "plan the trade, trade
+the plan" and records INTENT alongside OUTCOME for later edge
+analysis. Optional, dismissable, on by default.
+
+- **PreTradeModal** (new component): header "Plan your LONG/SHORT"
+  (direction in green/red), subheader "What's the setup?". FIELD 1
+  = required single-select setup chips (Breakout / Reversal /
+  Trend / Range / News / Other, gold when selected, same chip
+  language as the journal modal). FIELD 2/3 = optional Stop /
+  Target decimal inputs with helper text; placeholders seed from
+  current price ±0.5% in the logical direction. "Place trade"
+  (gold CTA) is disabled until a setup type is chosen; "Skip
+  planning" link below; backdrop / hardware-back cancels with no
+  trade placed.
+- **Trade flow wiring** (`TradingScreen`): BUY/SELL now route
+  through `requestTrade()`. With the checklist on it opens the
+  modal; Place/Skip stash the plan in a ref then continue into the
+  *existing* TP/SL-drag + CONFIRM flow (the drag flow is
+  preserved, not replaced). On `confirmPendingOrder` the plan is
+  committed to a new persisted **`tradePlanStore`** keyed by the
+  open position id. Both close paths — manual `closePosition` and
+  the SL/TP `auto_closed` path — merge the plan back onto the
+  closed-trade payload (`attachPlan`) and clear it, so it flows
+  into the JournalEntry and the journal modal recap. With the
+  checklist off, BUY/SELL stage immediately exactly as before.
+- **Trade data model**: `JournalEntry` gains `planSetupType`
+  (`PlanSetupType | null`), `planStopPrice`, `planTargetPrice`
+  (`number | null`), `planSkipped` (`boolean`); `hydrate()`
+  backfills these for pre-existing trades. `TradeCardModal`'s
+  manual re-journal carries forward any plan already recorded so
+  it isn't wiped.
+- **TradeCard**: when `planSetupType` is set, a small bordered
+  setup pill (white@0.6, 11px) renders under the symbol/direction
+  row. Wired from the Dashboard and Journal call sites.
+- **Journal popup**: a "Plan: <type> | Stop: <px/—> | Target:
+  <px/—>" recap line renders under the trade-summary row when the
+  closed trade had a plan, so the user grades execution against
+  intent.
+- **Settings**: new "Trading" section with a "Pre-trade checklist"
+  switch ("Show the planning card before each trade"), backed by
+  `settingsStore.preTradeChecklistEnabled` (default **true**).
+- **Onboarding**: no gate needed — the onboarding stack never
+  mounts `TradingScreen` (screen 9 uses `OnboardingChart` with its
+  own result overlay), so the card structurally cannot appear
+  there.
+
+Type-check clean (only the 3 pre-existing iapService errors).
+
+### Files touched
+
+- `src/components/PreTradeModal.tsx` (new)
+- `src/store/tradePlanStore.ts` (new)
+- `src/store/journalStore.ts` (plan fields + backfill)
+- `src/store/settingsStore.ts` (preTradeChecklistEnabled)
+- `src/screens/TradingScreen.tsx` (modal wiring, plan carry)
+- `src/components/TradeJournalModal.tsx` (plan recap)
+- `src/components/TradeCard.tsx` (setup pill)
+- `src/components/TradeCardModal.tsx` (carry-forward on re-journal)
+- `src/screens/DashboardScreen.tsx`, `src/screens/JournalScreen.tsx`
+  (pass `planSetupType`)
+- `src/screens/SettingsScreen.tsx` (Trading section + toggle)
+- `WORK_LOG.md`
+
+### Deferred (explicitly out of scope)
+
+R:R calc from stop/target, chart stop/target lines, validating
+stop/target vs current price, plan-vs-outcome edge stats.
+
+---
+
 ## 2026-05-15 — Dashboard restructure: 3-zone layout (Today → Progress → Activity)
 
 Review flagged the dashboard as too long (4+ viewports), wrongly

@@ -50,6 +50,10 @@ export interface TradeSummary {
   symbol: string;
   direction: 'long' | 'short';
   pnl: number;
+  /** Pre-trade plan recap (null when there was no plan / skipped). */
+  planSetupType?: string | null;
+  planStopPrice?: number | null;
+  planTargetPrice?: number | null;
 }
 
 interface Props {
@@ -170,6 +174,27 @@ export default function TradeJournalModal({
                   {formatUSD(trade.pnl)}
                 </Text>
               </View>
+
+              {/* Pre-trade plan recap — reminds the user what they
+                  planned so they can grade execution accurately. */}
+              {trade.planSetupType && (
+                <Text style={styles.planRecap}>
+                  Plan: {trade.planSetupType.charAt(0).toUpperCase()
+                    + trade.planSetupType.slice(1)}
+                  {'  |  '}Stop:{' '}
+                  {typeof trade.planStopPrice === 'number'
+                    ? trade.planStopPrice.toLocaleString('en-US', {
+                        minimumFractionDigits: 2, maximumFractionDigits: 2,
+                      })
+                    : '—'}
+                  {'  |  '}Target:{' '}
+                  {typeof trade.planTargetPrice === 'number'
+                    ? trade.planTargetPrice.toLocaleString('en-US', {
+                        minimumFractionDigits: 2, maximumFractionDigits: 2,
+                      })
+                    : '—'}
+                </Text>
+              )}
 
               {/* GRADE — required */}
               <Text style={styles.sectionLabel}>GRADE YOUR EXECUTION</Text>
@@ -350,6 +375,16 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '800',
     letterSpacing: -0.4,
+    fontVariant: ['tabular-nums'],
+  },
+
+  // Pre-trade plan recap line (sits under the summary row)
+  planRecap: {
+    marginTop: -6,
+    marginBottom: 18,
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 13,
+    fontWeight: '600',
     fontVariant: ['tabular-nums'],
   },
 

@@ -56,6 +56,12 @@ export default function TradeCardModal({ trade, onClose }: Props) {
   const dateStr = new Date(closedAt).toLocaleString();
 
   const journal = () => {
+    // Carry forward any pre-trade plan already captured for this
+    // trade (the auto-journal at close stored it) so re-journaling
+    // here doesn't wipe the recorded intent.
+    const prev = useJournalStore
+      .getState()
+      .entries.find((e) => e.tradeId === trade.id);
     const entry: JournalEntry = {
       id: trade.id,
       tradeId: trade.id,
@@ -70,6 +76,10 @@ export default function TradeCardModal({ trade, onClose }: Props) {
       rMultiple,
       openedAt,
       closedAt,
+      planSetupType:   prev?.planSetupType ?? null,
+      planStopPrice:   prev?.planStopPrice ?? null,
+      planTargetPrice: prev?.planTargetPrice ?? null,
+      planSkipped:     prev?.planSkipped ?? false,
       notes: '',
       mistakes: '',
       wentWell: '',

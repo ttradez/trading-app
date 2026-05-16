@@ -109,6 +109,8 @@ export default function SettingsScreen({ navigation }: any) {
   const setHapticsEnabled = useSettingsStore((s) => s.setHapticsEnabled);
   const contractSize      = useSettingsStore((s) => s.defaultContractSize);
   const setContractSize   = useSettingsStore((s) => s.setDefaultContractSize);
+  const preTradeChecklist    = useSettingsStore((s) => s.preTradeChecklistEnabled);
+  const setPreTradeChecklist = useSettingsStore((s) => s.setPreTradeChecklistEnabled);
 
   const journalEntries = useJournalStore((s) => s.entries);
 
@@ -342,6 +344,26 @@ export default function SettingsScreen({ navigation }: any) {
             value={String(contractSize)}
             onPress={() => setPicker('contract')}
           />
+        </View>
+
+        {/* TRADING */}
+        <SectionHeader title="Trading" />
+        <View style={styles.group}>
+          <View style={styles.row}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowLabel}>Pre-trade checklist</Text>
+              <Text style={styles.rowSublabel}>
+                Show the planning card before each trade
+              </Text>
+            </View>
+            <Switch
+              value={preTradeChecklist}
+              onValueChange={setPreTradeChecklist}
+              trackColor={{ false: SWITCH_OFF, true: GOLD }}
+              thumbColor={WHITE}
+              ios_backgroundColor={SWITCH_OFF}
+            />
+          </View>
         </View>
 
         {/* PREFERENCES */}

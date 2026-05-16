@@ -60,6 +60,11 @@ export interface TradeCardProps {
    *  if the trade hasn't been journaled — no shame marker is shown
    *  in that case, just no pill at all. */
   grade?: TradeGrade;
+  /** Pre-trade plan setup type (e.g. 'breakout'). When set, a small
+   *  pill is shown under the symbol/direction row so the user can
+   *  see what they planned. Absent for trades placed without a
+   *  plan (skipped / checklist off / legacy). */
+  planSetupType?: string | null;
   /** Optional tap handler. Used by JournalScreen to open the edit
    *  modal; Dashboard passes nothing. */
   onPress?: () => void;
@@ -168,7 +173,7 @@ function OpenDot() {
 export default function TradeCard(props: TradeCardProps) {
   const {
     symbol, direction, entryPrice, exitPrice, pnl, entryTime, exitTime,
-    contracts, status, grade, onPress,
+    contracts, status, grade, planSetupType, onPress,
   } = props;
 
   const isOpen = status === 'open';
@@ -216,6 +221,17 @@ export default function TradeCard(props: TradeCardProps) {
             )}
           </View>
         </View>
+
+        {/* Pre-trade plan tag — what setup the user planned. */}
+        {planSetupType ? (
+          <View style={styles.planRow}>
+            <View style={styles.planPill}>
+              <Text style={styles.planPillText}>
+                {planSetupType.charAt(0).toUpperCase() + planSetupType.slice(1)}
+              </Text>
+            </View>
+          </View>
+        ) : null}
 
         {/* Middle — prices + hero P&L */}
         <Text style={styles.prices} numberOfLines={1}>
@@ -356,6 +372,25 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 0.5,
+  },
+
+  // Pre-trade plan tag
+  planRow: {
+    flexDirection: 'row',
+    marginTop: 8,
+  },
+  planPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  planPillText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
 
   // Middle

@@ -13,12 +13,14 @@ import DrawingSettingsModal from '../components/chart/DrawingSettingsModal';
 import DrawingFavoritesBar from '../components/chart/DrawingFavoritesBar';
 import MagnetToggle from '../components/chart/MagnetToggle';
 import TradeJournalModal, { TradeSummary } from '../components/TradeJournalModal';
+import PreTradeModal, { TradePlanInput } from '../components/PreTradeModal';
 import { useTradeJournalStore } from '../store/tradeJournalStore';
 import type { JournalEntry } from '../store/journalStore';
+import { useTradePlanStore, TradePlan } from '../store/tradePlanStore';
 import { useDailySetupStore } from '../store/dailySetupStore';
 import { getTodaySetup } from '../data/dailySetups';
 import { useWatchlistStore, useSavedSetup } from '../store/watchlistStore';
-import { maybeHaptic } from '../store/settingsStore';
+import { maybeHaptic, useSettingsStore } from '../store/settingsStore';
 import { getTodayYMD } from '../store/streakStore';
 import { useXpStore } from '../store/xpStore';
 import { useBadgeStore } from '../store/badgeStore';
@@ -312,6 +314,17 @@ export default function TradingScreen({ route }: any) {
   const [recentClosedTrade, setRecentClosedTrade] = useState<any | null>(null);
   const saveTradeJournalEntry = useTradeJournalStore((s) => s.saveEntry);
   const addJournalEntry       = useJournalStore((s) => s.addEntry);
+
+  // Pre-trade checklist ("Plan your trade" card). When enabled,
+  // tapping BUY/SELL opens the planning modal first; the captured
+  // plan is stashed here until the order is actually staged, then
+  // committed to `tradePlanStore` keyed by the open position id.
+  const preTradeChecklistEnabled = useSettingsStore(
+    (s) => s.preTradeChecklistEnabled,
+  );
+  const [preTradePrompt, setPreTradePrompt] =
+    useState<'buy' | 'sell' | null>(null);
+  const pendingPlanRef = useRef<TradePlan | null>(null);
   // Per-close XP/badge guard so the effect can't double-grant if it
   // re-runs for the same trade.
   const xpProcessedRef = useRef<Set<string>>(new Set());
@@ -343,6 +356,10 @@ export default function TradingScreen({ route }: any) {
       rMultiple:  typeof t.r_multiple === 'number' ? t.r_multiple : null,
       openedAt:   toEpochMs(t.opened_at),
       closedAt:   toEpochMs(t.closed_at),
+      planSetupType:   t.planSetupType ?? null,
+      planStopPrice:   typeof t.planStopPrice === 'number' ? t.planStopPrice : null,
+      planTargetPrice: typeof t.planTargetPrice === 'number' ? t.planTargetPrice : null,
+      planSkipped:     t.planSkipped === true,
       notes: '', mistakes: '', wentWell: '',
       emotion: null, confidence: null,
       strategy: '', tags: [],
@@ -407,6 +424,11 @@ export default function TradingScreen({ route }: any) {
       symbol:    recentClosedTrade.symbol ?? '',
       direction: recentClosedTrade.side === 'sell' ? 'short' : 'long',
       pnl:       typeof recentClosedTrade.pnl === 'number' ? recentClosedTrade.pnl : 0,
+      planSetupType:   recentClosedTrade.planSetupType ?? null,
+      planStopPrice:   typeof recentClosedTrade.planStopPrice === 'number'
+        ? recentClosedTrade.planStopPrice : null,
+      planTargetPrice: typeof recentClosedTrade.planTargetPrice === 'number'
+        ? recentClosedTrade.planTargetPrice : null,
     };
   }, [recentClosedTrade]);
   const [newsOpen, setNewsOpen] = useState(false);
@@ -854,8 +876,23 @@ export default function TradingScreen({ route }: any) {
         if (res.done) { Alert.alert('End of data', 'No more bars available.'); break; }
         appendCandles(res.candles);
         if (res.auto_closed?.length) {
-          res.auto_closed.forEach((t: any) => { removePosition(t.position_id ?? t.id); addClosedTrade(t); });
-          setRecentClosedTrade(res.auto_closed[res.auto_closed.length - 1]);
+          const arr = res.auto_closed;
+          arr.forEach((t: any, i: number) => {
+            removePosition(t.position_id ?? t.id);
+            addClosedTrade(t);
+            // Only the LAST auto-closed trade becomes a JournalEntry
+            // / opens the journal modal; clear the others' plans so
+            // they don't linger in the persisted plan store.
+            if (i < arr.length - 1) {
+              useTradePlanStore
+                .getState()
+                .clearPlan(String(t.position_id ?? t.id));
+            }
+          });
+          const lastT = arr[arr.length - 1];
+          setRecentClosedTrade(
+            attachPlan(lastT, String(lastT.position_id ?? lastT.id)),
+          );
         }
         // Drain any clicks that came in while the request was in flight.
         count = queuedAdvances.current;
@@ -875,6 +912,22 @@ export default function TradingScreen({ route }: any) {
    *      offsets that the user can drag on the chart
    *   2. confirmPendingOrder() — sends the API request with the dragged TP/SL
    */
+  /**
+   * BUY/SELL entry point. With the pre-trade checklist on, open the
+   * "Plan your trade" card first; the plan flows through onPlace/
+   * onSkip → beginPending. With it off, stage the order immediately
+   * (the original behavior) and clear any stale plan.
+   */
+  const requestTrade = (side: 'buy' | 'sell') => {
+    if (preTradeChecklistEnabled) {
+      pendingPlanRef.current = null;
+      setPreTradePrompt(side);
+      return;
+    }
+    pendingPlanRef.current = null;
+    beginPending(side);
+  };
+
   const beginPending = (side: 'buy' | 'sell') => {
     const px = side === 'buy' ? buyPrice : sellPrice;
     if (!px || !isFinite(px)) return;
@@ -907,6 +960,14 @@ export default function TradingScreen({ route }: any) {
         take_profit: res.position.take_profit,
         opened_at: res.position.opened_at,
       });
+      // Attach the pre-trade plan to this position so it can be
+      // merged onto the JournalEntry when the trade closes.
+      if (pendingPlanRef.current) {
+        useTradePlanStore
+          .getState()
+          .setPlan(String(res.position.id), pendingPlanRef.current);
+      }
+      pendingPlanRef.current = null;
       setPendingPosition(null);
     } catch (e: any) {
       Alert.alert('Order failed', e.message);
@@ -915,15 +976,33 @@ export default function TradingScreen({ route }: any) {
     }
   };
 
+  /** Merge a position's stashed pre-trade plan onto its closed-
+   *  trade payload, then clear it. No-op when there's no plan
+   *  (checklist was off, or this is a legacy/onboarding trade). */
+  const attachPlan = (trade: any, positionId: string) => {
+    const plans = useTradePlanStore.getState();
+    const plan = plans.getPlan(positionId);
+    if (!plan) return trade;
+    plans.clearPlan(positionId);
+    return {
+      ...trade,
+      planSetupType: plan.setupType,
+      planStopPrice: plan.stopPrice,
+      planTargetPrice: plan.targetPrice,
+      planSkipped: plan.skipped,
+    };
+  };
+
   const closePosition = async (id: string) => {
     if (!sessionId) return;
     try {
       const res = await closeTrade(sessionId, id);
       removePosition(id);
+      const closed = attachPlan(res.trade, id);
       addClosedTrade(res.trade);
       setBalance(res.balance);
       setCloseConfirmId(null);
-      setRecentClosedTrade(res.trade);
+      setRecentClosedTrade(closed);
     } catch (e: any) {
       Alert.alert('Close failed', e.message);
     }
@@ -1200,7 +1279,7 @@ export default function TradingScreen({ route }: any) {
         <View style={styles.actionBar}>
           <TouchableOpacity
             style={styles.sellBtn}
-            onPress={() => beginPending('sell')}
+            onPress={() => requestTrade('sell')}
             activeOpacity={0.85}
           >
             <Text style={styles.sellBtnLabel}>SELL</Text>
@@ -1219,7 +1298,7 @@ export default function TradingScreen({ route }: any) {
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity style={styles.buyBtn} onPress={() => beginPending('buy')} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.buyBtn} onPress={() => requestTrade('buy')} activeOpacity={0.85}>
             <Text style={styles.buyBtnLabel}>BUY</Text>
           </TouchableOpacity>
         </View>
@@ -1237,6 +1316,45 @@ export default function TradingScreen({ route }: any) {
 
       {/* Per-drawing settings — appears whenever a drawing on the chart is selected. */}
       <DrawingSettingsModal />
+
+      {/* Pre-trade checklist — "Plan your trade" card, shown before
+          the order is staged when the setting is on. Place →
+          continue into the existing TP/SL drag + CONFIRM flow with
+          the plan attached; Skip → same, plan marked skipped;
+          Cancel (backdrop / back) → abort, no trade. Onboarding
+          screen 9 never mounts this screen so it can't appear there. */}
+      <PreTradeModal
+        visible={preTradePrompt !== null}
+        direction={preTradePrompt === 'sell' ? 'short' : 'long'}
+        currentPrice={currentPrice}
+        pricePrecision={market.pip < 0.01 ? 5 : 2}
+        onPlace={(plan: TradePlanInput) => {
+          pendingPlanRef.current = {
+            setupType: plan.setupType,
+            stopPrice: plan.stopPrice,
+            targetPrice: plan.targetPrice,
+            skipped: false,
+          };
+          const side = preTradePrompt;
+          setPreTradePrompt(null);
+          if (side) beginPending(side);
+        }}
+        onSkip={() => {
+          pendingPlanRef.current = {
+            setupType: null,
+            stopPrice: null,
+            targetPrice: null,
+            skipped: true,
+          };
+          const side = preTradePrompt;
+          setPreTradePrompt(null);
+          if (side) beginPending(side);
+        }}
+        onCancel={() => {
+          pendingPlanRef.current = null;
+          setPreTradePrompt(null);
+        }}
+      />
 
       {/* Trade journal — auto-pops after every closed trade (manual
           close or SL/TP hit). Pressing Save persists the grade /

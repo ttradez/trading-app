@@ -202,6 +202,7 @@ function JournalTradeCard({
       contracts={entry.lots}
       status="closed"
       grade={grade}
+      planSetupType={entry.planSetupType}
       onPress={onPress}
     />
   );

@@ -137,6 +137,7 @@ function RecentTradeRow({ entry }: { entry: JournalEntry }) {
       contracts={entry.lots}
       status="closed"
       grade={grade}
+      planSetupType={entry.planSetupType}
     />
   );
 }

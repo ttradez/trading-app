@@ -6,6 +6,12 @@ const KEY = '@pocket_trade_journal';
 export type Emotion =
   | 'fear' | 'greed' | 'revenge' | 'fomo' | 'confidence' | 'patience' | 'frustration' | 'calm';
 
+/** Pre-trade plan setup type (captured by the "Plan your trade"
+ *  card before BUY/SELL). null when the user skipped planning or
+ *  the checklist was disabled. */
+export type PlanSetupType =
+  | 'breakout' | 'reversal' | 'trend' | 'range' | 'news' | 'other';
+
 export interface JournalEntry {
   id: string;
   tradeId: string;
@@ -20,6 +26,11 @@ export interface JournalEntry {
   rMultiple: number | null;
   openedAt: number;
   closedAt: number;
+  // pre-trade plan (intent captured BEFORE placement; never edited)
+  planSetupType: PlanSetupType | null;
+  planStopPrice: number | null;
+  planTargetPrice: number | null;
+  planSkipped: boolean;
   // user-editable
   notes: string;
   mistakes: string;
@@ -101,6 +112,12 @@ export const useJournalStore = create<JournalState>((set, get) => ({
           ...e,
           openedAt: fix(e.openedAt, savedAt),
           closedAt: fix(e.closedAt, savedAt),
+          // Backfill plan fields for trades saved before the
+          // pre-trade checklist shipped.
+          planSetupType: e.planSetupType ?? null,
+          planStopPrice: e.planStopPrice ?? null,
+          planTargetPrice: e.planTargetPrice ?? null,
+          planSkipped: e.planSkipped ?? false,
         };
       });
       set({ entries: migrated });
