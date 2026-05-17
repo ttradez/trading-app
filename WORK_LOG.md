@@ -5,6 +5,57 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-16 — Real Apple + Google SSO + auth-screen UI cleanup
+
+Replaced the placeholder "coming soon" alerts on screen 11 with
+real SSO. (NB: the prior Firebase prompt explicitly deferred these
+— there was no prior implementation code to "implement now"; this
+is net-new. Confirmed with the user: they're adding
+`EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` and are on a dev/EAS build.)
+
+- **Installed** (via `npx expo install`, SDK-54-matched):
+  `expo-auth-session`, `expo-web-browser`, `expo-apple-authentication`,
+  `expo-crypto`. Expo auto-added the `expo-web-browser` config plugin.
+- **app.json**: added `scheme: "pockettrade"` (OAuth redirect),
+  the `expo-apple-authentication` plugin, and
+  `ios.usesAppleSignIn: true`. *Requires a dev/EAS rebuild — not a
+  Metro reload.*
+- **Google**: `Google.useIdTokenAuthRequest` (web/iOS/Android client
+  IDs from `EXPO_PUBLIC_GOOGLE_*` env) → on success
+  `GoogleAuthProvider.credential(id_token)` →
+  `signInWithCredential` → `finishAuth`. `WebBrowser.maybeComplete-
+  AuthSession()` at module top. Cancel/dismiss = quiet no-op;
+  errors → real Alert. If the web client ID is missing the button
+  shows a precise config error (not a placeholder).
+- **Apple**: `Crypto.randomUUID()` raw nonce → SHA-256 hashed
+  nonce → `AppleAuthentication.signInAsync({ FULL_NAME, EMAIL,
+  nonce })` → `OAuthProvider('apple.com').credential({ idToken,
+  rawNonce })` → `signInWithCredential` → `finishAuth`.
+  `isAvailableAsync` guard; `ERR_REQUEST_CANCELED` = quiet no-op.
+- Removed the `comingSoon` placeholder alerts entirely.
+- **UI cleanup**: deleted the muted "Your trader name, rank, and
+  first badge are saved when you sign up" caption; reduced
+  `buttonsWrap` top margin 32 → 16 so the auth buttons sit close
+  to the player card instead of being pushed down by dead space.
+
+Type-check clean (only the 3 pre-existing iapService errors).
+
+### Files touched
+
+- `package.json`, `package-lock.json` (4 expo packages)
+- `app.json` (scheme, apple-auth plugin, usesAppleSignIn)
+- `src/screens/OnboardingAuthScreen.tsx`
+- `PROJECT_CONTEXT.md`, `WORK_LOG.md`
+
+### Requires / deferred
+
+Needs `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` in `.env` (user adding)
+and a dev/EAS rebuild for the new native modules + app.json plugin
+(Apple + native Google can't run in Expo Go). Firestore rules,
+handle-uniqueness, password reset still deferred.
+
+---
+
 ## 2026-05-16 — Firebase auth: real email/password + Firestore save + routing guard
 
 Replaced mock auth with real Firebase (JS SDK, already installed at

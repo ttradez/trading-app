@@ -6,13 +6,25 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import * as Crypto from 'expo-crypto';
 import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword,
+  GoogleAuthProvider, OAuthProvider, signInWithCredential,
 } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../services/firebase';
 import { useOnboardingStore } from '../store/onboardingStore';
 import PlayerCardPreview from '../components/onboarding/PlayerCardPreview';
+
+// Completes the OAuth redirect when the browser bounces back.
+WebBrowser.maybeCompleteAuthSession();
+
+const GOOGLE_WEB_CLIENT_ID     = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+const GOOGLE_IOS_CLIENT_ID     = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
+const GOOGLE_ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
 
 /** Maps a Firebase auth error code → user-facing copy, and whether
  *  to flip the form between sign-up / sign-in. */
@@ -209,17 +221,99 @@ export default function OnboardingAuthScreen({ navigation }: Props) {
     }
   };
 
-  const comingSoon = (provider: 'Apple' | 'Google') => {
-    if (provider === 'Google') {
-      Alert.alert(
-        'Google Sign In',
-        'Google Sign In requires additional setup. Use email for now.',
-      );
+  // ── Google (expo-auth-session) ──────────────────────────────────
+  const [, googleRes, googlePrompt] = Google.useIdTokenAuthRequest({
+    clientId: GOOGLE_WEB_CLIENT_ID,
+    iosClientId: GOOGLE_IOS_CLIENT_ID,
+    androidClientId: GOOGLE_ANDROID_CLIENT_ID,
+  });
+
+  useEffect(() => {
+    if (!googleRes) return;
+    if (googleRes.type === 'success') {
+      const idToken = googleRes.params?.id_token;
+      if (!idToken) {
+        setLoading(false);
+        Alert.alert('Google sign-in failed', 'No identity token returned.');
+        return;
+      }
+      setLoading(true);
+      const cred = GoogleAuthProvider.credential(idToken);
+      signInWithCredential(auth, cred)
+        .then((r) => finishAuth(r.user.uid))
+        .catch((e: any) => {
+          setLoading(false);
+          Alert.alert('Google sign-in failed', mapAuthError(e?.code ?? '').msg);
+        });
+    } else if (googleRes.type === 'error') {
+      setLoading(false);
+      Alert.alert('Google sign-in failed', 'Could not complete Google sign-in.');
     } else {
+      // 'dismiss' / 'cancel' — user backed out; just stop the spinner.
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [googleRes]);
+
+  const signInWithGoogle = async () => {
+    if (loading) return;
+    if (!GOOGLE_WEB_CLIENT_ID) {
       Alert.alert(
-        'Apple Sign In',
-        'Apple Sign In will be available once your developer account is approved.',
+        'Google sign-in unavailable',
+        'EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID is not set. Add it to .env and restart Metro with --clear.',
       );
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    setLoading(true);
+    try {
+      await googlePrompt();
+    } catch {
+      setLoading(false);
+    }
+  };
+
+  // ── Apple (expo-apple-authentication) ───────────────────────────
+  const signInWithApple = async () => {
+    if (loading) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    try {
+      if (!(await AppleAuthentication.isAvailableAsync())) {
+        Alert.alert(
+          'Apple sign-in unavailable',
+          'Apple Sign In is only available on iOS 13+ devices.',
+        );
+        return;
+      }
+      const rawNonce = Crypto.randomUUID();
+      const hashedNonce = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        rawNonce,
+      );
+      const appleCred = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+        nonce: hashedNonce,
+      });
+      if (!appleCred.identityToken) {
+        Alert.alert('Apple sign-in failed', 'No identity token returned.');
+        return;
+      }
+      setLoading(true);
+      const provider = new OAuthProvider('apple.com');
+      const firebaseCred = provider.credential({
+        idToken: appleCred.identityToken,
+        rawNonce,
+      });
+      const r = await signInWithCredential(auth, firebaseCred);
+      await finishAuth(r.user.uid);
+    } catch (e: any) {
+      // User-cancelled the Apple sheet → quiet no-op.
+      if (e?.code === 'ERR_REQUEST_CANCELED') { setLoading(false); return; }
+      setLoading(false);
+      Alert.alert('Apple sign-in failed', mapAuthError(e?.code ?? '').msg);
     }
   };
 
@@ -258,9 +352,6 @@ export default function OnboardingAuthScreen({ navigation }: Props) {
             badge={firstTrade?.badge ?? null}
             showYouIndicator={false}
           />
-          <Text style={styles.recapNote}>
-            Your trader name, rank, and first badge are saved when you sign up.
-          </Text>
         </Animated.View>
 
         <Animated.View style={[styles.buttonsWrap, { opacity: buttonsOp }]}>
@@ -269,13 +360,13 @@ export default function OnboardingAuthScreen({ navigation }: Props) {
               <AuthButton
                 variant="apple"
                 disabled={loading}
-                onPress={() => comingSoon('Apple')}
+                onPress={signInWithApple}
               />
               <View style={styles.btnGap} />
               <AuthButton
                 variant="google"
                 disabled={loading}
-                onPress={() => comingSoon('Google')}
+                onPress={signInWithGoogle}
               />
 
               <View style={styles.emailLinkGap} />
@@ -441,8 +532,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
 
-  // Auth buttons
-  buttonsWrap: { marginTop: 32 },
+  // Auth buttons — kept close to the player card (helper caption
+  // removed; no big dead gap pushing these to the bottom).
+  buttonsWrap: { marginTop: 16 },
   btnGap: { height: 12 },
 
   authBtn: {
