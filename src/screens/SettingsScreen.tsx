@@ -6,6 +6,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
+import DSSectionHeader from '../components/SectionHeader';
+import { colors as ST } from '../theme/tokens';
 import { useOnboardingStore, Archetype, DailyCommitment } from '../store/onboardingStore';
 import { useStreakStore } from '../store/streakStore';
 import { useSettingsStore } from '../store/settingsStore';
@@ -476,8 +478,26 @@ export default function SettingsScreen({ navigation }: any) {
 
 // ── Sub-components ─────────────────────────────────────────────────────────
 
+/** lucide isn't installed — map each section to an @expo glyph. */
+const SETTINGS_ICON: Record<string, React.ReactNode> = {
+  Profile:     <Ionicons name="person-outline" size={13} color={ST.textTertiary} />,
+  Training:    <Ionicons name="barbell-outline" size={13} color={ST.textTertiary} />,
+  Trading:     <Ionicons name="trending-up" size={13} color={ST.textTertiary} />,
+  Preferences: <Ionicons name="options-outline" size={13} color={ST.textTertiary} />,
+  Data:        <MaterialCommunityIcons name="database" size={13} color={ST.textTertiary} />,
+  About:       <Ionicons name="information-circle-outline" size={13} color={ST.textTertiary} />,
+};
+
 function SectionHeader({ title }: { title: string }) {
-  return <Text style={styles.sectionHeader}>{title.toUpperCase()}</Text>;
+  return (
+    <View style={styles.sectionHeader}>
+      <DSSectionHeader
+        title={title}
+        variant="eyebrow"
+        icon={SETTINGS_ICON[title]}
+      />
+    </View>
+  );
 }
 
 function Separator() {

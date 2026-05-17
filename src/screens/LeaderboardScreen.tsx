@@ -15,6 +15,22 @@ import {
 } from '../data/badges';
 import { getBadgeProgress } from '../utils/badgeChecker';
 import { colors, radius, spacing, fontSize, fontWeight, labelStyle } from '../theme';
+import { colors as LT } from '../theme/tokens';
+import ProgressBar from '../components/ProgressBar';
+import SectionHeader from '../components/SectionHeader';
+import BadgeTile from '../components/BadgeTile';
+
+/** lucide isn't installed — map each category to an @expo glyph. */
+const CAT_ICON: Record<string, React.ReactNode> = {
+  volume:      <Ionicons name="bar-chart-outline" size={13} color={LT.textTertiary} />,
+  skill:       <MaterialCommunityIcons name="crosshairs" size={13} color={LT.textTertiary} />,
+  consistency: <MaterialCommunityIcons name="calendar-check" size={13} color={LT.textTertiary} />,
+  discovery:   <Ionicons name="compass-outline" size={13} color={LT.textTertiary} />,
+  journal:     <Ionicons name="book-outline" size={13} color={LT.textTertiary} />,
+};
+const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const within48h = (iso?: string) =>
+  !!iso && Date.now() - new Date(iso).getTime() < 48 * 3600 * 1000;
 
 type Tab = 'leaderboard' | 'feed' | 'friends';
 type Period = 'weekly' | 'monthly' | 'alltime';
@@ -139,20 +155,14 @@ export default function LeaderboardScreen({ route }: any) {
   // personal-leaderboard placeholder directly.
   const renderHeader = () => (
     <>
-      <View style={styles.trophyHeader}>
-        <Ionicons name="trophy" size={32} color={colors.gold} />
-      </View>
-
       {/* Tournaments — placeholder (no real tournament / prize pool
           exists yet; the old "MAY TOURNAMENT · LIVE · $2,500" card
-          implied otherwise). */}
+          implied otherwise). The trophy now lives INSIDE the card
+          in a glowing 96px disc rather than floating above it. */}
       <View style={styles.tourneyCard}>
-        <Ionicons
-          name="trophy-outline"
-          size={40}
-          color="rgba(255,184,0,0.3)"
-          style={styles.comingSoonIcon}
-        />
+        <View style={styles.trophyDisc}>
+          <Ionicons name="trophy" size={40} color={colors.gold} />
+        </View>
         <Text style={styles.comingSoonTitle}>Tournaments — Coming Soon</Text>
         <Text style={styles.comingSoonSub}>
           The first season launches when 100 traders join.
@@ -219,6 +229,12 @@ export default function LeaderboardScreen({ route }: any) {
       ListEmptyComponent={
         !loading ? (
           <View style={styles.emptyBox}>
+            <MaterialCommunityIcons
+              name="chart-line"
+              size={32}
+              color={LT.textQuaternary}
+              style={{ marginBottom: spacing.md }}
+            />
             <Text style={styles.emptyTitle}>Personal Leaderboard</Text>
             <Text style={styles.emptyText}>
               Your best weeks will appear here as you trade.
@@ -248,53 +264,55 @@ function TrophyCase() {
         <Text style={styles.tcCount}>
           {unlockedCount} / {BADGE_COUNT} unlocked
         </Text>
-        <View style={styles.tcBarTrack}>
-          <View
-            style={[
-              styles.tcBarFill,
-              { width: `${Math.round((unlockedCount / BADGE_COUNT) * 100)}%` },
-            ]}
-          />
+        <View style={styles.tcBarRow}>
+          <View style={styles.tcBarFlex}>
+            <ProgressBar
+              progress={unlockedCount / BADGE_COUNT}
+              size="lg"
+              variant="gold"
+              glow
+            />
+          </View>
+          <Text style={styles.tcBarPct}>
+            {Math.round((unlockedCount / BADGE_COUNT) * 100)}%
+          </Text>
         </View>
 
         {CATEGORY_ORDER.map((cat) => (
           <View key={cat} style={styles.tcCatBlock}>
-            <Text style={styles.tcCatLabel}>{CATEGORY_LABEL[cat]}</Text>
-            <View style={styles.tcGrid}>
+            <SectionHeader
+              title={titleCase(cat)}
+              variant="eyebrow"
+              icon={CAT_ICON[cat]}
+            />
+            <View style={[styles.tcGrid, { marginTop: spacing.md }]}>
               {BADGES.filter((b) => b.category === cat).map((b) => {
                 const unlocked = !!unlockedMap[b.id];
-                const accent = RARITY_COLOR[b.rarity];
+                const prog = !unlocked ? getBadgeProgress(b.id) : null;
+                const inProgress =
+                  !unlocked && !!prog && prog.current > 0 &&
+                  prog.current < prog.target;
+                const state = unlocked
+                  ? 'unlocked'
+                  : inProgress
+                    ? 'in-progress'
+                    : 'locked';
                 return (
-                  <TouchableOpacity
-                    key={b.id}
-                    style={styles.tcCell}
-                    activeOpacity={0.8}
-                    onPress={() => setSelected(b)}
-                  >
-                    <View
-                      style={[
-                        styles.tcIconWrap,
-                        unlocked
-                          ? { borderColor: accent }
-                          : styles.tcIconWrapLocked,
-                      ]}
-                    >
-                      <MaterialCommunityIcons
-                        name={unlocked ? b.icon : 'lock'}
-                        size={26}
-                        color={unlocked ? accent : 'rgba(255,255,255,0.3)'}
-                      />
-                    </View>
-                    <Text
-                      style={[
-                        styles.tcName,
-                        !unlocked && styles.tcNameLocked,
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {unlocked ? b.name : '???'}
-                    </Text>
-                  </TouchableOpacity>
+                  <View key={b.id} style={styles.tcCell}>
+                    <BadgeTile
+                      state={state}
+                      icon={b.icon}
+                      name={b.name}
+                      categoryHint={titleCase(cat)}
+                      progress={
+                        prog ? prog.current / prog.target : undefined
+                      }
+                      justUnlocked={
+                        unlocked && within48h(unlockedMap[b.id])
+                      }
+                      onPress={() => setSelected(b)}
+                    />
+                  </View>
                 );
               })}
             </View>
@@ -395,7 +413,33 @@ const styles = StyleSheet.create({
   tourneyCard: {
     backgroundColor: colors.card, borderRadius: radius.lg,
     borderWidth: 1, borderColor: colors.gold,
-    padding: spacing.md, marginBottom: spacing.lg,
+    borderTopColor: LT.hairlineHighlight,
+    padding: spacing.xl, marginBottom: spacing.lg,
+    alignItems: 'center',
+  },
+  trophyDisc: {
+    width: 96, height: 96, borderRadius: 48,
+    backgroundColor: LT.goldTint,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: spacing.md,
+    shadowColor: LT.gold,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  tcBarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+    gap: spacing.sm,
+  },
+  tcBarFlex: { flex: 1 },
+  tcBarPct: {
+    color: LT.textTertiary,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.bold,
+    fontVariant: ['tabular-nums'],
   },
   tourneyHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md },
   tourneyTitle: { color: colors.textPrimary, fontWeight: fontWeight.black, letterSpacing: 1.5, fontSize: fontSize.md, marginLeft: spacing.sm, flex: 1 },

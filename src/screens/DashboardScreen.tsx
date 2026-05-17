@@ -28,6 +28,9 @@ import {
 import StreakBadge from '../components/StreakBadge';
 import TradeCard from '../components/TradeCard';
 import RankBanner from '../components/RankBanner';
+import ProgressBar from '../components/ProgressBar';
+import SectionHeader from '../components/SectionHeader';
+import { colors as DT } from '../theme/tokens';
 
 /**
  * DashboardScreen — 3-zone restructure (2026-05-15).
@@ -377,6 +380,7 @@ export default function DashboardScreen({ navigation }: any) {
           style={[
             styles.card,
             styles.missionCard,
+            styles.missionElevated,
             setupComplete && styles.missionCardDone,
           ]}
         >
@@ -394,7 +398,17 @@ export default function DashboardScreen({ navigation }: any) {
             <Text style={styles.missionDescription}>
               {todaySetup.description}
             </Text>
-            <Text style={styles.missionTip}>💡 {todaySetup.tip}</Text>
+            <View style={styles.missionTipRow}>
+              <Ionicons
+                name="bulb-outline"
+                size={14}
+                color={GOLD}
+                style={styles.missionTipIcon}
+              />
+              <Text style={[styles.missionTip, styles.missionTipText]}>
+                {todaySetup.tip}
+              </Text>
+            </View>
 
             <Pressable
               onPress={() =>
@@ -502,21 +516,13 @@ export default function DashboardScreen({ navigation }: any) {
           <View style={styles.rankTextWrap}>
             <Text style={styles.rankName}>{rankInfo.label}</Text>
             <View style={styles.rankBarTrack}>
-              <View
-                style={[
-                  styles.rankBarFill,
-                  { width: `${Math.round(pct * 100)}%` },
-                ]}
+              <ProgressBar
+                progress={pct}
+                size="lg"
+                variant="gold"
+                glow
+                animated
               />
-              {showPulse && (
-                <Animated.View
-                  pointerEvents="none"
-                  style={[
-                    styles.rankBarGlow,
-                    { width: `${Math.round(pct * 100)}%`, opacity: glow },
-                  ]}
-                />
-              )}
             </View>
             <Text style={styles.rankSub}>
               {rankInfo.next
@@ -558,7 +564,13 @@ export default function DashboardScreen({ navigation }: any) {
 
         {/* SECTION 5 — Next Badges (replaces the 0/30 counter) */}
         <View style={[styles.sectionHeader, styles.sectionGap]}>
-          <Text style={styles.sectionTitle}>Next Badges</Text>
+          <SectionHeader
+            title="Next Badges"
+            icon={<MaterialCommunityIcons name="medal-outline" size={16} color={GOLD} />}
+            actionLabel="View all"
+            actionCount={BADGE_COUNT}
+            onActionPress={goToBadges}
+          />
         </View>
         {nextBadges.length > 0 && (
           <View style={styles.badgeRow}>
@@ -588,17 +600,7 @@ export default function DashboardScreen({ navigation }: any) {
             ))}
           </View>
         )}
-        <Pressable
-          onPress={goToBadges}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          style={({ pressed }) => [styles.badgeViewAll, pressed && { opacity: 0.6 }]}
-          accessibilityRole="button"
-          accessibilityLabel={`View all ${BADGE_COUNT} badges`}
-        >
-          <Text style={styles.badgeViewAllText}>
-            View all {BADGE_COUNT} →
-          </Text>
-        </Pressable>
+        {/* "View all" moved into the SectionHeader action above. */}
 
         {/* SECTION 6 — Process Stats (2 × 2) */}
         <View style={[styles.statsGrid, styles.sectionGap]}>
@@ -606,6 +608,7 @@ export default function DashboardScreen({ navigation }: any) {
             label="Trades"
             value={String(stats.total)}
             muted={!stats.hasTrades}
+            icon={<Ionicons name="repeat" size={14} color={DT.textQuaternary} />}
           />
           <StatCard
             label="Win Rate"
@@ -616,6 +619,7 @@ export default function DashboardScreen({ navigation }: any) {
               ? (stats.winRate >= 50 ? GREEN : RED)
               : undefined}
             muted={!stats.hasTrades}
+            icon={<MaterialCommunityIcons name="target" size={14} color={GOLD} />}
           />
           <StatCard
             label="Journal Rate"
@@ -624,6 +628,7 @@ export default function DashboardScreen({ navigation }: any) {
               ? (stats.journalRate >= 50 ? GREEN : undefined)
               : undefined}
             muted={!stats.hasTrades}
+            icon={<MaterialCommunityIcons name="notebook-edit-outline" size={14} color={GOLD} />}
           />
           <StatCard
             label="Avg Grade"
@@ -633,6 +638,7 @@ export default function DashboardScreen({ navigation }: any) {
                 : GRADE_NUM[stats.avgGrade] <= 2 ? RED : undefined)
               : undefined}
             muted={!stats.avgGrade}
+            icon={<Ionicons name="school-outline" size={14} color={GOLD} />}
           />
         </View>
 
@@ -654,15 +660,12 @@ export default function DashboardScreen({ navigation }: any) {
 
         {/* SECTION 7 — Recent Trades */}
         <View style={styles.sectionHeaderTight}>
-          <Text style={styles.sectionTitle}>Recent Trades</Text>
-          {stats.hasTrades && (
-            <Pressable
-              onPress={() => navigation.navigate('Journal')}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Text style={styles.viewAllLink}>View all</Text>
-            </Pressable>
-          )}
+          <SectionHeader
+            title="Recent Trades"
+            icon={<Ionicons name="time-outline" size={16} color={GOLD} />}
+            actionLabel={stats.hasTrades ? 'View all' : undefined}
+            onActionPress={() => navigation.navigate('Journal')}
+          />
         </View>
 
         {recentTrades.length === 0 ? (
@@ -694,7 +697,10 @@ export default function DashboardScreen({ navigation }: any) {
         {savedSetups.length > 0 && (
           <>
             <View style={[styles.sectionHeader, styles.sectionGap]}>
-              <Text style={styles.sectionTitle}>Saved Setups</Text>
+              <SectionHeader
+                title="Saved Setups"
+                icon={<Ionicons name="bookmark-outline" size={16} color={GOLD} />}
+              />
               <Text style={styles.savedCount}>{savedSetups.length} saved</Text>
             </View>
             <ScrollView
@@ -758,10 +764,14 @@ function DifficultyBadge({ difficulty }: { difficulty: SetupDifficulty }) {
 // ── Stat card ──────────────────────────────────────────────────────────────
 
 function StatCard({
-  label, value, color, muted,
-}: { label: string; value: string; color?: string; muted?: boolean }) {
+  label, value, color, muted, icon,
+}: {
+  label: string; value: string; color?: string; muted?: boolean;
+  icon?: React.ReactNode;
+}) {
   return (
     <View style={[styles.statCard, muted && styles.statCardMuted]}>
+      {icon ? <View style={styles.statIcon}>{icon}</View> : null}
       <Text
         style={[
           styles.statValue,
@@ -842,14 +852,10 @@ function CompactChallengeCard({
           )}
         </View>
         <View style={styles.cBarTrack}>
-          <View
-            style={[
-              styles.cBarFill,
-              {
-                width: `${Math.round(pct * 100)}%`,
-                backgroundColor: inst.completed ? GREEN : GOLD,
-              },
-            ]}
+          <ProgressBar
+            progress={pct}
+            size="md"
+            variant={inst.completed ? 'green' : 'gold'}
           />
         </View>
       </View>
@@ -871,7 +877,10 @@ function ChallengesSection() {
 
   return (
     <View>
-      <Text style={styles.sectionTitle}>Daily Challenges</Text>
+      <SectionHeader
+        title="Daily Challenges"
+        icon={<MaterialCommunityIcons name="target" size={16} color={GOLD} />}
+      />
 
       {allComplete && (
         <Text style={styles.cAllDone}>All daily challenges complete ✓</Text>
@@ -894,7 +903,9 @@ function ChallengesSection() {
 
       {(weekly || monthly) && (
         <>
-          <Text style={styles.cLongTermLabel}>LONG-TERM</Text>
+          <View style={styles.cLongTermLabel}>
+            <SectionHeader title="Long-term" variant="eyebrow" />
+          </View>
           <View style={styles.cList}>
             {weekly && (
               <CompactChallengeCard inst={weekly} tag="WEEKLY" large />
@@ -960,11 +971,12 @@ const styles = StyleSheet.create({
   pipOn: { backgroundColor: GOLD },
   pipOff: { backgroundColor: 'rgba(255,255,255,0.2)' },
 
-  // Card shell
+  // Card shell — 1px top hairline simulates light catching the edge.
   card: {
     backgroundColor: CARD_BG,
     borderColor: CARD_BORDER,
     borderWidth: 1,
+    borderTopColor: DT.hairlineHighlight,
     borderRadius: 14,
   },
 
@@ -973,6 +985,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     overflow: 'hidden',
   },
+  // Hero card sits one surface-tier above the rest (#141414).
+  missionElevated: {
+    backgroundColor: DT.surfaceElevated,
+  },
+  missionTipRow: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  missionTipIcon: { marginRight: 6, marginTop: 2 },
+  missionTipText: { marginTop: 0, flex: 1 },
   missionCardDone: {
     borderColor: GREEN,
   },
@@ -1119,11 +1142,14 @@ const styles = StyleSheet.create({
     backgroundColor: CARD_BG,
     borderColor: CARD_BORDER,
     borderWidth: 1,
+    borderTopColor: DT.hairlineHighlight,
     borderRadius: 14,
     paddingVertical: 14,
     paddingHorizontal: 14,
+    position: 'relative',
   },
   statCardMuted: { opacity: 0.6 },
+  statIcon: { position: 'absolute', top: 10, right: 10 },
   statValue: {
     color: WHITE,
     fontSize: 20,
@@ -1210,10 +1236,6 @@ const styles = StyleSheet.create({
   },
   rankBarTrack: {
     marginTop: 8,
-    height: 4,
-    backgroundColor: TRACK,
-    borderRadius: 2,
-    overflow: 'hidden',
   },
   rankBarFill: {
     height: '100%',
@@ -1324,6 +1346,7 @@ const styles = StyleSheet.create({
     backgroundColor: CARD_BG,
     borderColor: CARD_BORDER,
     borderWidth: 1,
+    borderTopColor: DT.hairlineHighlight,
     borderRadius: 14,
     padding: 14,
   },
@@ -1368,6 +1391,7 @@ const styles = StyleSheet.create({
     backgroundColor: CARD_BG,
     borderColor: CARD_BORDER,
     borderWidth: 1,
+    borderTopColor: DT.hairlineHighlight,
     borderRadius: 12,
     overflow: 'hidden',
   },
@@ -1422,10 +1446,5 @@ const styles = StyleSheet.create({
   },
   cBarTrack: {
     marginTop: 8,
-    height: 3,
-    backgroundColor: '#1F1F1F',
-    borderRadius: 2,
-    overflow: 'hidden',
   },
-  cBarFill: { height: '100%', borderRadius: 2 },
 });

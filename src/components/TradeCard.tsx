@@ -294,7 +294,7 @@ export default function TradeCard(props: TradeCardProps) {
 
         {/* Metadata */}
         <View style={styles.bottomRow}>
-          <Text style={styles.metaText} numberOfLines={1}>
+          <Text style={styles.metaDate} numberOfLines={1}>
             {formatEntryDate(entryTime)}
           </Text>
           <View style={{ flex: 1 }} />
@@ -330,6 +330,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#1F1F1F',
+    borderTopColor: 'rgba(255,255,255,0.04)',
     overflow: 'hidden',
     // Subtle base lift so the card sits above the black canvas.
     shadowColor: '#000',
@@ -480,6 +481,14 @@ const styles = StyleSheet.create({
   },
   metaText: {
     color: 'rgba(255,255,255,0.4)',
+    fontSize: 12,
+    fontWeight: '500',
+    fontVariant: ['tabular-nums'],
+  },
+  // Date is supporting-supporting info — one tier dimmer than the
+  // duration/contracts so it doesn't compete with the prices.
+  metaDate: {
+    color: 'rgba(255,255,255,0.35)',
     fontSize: 12,
     fontWeight: '500',
   },

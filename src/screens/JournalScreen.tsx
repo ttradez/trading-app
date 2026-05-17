@@ -7,6 +7,8 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors, radius, spacing, fontSize, fontWeight, labelStyle } from '../theme';
 import { useJournalStore, JournalEntry, Emotion } from '../store/journalStore';
 import TradeCard from '../components/TradeCard';
+import SectionHeader from '../components/SectionHeader';
+import { colors as JT } from '../theme/tokens';
 import { useTradeJournalStore } from '../store/tradeJournalStore';
 import { useRecapList } from '../store/recapStore';
 import WeeklyRecapModal from '../components/WeeklyRecapModal';
@@ -105,7 +107,9 @@ export default function JournalScreen({ navigation }: any) {
         accessibilityRole="button"
         accessibilityLabel="Your Tendencies — see your trading patterns"
       >
-        <MaterialCommunityIcons name="brain" size={24} color={colors.gold} />
+        <View style={styles.insightsIconWrap}>
+          <MaterialCommunityIcons name="brain" size={22} color={colors.gold} />
+        </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.insightsTitle}>Your Tendencies</Text>
           <Text style={styles.insightsSub}>See your trading patterns →</Text>
@@ -160,7 +164,13 @@ function RecapsSection({ onOpen }: { onOpen: (r: WeeklyRecap) => void }) {
   const recaps = useRecapList();
   return (
     <View style={styles.recapSection}>
-      <Text style={styles.recapHeader}>WEEKLY RECAPS</Text>
+      <View style={styles.recapHeader}>
+        <SectionHeader
+          title="Weekly Recaps"
+          variant="eyebrow"
+          icon={<MaterialCommunityIcons name="calendar-range" size={13} color={JT.textTertiary} />}
+        />
+      </View>
       {recaps.length === 0 ? (
         <Text style={styles.recapEmpty}>
           Complete your first week of trading to unlock your Weekly Recap.
@@ -354,9 +364,18 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderColor: colors.border,
     borderWidth: 1,
+    borderTopColor: JT.hairlineHighlight,
     borderRadius: 14,
     paddingVertical: 14,
     paddingHorizontal: 16,
+  },
+  insightsIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: JT.goldTint,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   insightsTitle: {
     color: colors.textPrimary,

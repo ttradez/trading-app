@@ -362,6 +362,8 @@ const styles = StyleSheet.create({
     backgroundColor: CARD_BG,
     borderColor: CARD_BORDER,
     borderWidth: 1,
+    // Design-system hairline highlight (tokens.colors.hairlineHighlight).
+    borderTopColor: 'rgba(255,255,255,0.04)',
     borderRadius: 14,
     padding: 16,
   },

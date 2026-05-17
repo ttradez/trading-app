@@ -108,8 +108,11 @@ export const CATEGORY_ORDER: SetupCategory[] = CLASSIC_CATEGORY_ORDER;
 
 /** Difficulty → pill color. Matches the Daily Mission badge:
  *  beginner green, intermediate gold, advanced red. */
+/** Difficulty → pill color. `beginner` uses the desaturated UI
+ *  green (`uiGreen #5BC894`), NOT P&L green, so difficulty reads as
+ *  a category — not a win/loss signal. */
 export const DIFFICULTY_COLOR: Record<SetupDifficulty, string> = {
-  beginner:     '#00D395',
+  beginner:     '#5BC894',
   intermediate: '#FFB800',
   advanced:     '#FF4757',
 };

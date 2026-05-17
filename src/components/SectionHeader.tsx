@@ -41,9 +41,7 @@ export default function SectionHeader({
     <View style={styles.row}>
       <View style={styles.left}>
         {isDisplay && <View style={styles.marker} />}
-        {isDisplay && icon ? (
-          <View style={styles.iconWrap}>{icon}</View>
-        ) : null}
+        {icon ? <View style={styles.iconWrap}>{icon}</View> : null}
         <Text
           style={isDisplay ? styles.titleDisplay : styles.titleEyebrow}
           numberOfLines={1}

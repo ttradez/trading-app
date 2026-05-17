@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Image, StyleSheet } from 'react-native';
+import { View, Text, Image, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -121,12 +121,41 @@ function MainTabs() {
           };
           return <Ionicons name={iconMap[route.name] ?? 'help'} size={18} color={color} />;
         },
+        // Custom label so the active tab gets a 16×2 gold underline
+        // — a physical "selected" cue beyond color alone.
+        tabBarLabel: ({ focused }) => {
+          const labelMap: Record<string, string> = {
+            Dashboard:   'DASHBOARD',
+            Chart:       'CHART',
+            Journal:     'JOURNAL',
+            Leaderboard: 'RANKS',
+          };
+          return (
+            <View style={tabStyles.labelWrap}>
+              <Text
+                style={[
+                  tabStyles.label,
+                  { color: focused ? colors.gold : colors.textSecondary },
+                ]}
+                numberOfLines={1}
+              >
+                {labelMap[route.name] ?? route.name.toUpperCase()}
+              </Text>
+              <View
+                style={[
+                  tabStyles.underline,
+                  focused && tabStyles.underlineActive,
+                ]}
+              />
+            </View>
+          );
+        },
       })}
     >
       <Tab.Screen name="Dashboard"   component={DashboardScreen} />
       <Tab.Screen name="Chart"       component={TradingScreen} />
       <Tab.Screen name="Journal"     component={JournalScreen} />
-      <Tab.Screen name="Leaderboard" component={LeaderboardScreen} options={{ tabBarLabel: 'Ranks' }} />
+      <Tab.Screen name="Leaderboard" component={LeaderboardScreen} />
     </Tab.Navigator>
     <WeeklyRecapModal
       visible={weeklyRecap !== null}
@@ -251,4 +280,22 @@ function LoadingSplash() {
 
 const styles = StyleSheet.create({
   splash: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' },
+});
+
+const tabStyles = StyleSheet.create({
+  labelWrap: { alignItems: 'center', marginTop: -3 },
+  label: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  underline: {
+    marginTop: 3,
+    width: 16,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: 'transparent',
+  },
+  underlineActive: { backgroundColor: colors.gold },
 });
