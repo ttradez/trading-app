@@ -3,6 +3,25 @@ import { useJournalStore } from '../store/journalStore';
 import { useTradeJournalStore } from '../store/tradeJournalStore';
 import { useBadgeStore } from '../store/badgeStore';
 import { getTodayYMD } from '../store/streakStore';
+import { isoWeekId } from './weeklyRecap';
+
+/**
+ * STUBBED challenge conditions — wiring deferred (need data points
+ * we don't track yet). They are intentionally absent from
+ * `DETECTABLE_CONDITIONS` so generation never hands the user one,
+ * so there is no progress call to make here. When the tracking
+ * lands, add the detection below AND list the condition in
+ * `DETECTABLE_CONDITIONS`:
+ *
+ *  - `consistent_size`        — needs per-session position-size
+ *    history + a "sized up after a loss" flag.
+ *  - `wait_between_trades`    — needs close→next-open timestamps
+ *    (gap ≥ 60s) counted per trade.
+ *  - `stop_after_2_losses`    — needs session-end detection plus a
+ *    consecutive-loss counter (no trade after 2 in a row).
+ *  - `library_setups_practiced` — needs the Setup Library deep-link
+ *    to record which library setup id launched the session.
+ */
 
 /**
  * Maps app events → challenge progress. Centralised here so the
@@ -33,6 +52,7 @@ interface ClosedTradeShape {
   pnl?: number;
   opened_at?: number; // unix seconds
   closed_at?: number;
+  r_multiple?: number;
 }
 
 /** Call AFTER badge `checkTradeCloseBadges` (so `consecutiveWins`
@@ -57,12 +77,39 @@ export function detectAfterTradeClose(
   const closedSec = typeof t.closed_at === 'number' ? t.closed_at : openedSec;
   const barSec = BAR_SECONDS[timeframe] ?? 300;
   const holdBars = barSec > 0 ? (closedSec - openedSec) / barSec : 0;
-  if (won && holdBars >= 10) updateChallengeProgress('winner_held_10_bars', 1);
-  if (!won && holdBars > 0 && holdBars <= 5) {
+  // Style-agnostic OR clauses: a winner also counts at 2R+, a
+  // loser also counts if cut before 1R against you. `r_multiple`
+  // is null when no stop was set — then only the bar path applies.
+  const rMul = typeof t.r_multiple === 'number' ? t.r_multiple : null;
+  if (won && (holdBars >= 10 || (rMul != null && rMul >= 2))) {
+    updateChallengeProgress('winner_held_10_bars', 1);
+  }
+  if (
+    !won &&
+    ((holdBars > 0 && holdBars <= 5) ||
+      (rMul != null && rMul > -1 && rMul < 0))
+  ) {
     updateChallengeProgress('loser_cut_5_bars', 1);
   }
 
   const entries = useJournalStore.getState().entries;
+
+  // Setup Focus (weekly): most-repeated pre-trade setup type among
+  // THIS calendar week's planned trades (local device week via the
+  // entry's real-time `savedAt`). Max-mode in challengeStore.
+  const nowWeek = isoWeekId(new Date());
+  const bySetup = new Map<string, number>();
+  for (const e of entries) {
+    if (!e.planSetupType || e.planSkipped) continue;
+    if (isoWeekId(new Date(e.savedAt)) !== nowWeek) continue;
+    bySetup.set(e.planSetupType, (bySetup.get(e.planSetupType) ?? 0) + 1);
+  }
+  const maxSameSetup = bySetup.size
+    ? Math.max(...bySetup.values())
+    : 0;
+  if (maxSameSetup > 0) {
+    updateChallengeProgress('same_setup_3x', maxSameSetup);
+  }
 
   // Distinct symbols (lifetime — documented).
   const symbols = new Set(entries.map((e) => e.symbol));
@@ -116,6 +163,33 @@ export function detectAfterJournalSave(
     todayTrades.every((e) => tj[e.tradeId] !== undefined)
   ) {
     updateChallengeProgress('all_journaled', 1);
+  }
+
+  // Process Over Outcome (daily): graded A/A+ on a LOSING trade.
+  // The just-journaled trade is the newest entry (addEntry
+  // prepends); check its P&L.
+  const latest = entries[0];
+  if (
+    (grade === 'A' || grade === 'A+') &&
+    latest &&
+    latest.pnl < 0
+  ) {
+    updateChallengeProgress('good_grade_on_loss', 1);
+  }
+
+  // Full Process (weekly): trades THIS local week that were both
+  // planned (pre-trade checklist, not skipped) AND journaled.
+  // Max-mode in challengeStore.
+  const nowWeek = isoWeekId(new Date());
+  const fullProcess = entries.filter(
+    (e) =>
+      !!e.planSetupType &&
+      !e.planSkipped &&
+      tj[e.tradeId] !== undefined &&
+      isoWeekId(new Date(e.savedAt)) === nowWeek,
+  ).length;
+  if (fullProcess > 0) {
+    updateChallengeProgress('full_process_trades', fullProcess);
   }
 }
 

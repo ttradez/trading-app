@@ -5,6 +5,47 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-16 — Challenge fixes: style-agnostic rewording + 7 new universal challenges
+
+From the challenge inclusivity audit.
+
+- **Reworded (challengePool.ts):** `d_hold10` → "Hold a winner
+  for 10+ bars OR close at 2R+"; `d_cut5` → "Cut a loser within
+  5 bars OR before 1R against you"; `d_quick` → "Complete a trade
+  within your first 10 minutes of your replay session today";
+  `w_days5` description → "Open the app and trade on 5 different
+  calendar days this week". `active_days` already tracks the
+  user's LOCAL device day (it fires off the streak/time-goal
+  completion, which is `getTodayYMD`-based) — verified, no logic
+  change needed.
+- **Detection wired** (`challengeDetection.ts`): the two reworded
+  skill challenges now ALSO satisfy via R-multiple (winner ≥2R /
+  loser cut before −1R) using the closed trade's `r_multiple`
+  (bar path still works when no stop → null R). Three new
+  conditions fully implemented: `good_grade_on_loss` (A/A+ grade
+  on a negative-P&L trade), `same_setup_3x` (most-repeated plan
+  setup type this local week, max-mode), `full_process_trades`
+  (this-week trades that were both planned + journaled,
+  max-mode). All three added to `DETECTABLE_CONDITIONS`;
+  `same_setup_3x`/`full_process_trades` added to `CONDITION_MODE`
+  as `max`.
+- **Stubbed** (in pool, NOT in `DETECTABLE_CONDITIONS`, so they
+  never rotate — same pattern as `quick_start`): `consistent_size`
+  (d_riskconsist), `wait_between_trades` (d_patience),
+  `stop_after_2_losses` (d_stop2losses), `library_setups_practiced`
+  (w_library3). TODO block in challengeDetection.ts documents the
+  data each needs before it can be enabled.
+
+Type-check clean (only the 3 pre-existing iapService errors).
+
+### Files touched
+
+- `src/data/challengePool.ts`
+- `src/utils/challengeDetection.ts`
+- `WORK_LOG.md`
+
+---
+
 ## 2026-05-16 — Trade card visual upgrade
 
 Pure visual redesign of `TradeCard` — no prop/data-model change,
