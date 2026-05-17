@@ -16,7 +16,16 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.pockettrade.app",
-      "usesAppleSignIn": true
+      "usesAppleSignIn": true,
+      "infoPlist": {
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.1050185096223-6k49hu20736247ernmfs025of5g94gmq"
+            ]
+          }
+        ]
+      }
     },
     "android": {
       "adaptiveIcon": {
