@@ -5,6 +5,55 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-16 — ICT Setup Library: 13 concepts + section toggle + rank gating
+
+Added a second library section for ICT methodology (popular with
+the 18-35 futures audience). The original 15 Classic setups are
+untouched.
+
+- **`setupLibrary.ts`**: split `SetupCategory` into
+  `ClassicCategory | IctCategory`; added `SetupSection`, optional
+  `section?` (defaults to `'classic'` via `getSection()` so the
+  15 existing entries needed NO edit) and optional `unlock?:
+  RankId` soft gate. Added 13 ICT concepts across structure
+  (BOS, CHoCH, Premium/Discount, MSS), entry (OB, FVG, OTE,
+  Breaker, Mitigation), liquidity (Liquidity Sweep, BSL/SSL),
+  time (Kill Zones, Silver Bullet) — all with real 2022 NQ/ES
+  examples. ICT category labels resolve to a single violet
+  `#9B59B6` accent (`ICT_ACCENT`); Classic keeps its per-category
+  palette. Exposed `CLASSIC_SETUPS` / `ICT_SETUPS` /
+  `CLASSIC_COUNT` (15) / `ICT_COUNT` (13); `SETUP_LIBRARY_COUNT`
+  is now the 28 total.
+- **`SetupLibraryScreen`**: `[Classic] [ICT]` segmented control
+  (gold underline on the active segment) above the chips;
+  switching sections swaps the dataset + category chips
+  (All/Momentum/… vs All/Structure/Entry/Liquidity/Time) and
+  resets the filter. Rank gate reads `xpStore.currentXP` vs the
+  unlock rank's sub-tier-I `cumulativeXP` from `RANK_BEATS`:
+  locked cards render at 0.5 opacity with a corner lock and an
+  "Unlock at <Rank>" line, are NOT tappable to the detail, and
+  open a modal — "Reach <Rank> to access this concept. You're
+  <N> XP away." `SetupDetailScreen` needed no change (it reads
+  the shared `CATEGORY_COLOR`, now violet for ICT cats).
+- Gated: CHoCH, MSS, Breaker, Silver Bullet → Paper Hands;
+  Mitigation Block → Sniper. The other 8 ICT concepts are
+  unlocked from the start.
+
+Type-check clean (only the 3 pre-existing iapService errors).
+
+### Files touched
+
+- `src/data/setupLibrary.ts`
+- `src/screens/SetupLibraryScreen.tsx`
+- `PROJECT_CONTEXT.md`, `WORK_LOG.md`
+
+### Deferred (out of scope)
+
+Cross-section search, ICT practice tracking (badges/XP), ICT
+video/animation, more ICT concepts (AMD, PO3, IPDA, Turtle Soup).
+
+---
+
 ## 2026-05-16 — Challenge fixes: style-agnostic rewording + 7 new universal challenges
 
 From the challenge inclusivity audit.

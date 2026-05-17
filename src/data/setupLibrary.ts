@@ -20,10 +20,21 @@
  *  - More than 15 setups.
  */
 
-export type SetupCategory =
+import type { RankId } from './rankConfig';
+
+export type ClassicCategory =
   | 'momentum' | 'reversal' | 'range' | 'news' | 'pattern';
+export type IctCategory =
+  | 'structure' | 'entry' | 'liquidity' | 'time';
+export type SetupCategory = ClassicCategory | IctCategory;
+
+export type SetupSection = 'classic' | 'ict';
 
 export type SetupDifficulty = 'beginner' | 'intermediate' | 'advanced';
+
+/** Accent for all ICT category labels — violet, distinct from the
+ *  per-category Classic palette. */
+export const ICT_ACCENT = '#9B59B6';
 
 export interface SetupExample {
   symbol: string;
@@ -47,6 +58,18 @@ export interface LibrarySetup {
   keyRules: string[];
   /** 2-3 replay-able historical examples. */
   examples: SetupExample[];
+  /** 'classic' (default when omitted — keeps the original 15
+   *  untouched) or 'ict'. */
+  section?: SetupSection;
+  /** Soft rank gate: minimum rank to open the detail. Omitted =
+   *  unlocked from the start. */
+  unlock?: RankId;
+}
+
+/** Section of a setup, defaulting absent → 'classic' so the
+ *  original 15 entries need no edit. */
+export function getSection(s: LibrarySetup): SetupSection {
+  return s.section ?? 'classic';
 }
 
 /** Category accent (mirrors the rank theme palette already in use
@@ -57,6 +80,11 @@ export const CATEGORY_COLOR: Record<SetupCategory, string> = {
   range:    '#00D395',
   news:     '#FFB800',
   pattern:  '#9B59B6',
+  // ICT categories all use the single violet accent.
+  structure: ICT_ACCENT,
+  entry:     ICT_ACCENT,
+  liquidity: ICT_ACCENT,
+  time:      ICT_ACCENT,
 };
 
 export const CATEGORY_LABEL: Record<SetupCategory, string> = {
@@ -65,10 +93,18 @@ export const CATEGORY_LABEL: Record<SetupCategory, string> = {
   range:    'RANGE',
   news:     'NEWS',
   pattern:  'PATTERN',
+  structure: 'STRUCTURE',
+  entry:     'ENTRY',
+  liquidity: 'LIQUIDITY',
+  time:      'TIME',
 };
 
-export const CATEGORY_ORDER: SetupCategory[] =
+export const CLASSIC_CATEGORY_ORDER: ClassicCategory[] =
   ['momentum', 'reversal', 'range', 'news', 'pattern'];
+export const ICT_CATEGORY_ORDER: IctCategory[] =
+  ['structure', 'entry', 'liquidity', 'time'];
+/** Back-compat: original Classic order (importers predating ICT). */
+export const CATEGORY_ORDER: SetupCategory[] = CLASSIC_CATEGORY_ORDER;
 
 /** Difficulty → pill color. Matches the Daily Mission badge:
  *  beginner green, intermediate gold, advanced red. */
@@ -448,9 +484,343 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
         context: 'Held above reclaimed VWAP all session in the uptrend' },
     ],
   },
+
+  // ══════════════ ICT — STRUCTURE ══════════════
+  {
+    id: 'ict_bos',
+    name: 'Break of Structure (BOS)',
+    category: 'structure',
+    difficulty: 'beginner',
+    section: 'ict',
+    description:
+      'Price breaks a prior swing point in the direction of the existing trend, confirming continuation. BOS tells you the trend is intact, not that you should chase it.',
+    howToTrade:
+      'BOS itself is not an entry — it is confirmation. Wait for a pullback to a fresh OB or FVG created by the BOS impulse, then enter in the BOS direction.',
+    keyRules: [
+      'Body close beyond the level, not just a wick',
+      'BOS validates trend continuation',
+      'Always trade pullbacks after BOS, not the breakout candle',
+    ],
+    examples: [
+      { symbol: 'NQ', date: '2022-03-16', timeframe: '5m',
+        context: 'FOMC first-hike trend day — repeated bullish BOS' },
+      { symbol: 'ES', date: '2022-08-19', timeframe: '5m',
+        context: 'Down-trend day — clean bearish BOS continuation' },
+      { symbol: 'NQ', date: '2022-04-22', timeframe: '5m',
+        context: 'Month-end sell-off — successive bearish BOS' },
+    ],
+  },
+  {
+    id: 'ict_choch',
+    name: 'Change of Character (CHoCH)',
+    category: 'structure',
+    difficulty: 'intermediate',
+    section: 'ict',
+    unlock: 'paper_hands',
+    description:
+      'The first break of structure in the opposite direction of the prevailing trend, signaling a potential reversal.',
+    howToTrade:
+      'After CHoCH, wait for a pullback into the OB/FVG that caused the CHoCH and enter in the new direction.',
+    keyRules: [
+      'CHoCH is a warning, not a guarantee — confirm with BOS in the new direction',
+      'Higher-timeframe CHoCH carries more weight',
+      'First CHoCH after a clear trend is highest probability',
+    ],
+    examples: [
+      { symbol: 'NQ', date: '2022-01-05', timeframe: '5m',
+        context: 'Hawkish Fed minutes — CHoCH flipped the morning trend down' },
+      { symbol: 'ES', date: '2022-08-16', timeframe: '5m',
+        context: 'Rally exhaustion — CHoCH ahead of the reversal' },
+      { symbol: 'NQ', date: '2022-03-29', timeframe: '5m',
+        context: 'Quarter-end — intraday CHoCH off the range high' },
+    ],
+  },
+  {
+    id: 'ict_premium_discount',
+    name: 'Premium / Discount',
+    category: 'structure',
+    difficulty: 'beginner',
+    section: 'ict',
+    description:
+      'Above the 50% level of a range is premium (favor shorts). Below is discount (favor longs). Buy in discount, sell in premium.',
+    howToTrade:
+      'Only short in premium, only long in discount, in the direction of the higher-timeframe bias. Combine with an OB/FVG inside the zone for the entry.',
+    keyRules: [
+      'Never long in premium, never short in discount',
+      'The range must be clean and recent',
+      'Equilibrium (50%) is a reaction zone itself',
+    ],
+    examples: [
+      { symbol: 'ES', date: '2022-05-24', timeframe: '5m',
+        context: 'Range day — shorts only worked from premium' },
+      { symbol: 'NQ', date: '2022-09-28', timeframe: '5m',
+        context: 'Discount longs into the equilibrium bounce' },
+      { symbol: 'ES', date: '2022-07-14', timeframe: '5m',
+        context: 'Sold premium, covered at equilibrium' },
+    ],
+  },
+  {
+    id: 'ict_mss',
+    name: 'Market Structure Shift (MSS)',
+    category: 'structure',
+    difficulty: 'intermediate',
+    section: 'ict',
+    unlock: 'paper_hands',
+    description:
+      'A displacement candle that breaks recent structure with momentum, leaving an FVG behind. The highest-confidence reversal signal in ICT.',
+    howToTrade:
+      'Enter on the retrace into the FVG or OB left by the MSS. Stop beyond the sweep extreme.',
+    keyRules: [
+      'Sweep → MSS → retrace entry, in that order',
+      'MSS must include displacement (an FVG)',
+      'A wick-only break is not an MSS',
+    ],
+    examples: [
+      { symbol: 'NQ', date: '2022-10-13', timeframe: '5m',
+        context: 'Historic CPI reversal — textbook sweep → MSS → run' },
+      { symbol: 'ES', date: '2022-05-12', timeframe: '5m',
+        context: 'Capitulation low — MSS with displacement up' },
+      { symbol: 'NQ', date: '2022-07-27', timeframe: '5m',
+        context: 'FOMC relief — MSS up off the pre-release sweep' },
+    ],
+  },
+
+  // ══════════════ ICT — ENTRY ══════════════
+  {
+    id: 'ict_order_block',
+    name: 'Order Block (OB)',
+    category: 'entry',
+    difficulty: 'beginner',
+    section: 'ict',
+    description:
+      'The last opposing candle before an impulsive move that breaks structure. These zones are institutional footprints.',
+    howToTrade:
+      'Wait for price to retrace into the OB. Enter on confirmation. Stop beyond the OB; target the next liquidity pool.',
+    keyRules: [
+      'Only valid OBs caused a displacement/BOS',
+      'Tapped and broken = invalidated',
+      'Higher-TF OBs beat lower-TF OBs',
+    ],
+    examples: [
+      { symbol: 'NQ', date: '2022-01-24', timeframe: '5m',
+        context: 'Capitulation reversal — demand OB held the low' },
+      { symbol: 'ES', date: '2022-03-15', timeframe: '5m',
+        context: 'Pre-FOMC — bullish OB launched the move' },
+      { symbol: 'NQ', date: '2022-09-13', timeframe: '5m',
+        context: 'Hot CPI — supply OB rejected the bounce (short)' },
+    ],
+  },
+  {
+    id: 'ict_fvg',
+    name: 'Fair Value Gap (FVG)',
+    category: 'entry',
+    difficulty: 'beginner',
+    section: 'ict',
+    description:
+      'A three-candle pattern where candle 1 and candle 3 wicks do not overlap, leaving a gap. Price tends to revisit these imbalances.',
+    howToTrade:
+      'Wait for price to pull back into the FVG and enter on the first reaction. Stop below the FVG.',
+    keyRules: [
+      'Must be created by displacement, not drift',
+      'CE (50% of the gap) is the highest-probability entry',
+      'Fully filled and traded through = mitigated',
+    ],
+    examples: [
+      { symbol: 'NQ', date: '2022-02-24', timeframe: '5m',
+        context: 'Invasion gap-down V — FVG filled then ran' },
+      { symbol: 'ES', date: '2022-05-04', timeframe: '5m',
+        context: 'FOMC rip — bullish FVG entries on the impulse' },
+      { symbol: 'NQ', date: '2022-11-10', timeframe: '5m',
+        context: 'Soft CPI melt-up — stacked bullish FVGs' },
+    ],
+  },
+  {
+    id: 'ict_ote',
+    name: 'Optimal Trade Entry (OTE)',
+    category: 'entry',
+    difficulty: 'beginner',
+    section: 'ict',
+    description:
+      'A Fibonacci-based entry zone between the 62% and 79% retracement. The sweet spot for trend-continuation entries.',
+    howToTrade:
+      'Enter on LTF confirmation inside the OTE. Stop beyond the swing point. Confluence with an OB/FVG = highest probability.',
+    keyRules: [
+      'Must be in a clear trend or post-MSS',
+      'OB/FVG overlap with the OTE = best',
+      'Never enter without invalidation',
+    ],
+    examples: [
+      { symbol: 'NQ', date: '2022-03-16', timeframe: '5m',
+        context: 'Post-FOMC trend — OTE pullback long' },
+      { symbol: 'ES', date: '2022-08-05', timeframe: '5m',
+        context: 'NFP day — OTE retrace continuation' },
+      { symbol: 'NQ', date: '2022-10-21', timeframe: '5m',
+        context: 'WSJ-pivot rally — 62-79% OTE entry off the low' },
+    ],
+  },
+  {
+    id: 'ict_breaker',
+    name: 'Breaker Block',
+    category: 'entry',
+    difficulty: 'intermediate',
+    section: 'ict',
+    unlock: 'paper_hands',
+    description:
+      'A failed order block that becomes support/resistance in the opposite direction. The OB was invalidated by displacement.',
+    howToTrade:
+      'Enter on the retest of the breaker in the new trend direction. The first retest is highest probability.',
+    keyRules: [
+      'Original OB must be invalidated by displacement',
+      'First retest is best',
+      'Combine with HTF bias',
+    ],
+    examples: [
+      { symbol: 'NQ', date: '2022-06-24', timeframe: '5m',
+        context: 'Bear-market bounce — failed OB became a breaker' },
+      { symbol: 'NQ', date: '2022-11-10', timeframe: '5m',
+        context: 'Soft CPI — bullish breaker on the retest' },
+      { symbol: 'ES', date: '2022-04-06', timeframe: '5m',
+        context: 'Hawkish minutes — bearish breaker resistance' },
+    ],
+  },
+  {
+    id: 'ict_mitigation',
+    name: 'Mitigation Block',
+    category: 'entry',
+    difficulty: 'advanced',
+    section: 'ict',
+    unlock: 'sniper',
+    description:
+      'An unmitigated origin point of a move that gets revisited. Where institutions mitigate their earlier positions.',
+    howToTrade:
+      'Enter on the return to the mitigation block. Treat partial mitigation (50%) as the trigger.',
+    keyRules: [
+      'Distinct from a breaker — focuses on the origin',
+      'Best when aligned with the HTF PD array',
+      'Partial mitigation is the entry',
+    ],
+    examples: [
+      { symbol: 'NQ', date: '2022-09-13', timeframe: '5m',
+        context: 'CPI sell-off — origin mitigation on the retrace' },
+      { symbol: 'ES', date: '2022-08-26', timeframe: '5m',
+        context: 'Jackson Hole rout — supply mitigation re-entry' },
+      { symbol: 'NQ', date: '2022-03-07', timeframe: '5m',
+        context: 'Risk-off slide — mitigation block held' },
+    ],
+  },
+
+  // ══════════════ ICT — LIQUIDITY ══════════════
+  {
+    id: 'ict_liquidity_sweep',
+    name: 'Liquidity Sweep (Stop Hunt)',
+    category: 'liquidity',
+    difficulty: 'beginner',
+    section: 'ict',
+    description:
+      'Price pushes through a visible swing high/low, runs the stops, then reverses sharply. Smart money taking liquidity before the real move.',
+    howToTrade:
+      'Enter on the reclaim of the swept level after a LTF market structure shift. Stop beyond the sweep wick.',
+    keyRules: [
+      'Sweep + reversal, not sweep + continuation',
+      'The reclaim is the trigger',
+      'Best at session or prior-day highs/lows',
+    ],
+    examples: [
+      { symbol: 'ES', date: '2022-06-17', timeframe: '5m',
+        context: 'Quad-witching — swept the prior low then reversed' },
+      { symbol: 'NQ', date: '2022-10-13', timeframe: '5m',
+        context: 'CPI new low swept stops, then ripped ~5%' },
+      { symbol: 'NQ', date: '2022-12-01', timeframe: '5m',
+        context: 'Swept the session high, reclaimed, reversed' },
+    ],
+  },
+  {
+    id: 'ict_bsl_ssl',
+    name: 'Buy-Side / Sell-Side Liquidity (BSL/SSL)',
+    category: 'liquidity',
+    difficulty: 'beginner',
+    section: 'ict',
+    description:
+      'Buy-side liquidity sits above swing highs (short stops + breakout buys). Sell-side sits below swing lows. Price gravitates toward these pools.',
+    howToTrade:
+      'Anticipate price running toward BSL or SSL, then look for a sweep + CHoCH on a lower timeframe for the reversal entry.',
+    keyRules: [
+      'Equal highs/lows are magnets',
+      'Liquidity taken = often a reversal',
+      'Always know which side has the more obvious liquidity',
+    ],
+    examples: [
+      { symbol: 'NQ', date: '2022-10-13', timeframe: '5m',
+        context: 'Ran sell-side below the low, reversed hard' },
+      { symbol: 'NQ', date: '2022-11-30', timeframe: '5m',
+        context: 'Buy-side above equal highs, then trended' },
+      { symbol: 'ES', date: '2022-02-10', timeframe: '5m',
+        context: 'Hot CPI ran sell-side liquidity' },
+    ],
+  },
+
+  // ══════════════ ICT — TIME ══════════════
+  {
+    id: 'ict_kill_zones',
+    name: 'Kill Zones',
+    category: 'time',
+    difficulty: 'beginner',
+    section: 'ict',
+    description:
+      'High-volume time windows where the best setups tend to occur. In replay, you recognize them by expanded candle range and decisive direction — not by the clock.',
+    howToTrade:
+      'Use kill-zone awareness to anticipate when displacement is likely, but always trade the price action you see. The replay clock gives you historical context.',
+    keyRules: [
+      'Volume and range matter more than clock time',
+      'NY AM and London Open produce the cleanest sweeps/MSS',
+      'Asia tends to range — expect liquidity build',
+    ],
+    examples: [
+      { symbol: 'NQ', date: '2022-09-13', timeframe: '5m',
+        context: 'NY AM kill zone — CPI displacement' },
+      { symbol: 'NQ', date: '2022-03-16', timeframe: '5m',
+        context: 'PM kill zone — post-FOMC expansion' },
+      { symbol: 'NQ', date: '2022-07-13', timeframe: '5m',
+        context: 'NY AM kill zone — CPI sweep + MSS' },
+    ],
+  },
+  {
+    id: 'ict_silver_bullet',
+    name: 'Silver Bullet',
+    category: 'time',
+    difficulty: 'intermediate',
+    section: 'ict',
+    unlock: 'paper_hands',
+    description:
+      'A specific setup targeting a one-hour window. Look for the first FVG aligned with the daily bias after a sweep or MSS.',
+    howToTrade:
+      'Enter on the retrace into the FVG. Stop beyond the swing; target the prior session high/low.',
+    keyRules: [
+      'Bias must be defined before the window',
+      'One trade per window — no revenge',
+      'Skip if no clean FVG forms',
+    ],
+    examples: [
+      { symbol: 'NQ', date: '2022-11-10', timeframe: '5m',
+        context: 'First FVG after the soft-CPI sweep ran clean' },
+      { symbol: 'NQ', date: '2022-06-24', timeframe: '5m',
+        context: 'Window FVG aligned with the daily bias' },
+      { symbol: 'ES', date: '2022-10-04', timeframe: '5m',
+        context: 'AM-window FVG to the prior session high' },
+    ],
+  },
 ];
 
+/** Section of each setup, splitting Classic (the original 15) from
+ *  ICT (13). `SETUP_LIBRARY_COUNT` is the grand total (28). */
+export const CLASSIC_SETUPS: ReadonlyArray<LibrarySetup> =
+  SETUP_LIBRARY.filter((s) => getSection(s) === 'classic');
+export const ICT_SETUPS: ReadonlyArray<LibrarySetup> =
+  SETUP_LIBRARY.filter((s) => getSection(s) === 'ict');
+
 export const SETUP_LIBRARY_COUNT = SETUP_LIBRARY.length;
+export const CLASSIC_COUNT = CLASSIC_SETUPS.length;
+export const ICT_COUNT = ICT_SETUPS.length;
 
 export function getLibrarySetup(id: string): LibrarySetup | undefined {
   return SETUP_LIBRARY.find((s) => s.id === id);
