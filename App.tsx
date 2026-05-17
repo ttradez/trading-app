@@ -112,14 +112,19 @@ function MainTabs() {
           marginTop: -3,
         },
         tabBarIconStyle: { marginTop: 0 },
-        tabBarIcon: ({ color }) => {
+        tabBarIcon: ({ color, focused }) => {
           const iconMap: Record<string, keyof typeof Ionicons.glyphMap> = {
             Dashboard:   'home-outline',
             Chart:       'analytics-outline',
             Journal:     'journal-outline',
             Leaderboard: 'trophy-outline',
           };
-          return <Ionicons name={iconMap[route.name] ?? 'help'} size={18} color={color} />;
+          return (
+            <View style={tabStyles.iconWrap}>
+              {focused && <View style={tabStyles.activeDot} />}
+              <Ionicons name={iconMap[route.name] ?? 'help'} size={18} color={color} />
+            </View>
+          );
         },
         // Custom label so the active tab gets a 16×2 gold underline
         // — a physical "selected" cue beyond color alone.
@@ -298,4 +303,19 @@ const tabStyles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   underlineActive: { backgroundColor: colors.gold },
+  iconWrap: {
+    width: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Tiny gold dot at the iOS-badge position above the active icon.
+  activeDot: {
+    position: 'absolute',
+    top: -3,
+    right: 1,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.gold,
+  },
 });

@@ -4,6 +4,7 @@ import {
   KeyboardAvoidingView, Platform, StyleSheet,
 } from 'react-native';
 import { TradeGrade } from '../store/tradeJournalStore';
+import MoneyText from './MoneyText';
 
 /**
  * TradeJournalModal — auto-popup after a trade closes. Captures
@@ -167,12 +168,11 @@ export default function TradeJournalModal({
                   </Text>
                 </View>
                 <View style={{ flex: 1 }} />
-                <Text
+                <MoneyText
+                  value={trade.pnl}
+                  size={22}
                   style={[styles.summaryPnl, { color: pnlColor(trade.pnl) }]}
-                  allowFontScaling={false}
-                >
-                  {formatUSD(trade.pnl)}
-                </Text>
+                />
               </View>
 
               {/* Pre-trade plan recap — reminds the user what they

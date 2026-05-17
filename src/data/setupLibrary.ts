@@ -75,11 +75,12 @@ export function getSection(s: LibrarySetup): SetupSection {
 /** Category accent (mirrors the rank theme palette already in use
  *  so the app stays visually coherent). */
 export const CATEGORY_COLOR: Record<SetupCategory, string> = {
-  momentum: '#4A9EFF',
-  reversal: '#FF7AB6',
-  range:    '#00D395',
+  // Classic categories all use brand gold — no off-brand blues/pinks.
+  momentum: '#FFB800',
+  reversal: '#FFB800',
+  range:    '#FFB800',
   news:     '#FFB800',
-  pattern:  '#9B59B6',
+  pattern:  '#FFB800',
   // ICT categories all use the single violet accent.
   structure: ICT_ACCENT,
   entry:     ICT_ACCENT,

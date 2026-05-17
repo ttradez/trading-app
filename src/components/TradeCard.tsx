@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { TradeGrade } from '../store/tradeJournalStore';
+import MoneyText from './MoneyText';
 
 /**
  * TradeCard — premium presentation of a closed or open trade.
@@ -179,6 +180,9 @@ export default function TradeCard(props: TradeCardProps) {
   const pulseOpacity = pulse.interpolate({
     inputRange: [0, 1], outputRange: [0.3, 0.6],
   });
+  const dotPulse = pulse.interpolate({
+    inputRange: [0, 1], outputRange: [0.35, 1],
+  });
 
   // Press → spring to 0.98 and back.
   const scale = useRef(new Animated.Value(1)).current;
@@ -263,15 +267,25 @@ export default function TradeCard(props: TradeCardProps) {
               </View>
             ) : null}
             {isOpen ? (
-              <Text style={styles.openText}>OPEN</Text>
+              <View style={styles.statusChip}>
+                <Animated.View
+                  style={[styles.statusDotOpen, { opacity: dotPulse }]}
+                />
+                <Text style={styles.statusChipText}>OPEN</Text>
+              </View>
             ) : !showGrade ? (
-              <Text style={styles.closedText}>CLOSED</Text>
+              <View style={styles.statusChip}>
+                <View style={styles.statusDotClosed} />
+                <Text style={styles.statusChipText}>CLOSED</Text>
+              </View>
             ) : null}
           </View>
         </View>
 
         {/* P&L — the hero */}
-        <Text
+        <MoneyText
+          value={pnl}
+          size={28}
           style={[
             styles.pnl,
             {
@@ -279,10 +293,7 @@ export default function TradeCard(props: TradeCardProps) {
               textShadowColor: glow(pColor, 0.5),
             },
           ]}
-          allowFontScaling={false}
-        >
-          {formatUSD(pnl)}
-        </Text>
+        />
         {isOpen && <Text style={styles.unrealized}>unrealized</Text>}
 
         {/* Price support line */}
@@ -424,6 +435,38 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 1,
+  },
+
+  // Status chip — bordered pill with a leading dot.
+  statusChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#1F1F1F',
+    backgroundColor: '#0F0F0F',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  statusChipText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  statusDotOpen: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: GOLD,
+    marginRight: 5,
+  },
+  statusDotClosed: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.35)',
+    marginRight: 5,
   },
 
   // Circular grade badge

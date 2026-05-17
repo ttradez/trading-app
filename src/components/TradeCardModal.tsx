@@ -1,4 +1,5 @@
 import React from 'react';
+import MoneyText from './MoneyText';
 import {
   View, Text, StyleSheet, Modal, Pressable, TouchableOpacity,
 } from 'react-native';
@@ -50,7 +51,6 @@ export default function TradeCardModal({ trade, onClose }: Props) {
 
   const win = pnl >= 0;
   const fmt = (n: number) => (typeof n === 'number' ? n : 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const fmtPnl = (n: number) => `${n >= 0 ? '+' : ''}$${fmt(Math.abs(n))}`;
   const durationSec = Math.max(0, (closedAt - openedAt) / 1000);
   const durationStr = formatDuration(durationSec);
   const dateStr = new Date(closedAt).toLocaleString();
@@ -115,7 +115,11 @@ export default function TradeCardModal({ trade, onClose }: Props) {
 
           {/* Big P&L */}
           <View style={styles.pnlRow}>
-            <Text style={[styles.pnlBig, win ? styles.green : styles.red]}>{fmtPnl(pnl)}</Text>
+            <MoneyText
+              value={pnl}
+              size={fontSize.display}
+              style={[styles.pnlBig, win ? styles.green : styles.red]}
+            />
             <Text style={[styles.rMultiple, win ? styles.green : styles.red]}>
               {rMultiple != null ? `${rMultiple >= 0 ? '+' : ''}${rMultiple.toFixed(2)}R` : '—'}
             </Text>

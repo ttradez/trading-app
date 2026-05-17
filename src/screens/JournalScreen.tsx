@@ -8,6 +8,7 @@ import { colors, radius, spacing, fontSize, fontWeight, labelStyle } from '../th
 import { useJournalStore, JournalEntry, Emotion } from '../store/journalStore';
 import TradeCard from '../components/TradeCard';
 import SectionHeader from '../components/SectionHeader';
+import MoneyText from '../components/MoneyText';
 import { colors as JT } from '../theme/tokens';
 import { useTradeJournalStore } from '../store/tradeJournalStore';
 import { useRecapList } from '../store/recapStore';
@@ -85,9 +86,11 @@ export default function JournalScreen({ navigation }: any) {
       <View style={styles.summary}>
         <View style={styles.summaryItem}>
           <Text style={[labelStyle, styles.summaryLabel]}>P&L</Text>
-          <Text style={[styles.summaryValue, totalPnl >= 0 ? styles.green : styles.red]}>
-            {totalPnl >= 0 ? '+' : ''}${Math.abs(totalPnl).toFixed(2)}
-          </Text>
+          <MoneyText
+            value={totalPnl}
+            size={fontSize.lg}
+            style={[styles.summaryValue, totalPnl >= 0 ? styles.green : styles.red]}
+          />
         </View>
         <View style={styles.summaryItem}>
           <Text style={[labelStyle, styles.summaryLabel]}>WIN RATE</Text>

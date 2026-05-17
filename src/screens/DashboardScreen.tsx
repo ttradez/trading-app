@@ -410,39 +410,44 @@ export default function DashboardScreen({ navigation }: any) {
               </Text>
             </View>
 
-            <Pressable
-              onPress={() =>
-                navigation.navigate('Chart', {
-                  dailySetup: {
-                    symbol: todaySetup.symbol,
-                    timeframe: todaySetup.timeframe,
-                    startTs: setupStartUnixSeconds(todaySetup),
-                    date: todaySetup.date,
-                    key: `${todaySetup.id}-${Date.now()}`,
-                  },
-                })
-              }
-              disabled={setupComplete}
-              style={({ pressed }) => [
-                styles.missionCta,
-                setupComplete && styles.missionCtaDone,
-                !setupComplete && pressed && { opacity: 0.85 },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={
-                setupComplete ? 'Mission completed' : 'Trade this setup'
-              }
-              accessibilityState={{ disabled: setupComplete }}
-            >
-              <Text
-                style={[
-                  styles.missionCtaText,
-                  setupComplete && styles.missionCtaTextDone,
+            <View style={styles.ctaWrap}>
+              {!setupComplete && (
+                <View pointerEvents="none" style={styles.ctaGlow} />
+              )}
+              <Pressable
+                onPress={() =>
+                  navigation.navigate('Chart', {
+                    dailySetup: {
+                      symbol: todaySetup.symbol,
+                      timeframe: todaySetup.timeframe,
+                      startTs: setupStartUnixSeconds(todaySetup),
+                      date: todaySetup.date,
+                      key: `${todaySetup.id}-${Date.now()}`,
+                    },
+                  })
+                }
+                disabled={setupComplete}
+                style={({ pressed }) => [
+                  styles.missionCta,
+                  setupComplete && styles.missionCtaDone,
+                  !setupComplete && pressed && { opacity: 0.85 },
                 ]}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  setupComplete ? 'Mission completed' : 'Trade this setup'
+                }
+                accessibilityState={{ disabled: setupComplete }}
               >
-                {setupComplete ? 'Completed ✓' : 'Trade this setup'}
-              </Text>
-            </Pressable>
+                <Text
+                  style={[
+                    styles.missionCtaText,
+                    setupComplete && styles.missionCtaTextDone,
+                  ]}
+                >
+                  {setupComplete ? 'Completed ✓' : 'Trade this setup'}
+                </Text>
+              </Pressable>
+            </View>
           </View>
         </View>
 
@@ -802,6 +807,10 @@ function CompactChallengeCard({
   const t = getTemplate(inst.challengeId);
   if (!t) return null;
   const pct = Math.min(1, inst.target > 0 ? inst.progress / inst.target : 0);
+  // Left stripe colored by cadence so the type reads at a glance:
+  // daily gold · weekly green · monthly red.
+  const stripeColor =
+    tag === 'WEEKLY' ? GREEN : tag === 'MONTHLY' ? RED : GOLD;
   return (
     <View
       style={[
@@ -809,7 +818,7 @@ function CompactChallengeCard({
         inst.completed && styles.cCardDone,
       ]}
     >
-      {inst.completed && <View style={styles.cAccent} />}
+      <View style={[styles.cAccent, { backgroundColor: stripeColor }]} />
       <View style={[styles.cInner, large && styles.cInnerLarge]}>
         <View style={styles.cRow}>
           <MaterialCommunityIcons
@@ -1056,8 +1065,27 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     lineHeight: 19,
   },
-  missionCta: {
+  ctaWrap: {
     marginTop: 18,
+    position: 'relative',
+  },
+  // Radial-ish gold halo behind the CTA — gives the button depth
+  // and pulls the eye to the primary action.
+  ctaGlow: {
+    position: 'absolute',
+    left: '-5%',
+    right: '-5%',
+    top: '-20%',
+    bottom: '-20%',
+    backgroundColor: 'rgba(255,184,0,0.15)',
+    borderRadius: 30,
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.45,
+    shadowRadius: 18,
+    elevation: 0,
+  },
+  missionCta: {
     height: 48,
     borderRadius: 10,
     backgroundColor: GOLD,
