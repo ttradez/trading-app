@@ -1,13 +1,45 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, Pressable, Animated, StyleSheet, StatusBar, ScrollView,
-  ActivityIndicator,
+  ActivityIndicator, TextInput, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useOnboardingStore, AuthMethod } from '../store/onboardingStore';
+import {
+  createUserWithEmailAndPassword, signInWithEmailAndPassword,
+} from 'firebase/auth';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { auth, db } from '../services/firebase';
+import { useOnboardingStore } from '../store/onboardingStore';
 import PlayerCardPreview from '../components/onboarding/PlayerCardPreview';
+
+/** Maps a Firebase auth error code → user-facing copy, and whether
+ *  to flip the form between sign-up / sign-in. */
+function mapAuthError(
+  code: string,
+): { msg: string; switchTo?: 'signup' | 'signin' } {
+  switch (code) {
+    case 'auth/email-already-in-use':
+      return { msg: 'Account exists. Try signing in.', switchTo: 'signin' };
+    case 'auth/weak-password':
+      return { msg: 'Password must be at least 6 characters' };
+    case 'auth/invalid-email':
+      return { msg: 'Enter a valid email address' };
+    case 'auth/user-not-found':
+      return { msg: 'No account found. Try signing up.', switchTo: 'signup' };
+    case 'auth/wrong-password':
+      return { msg: 'Incorrect password' };
+    case 'auth/invalid-credential':
+      return { msg: 'Incorrect email or password' };
+    case 'auth/too-many-requests':
+      return { msg: 'Too many attempts. Try again in a moment.' };
+    case 'auth/network-request-failed':
+      return { msg: 'Network error. Check your connection.' };
+    default:
+      return { msg: 'Something went wrong. Try again.' };
+  }
+}
 
 /**
  * Onboarding screen 11 — Save your progress (deferred-auth moment).
@@ -26,8 +58,6 @@ import PlayerCardPreview from '../components/onboarding/PlayerCardPreview';
 const BG    = '#000000';
 const GOLD  = '#FFB800';
 const WHITE = '#FFFFFF';
-
-const MOCK_SPIN_MS = 500;
 
 interface Props {
   navigation: any;
@@ -89,6 +119,12 @@ export default function OnboardingAuthScreen({ navigation }: Props) {
   const setAuth     = useOnboardingStore((s) => s.setAuth);
 
   const [loading, setLoading] = useState(false);
+  // 'select' = SSO buttons + email link; 'email' = email/password form.
+  const [mode, setMode] = useState<'select' | 'email'>('select');
+  const [authMode, setAuthMode] = useState<'signup' | 'signin'>('signup');
+  const [email, setEmail]       = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError]       = useState<string | null>(null);
 
   // Staggered fade-ins.
   const headOp    = useRef(new Animated.Value(0)).current;
@@ -110,18 +146,81 @@ export default function OnboardingAuthScreen({ navigation }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleAuth = (method: AuthMethod) => {
+  /** Persist onboarding profile to Firestore, flag onboarding
+   *  complete, and hand off to the welcome screen. */
+  const finishAuth = async (uid: string) => {
+    const s = useOnboardingStore.getState();
+    try {
+      await setDoc(
+        doc(db, 'users', uid),
+        {
+          displayName: s.displayName,
+          handle: s.handle,
+          archetype: s.archetype,
+          identity: s.identity,
+          experienceLevel: s.experienceLevel,
+          accountSize: s.accountSize,
+          dailyCommitment: s.dailyCommitment,
+          dailyTimeGoalMinutes: s.dailyTimeGoalMinutes,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+    } catch (e) {
+      // Non-fatal: the account exists; profile sync can retry later.
+      // eslint-disable-next-line no-console
+      console.warn('[auth] Firestore profile save failed', e);
+    }
+    // `setAuth` keeps the store's authMethod/isAuthed set. Real
+    // method ids (apple/google/email) are a follow-up per the
+    // AuthMethod type comment; 'mock-email' is the closest existing
+    // value and only feeds analytics, not routing.
+    setAuth('mock-email');
+    s.setOnboardingComplete(true);
+    navigation.reset({ index: 0, routes: [{ name: 'OnboardingWelcome' }] });
+  };
+
+  const submitEmail = async () => {
     if (loading) return;
+    const mail = email.trim();
+    setError(null);
+
+    if (!mail) { setError('Enter a valid email address'); return; }
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+
     setLoading(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    // Mock latency so the spinner reads as a real network round-trip.
-    setTimeout(() => {
-      setAuth(method);
-      navigation.navigate('OnboardingWelcome');
-      // Intentionally leaving `loading` true — the screen unmounts
-      // (or stays hidden under the next route) so the user never
-      // sees the buttons re-enable.
-    }, MOCK_SPIN_MS);
+    try {
+      const cred =
+        authMode === 'signup'
+          ? await createUserWithEmailAndPassword(auth, mail, password)
+          : await signInWithEmailAndPassword(auth, mail, password);
+      await finishAuth(cred.user.uid);
+      // Leave `loading` true — the screen is being reset away.
+    } catch (e: any) {
+      const { msg, switchTo } = mapAuthError(e?.code ?? '');
+      setError(msg);
+      if (switchTo) setAuthMode(switchTo);
+      setLoading(false);
+    }
+  };
+
+  const comingSoon = (provider: 'Apple' | 'Google') => {
+    if (provider === 'Google') {
+      Alert.alert(
+        'Google Sign In',
+        'Google Sign In requires additional setup. Use email for now.',
+      );
+    } else {
+      Alert.alert(
+        'Apple Sign In',
+        'Apple Sign In will be available once your developer account is approved.',
+      );
+    }
   };
 
   return (
@@ -135,6 +234,7 @@ export default function OnboardingAuthScreen({ navigation }: Props) {
           { paddingTop: insets.top + 24, paddingBottom: 24 },
         ]}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         <Animated.View style={{ opacity: headOp }}>
           <Text style={styles.headline}>Save your progress</Text>
@@ -157,38 +257,111 @@ export default function OnboardingAuthScreen({ navigation }: Props) {
           </Text>
         </Animated.View>
 
-        {/* Auth buttons */}
         <Animated.View style={[styles.buttonsWrap, { opacity: buttonsOp }]}>
-          <AuthButton
-            variant="apple"
-            disabled={loading}
-            onPress={() => handleAuth('mock-apple')}
-          />
-          <View style={styles.btnGap} />
-          <AuthButton
-            variant="google"
-            disabled={loading}
-            onPress={() => handleAuth('mock-google')}
-          />
+          {mode === 'select' ? (
+            <>
+              <AuthButton
+                variant="apple"
+                disabled={loading}
+                onPress={() => comingSoon('Apple')}
+              />
+              <View style={styles.btnGap} />
+              <AuthButton
+                variant="google"
+                disabled={loading}
+                onPress={() => comingSoon('Google')}
+              />
 
-          {/* Email — demoted to a text link below the SSO row.
-              Same mock-auth tap target as the buttons above. */}
-          <View style={styles.emailLinkGap} />
-          <Pressable
-            onPress={() => handleAuth('mock-email')}
-            disabled={loading}
-            style={({ pressed }) => [
-              styles.emailLink,
-              pressed && !loading && styles.emailLinkPressed,
-              loading && styles.emailLinkDisabled,
-            ]}
-            accessibilityRole="link"
-            accessibilityLabel="Continue with email"
-            accessibilityState={{ disabled: loading }}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Text style={styles.emailLinkText}>Continue with email</Text>
-          </Pressable>
+              <View style={styles.emailLinkGap} />
+              <Pressable
+                onPress={() => { setError(null); setMode('email'); }}
+                disabled={loading}
+                style={({ pressed }) => [
+                  styles.emailLink,
+                  pressed && !loading && styles.emailLinkPressed,
+                ]}
+                accessibilityRole="link"
+                accessibilityLabel="Continue with email"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text style={styles.emailLinkText}>Continue with email</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <TextInput
+                style={styles.input}
+                value={email}
+                onChangeText={setEmail}
+                placeholder="Email"
+                placeholderTextColor="rgba(255,255,255,0.35)"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="email"
+                editable={!loading}
+                returnKeyType="next"
+              />
+              <TextInput
+                style={styles.input}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Password (6+ characters)"
+                placeholderTextColor="rgba(255,255,255,0.35)"
+                secureTextEntry
+                autoCapitalize="none"
+                autoComplete="password"
+                editable={!loading}
+                returnKeyType="go"
+                onSubmitEditing={submitEmail}
+              />
+              {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+              <Pressable
+                onPress={submitEmail}
+                disabled={loading}
+                style={({ pressed }) => [
+                  styles.authBtn,
+                  styles.ctaBtn,
+                  loading && styles.btnDisabled,
+                  pressed && !loading && styles.btnPressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  authMode === 'signup' ? 'Sign Up' : 'Sign In'
+                }
+              >
+                <Text style={[styles.authBtnText, styles.ctaBtnText]}>
+                  {authMode === 'signup' ? 'Sign Up' : 'Sign In'}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  setError(null);
+                  setAuthMode(authMode === 'signup' ? 'signin' : 'signup');
+                }}
+                disabled={loading}
+                style={styles.toggleLink}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text style={styles.toggleLinkText}>
+                  {authMode === 'signup'
+                    ? 'Already have an account? Sign In'
+                    : "Don't have an account? Sign Up"}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => { setError(null); setMode('select'); }}
+                disabled={loading}
+                style={styles.backLink}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text style={styles.backLinkText}>← Back</Text>
+              </Pressable>
+            </>
+          )}
 
           {/* Fine print */}
           <Text style={styles.finePrint}>
@@ -211,9 +384,6 @@ export default function OnboardingAuthScreen({ navigation }: Props) {
         </Animated.View>
       </ScrollView>
 
-      {/* Loading overlay — covers everything; disabled buttons are
-          already non-interactive, this keeps the user from re-tapping
-          anything else (e.g. fine-print links) while the mock spin runs. */}
       {loading && (
         <View pointerEvents="auto" style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color={GOLD} />
@@ -279,9 +449,54 @@ const styles = StyleSheet.create({
   ssoBtn: {
     backgroundColor: WHITE,
   },
+  ctaBtn: {
+    backgroundColor: GOLD,
+    marginTop: 4,
+  },
+  ctaBtnText: { color: '#000000' },
   btnDisabled: { opacity: 0.55 },
   btnPressed:  { opacity: 0.85 },
   btnIcon:     { marginRight: 10 },
+
+  // Email/password form
+  input: {
+    height: 52,
+    borderRadius: 12,
+    backgroundColor: '#0F0F0F',
+    borderWidth: 1,
+    borderColor: '#1F1F1F',
+    paddingHorizontal: 16,
+    color: WHITE,
+    fontSize: 16,
+    fontWeight: '500',
+    marginBottom: 12,
+  },
+  errorText: {
+    color: '#FF4757',
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 12,
+    marginTop: -2,
+  },
+  toggleLink: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    marginTop: 4,
+  },
+  toggleLinkText: {
+    color: GOLD,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  backLink: {
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  backLinkText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 14,
+    fontWeight: '500',
+  },
 
   authBtnText: {
     fontSize: 17,

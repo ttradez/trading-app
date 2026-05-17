@@ -5,6 +5,60 @@ note what shipped, what files changed, and what was deferred.
 
 ---
 
+## 2026-05-16 — Firebase auth: real email/password + Firestore save + routing guard
+
+Replaced mock auth with real Firebase (JS SDK, already installed at
+v12.12.1 — no `npm install` needed; no native modules, works in
+Expo Go).
+
+- **`src/services/firebase.ts`**: kept as the single canonical init
+  (it already exported `auth` w/ AsyncStorage persistence + `db`).
+  Did NOT create `src/config/firebase.ts` — a second `initializeApp`
+  would double-register. Added a missing-env `console.warn` guard
+  (warns, doesn't crash).
+- **`OnboardingAuthScreen` (screen 11)**: "Continue with email" now
+  swaps the SSO buttons for a real email/password form (email +
+  password fields, Sign Up CTA, sign-in/sign-up toggle, Back link).
+  `createUserWithEmailAndPassword` / `signInWithEmailAndPassword`
+  with mapped error copy (email-already-in-use → switch to
+  sign-in; weak-password; invalid-email; user-not-found → switch
+  to sign-up; wrong-password / invalid-credential; too-many-
+  requests; network). Apple & Google buttons show "coming soon"
+  alerts (OAuth/Apple-Dev setup are follow-ups). On success →
+  Firestore `setDoc(users/{uid}, {displayName, handle, archetype,
+  identity, experienceLevel, accountSize, dailyCommitment,
+  dailyTimeGoalMinutes, createdAt, updatedAt}, { merge: true })`
+  (non-fatal on failure) → `setOnboardingComplete(true)` →
+  `navigation.reset` to the welcome screen.
+- **`App.tsx` routing guard**: removed the hardcoded
+  `initialRouteName="Main"` dev skip. Single `onAuthStateChanged`
+  listener drives `authState` (`loading`/`authenticated`/
+  `unauthenticated`) and still feeds the auth store + best-effort
+  backend upsert. First paint gated on store hydration AND auth
+  resolution (splash until then). Initial route: authenticated →
+  `Main`; unauth + local `handle` → `OnboardingAuth`; unauth + no
+  data → `OnboardingSplash`. Auth persists across restarts
+  (AsyncStorage), so a signed-in user reopens straight to the
+  dashboard.
+
+Type-check clean (only the 3 pre-existing iapService errors).
+
+### Files touched
+
+- `src/services/firebase.ts` (env guard)
+- `src/screens/OnboardingAuthScreen.tsx` (real auth + form + Firestore)
+- `App.tsx` (auth-state routing guard)
+- `PROJECT_CONTEXT.md`, `WORK_LOG.md`
+
+### Deferred (explicitly out of scope / per spec)
+
+Google Sign In (OAuth web client ID), Apple Sign In (Apple Dev
+approval), Firestore security rules (test mode), handle-uniqueness
+check on screen 7 (Step 6 — skipped to keep the auth core robust),
+password reset.
+
+---
+
 ## 2026-05-16 — ICT Setup Library: 13 concepts + section toggle + rank gating
 
 Added a second library section for ICT methodology (popular with

@@ -184,19 +184,16 @@ export default function App() {
     useOnboardingStore.persist.hasHydrated(),
   );
 
-  // TEMP: onboarding skipped during dev. Restore when Firebase
-  // auth is set up. The onboarding screens stay registered (so
-  // Settings → "Redo Onboarding" can navigate to them); the app
-  // just always boots into the main tab navigator.
-  //
-  // const onboardingComplete = useOnboardingStore((s) => s.onboardingComplete);
-  // const handle = useOnboardingStore((s) => s.handle);
-  // const skipOnboarding = onboardingComplete || handle.trim().length > 0;
-  // useEffect(() => {
-  //   if (hydrated && !onboardingComplete && handle.trim().length > 0) {
-  //     useOnboardingStore.getState().setOnboardingComplete(true);
-  //   }
-  // }, [hydrated, onboardingComplete, handle]);
+  // Firebase auth resolution: 'loading' until the first
+  // onAuthStateChanged fires (it restores any persisted session),
+  // then 'authenticated' / 'unauthenticated'.
+  const [authState, setAuthState] =
+    useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
+
+  // Local onboarding handle decides where an UNAUTHENTICATED user
+  // lands: a returning local user (handle set) goes straight to the
+  // auth screen to just sign in; a brand-new user starts onboarding.
+  const handle = useOnboardingStore((s) => s.handle);
 
   useEffect(() => {
     if (hydrated) return;
@@ -208,35 +205,52 @@ export default function App() {
     return () => { unsub?.(); clearTimeout(t); };
   }, [hydrated]);
 
-  // Populate the auth store (uid / username) for backend calls when
-  // a Firebase session exists. Routing no longer depends on auth —
-  // the local onboarding flag governs it — so there's no force
-  // sign-out and no auth/disclaimer gate.
+  // The single Firebase auth-state listener: resolves the routing
+  // guard AND populates the auth store / best-effort backend upsert
+  // when a session exists. The first callback fires once Firebase
+  // has restored (or not) the persisted session.
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
-      if (!user) return;
-      const fallbackUsername =
-        user.displayName ?? user.email?.split('@')[0] ?? 'Trader';
-      setUser(user.uid, fallbackUsername, user.email ?? '');
-      getUser(user.uid).then((dbUser) => {
-        if (dbUser?.username) {
-          setUser(user.uid, dbUser.username, user.email ?? '');
-        }
-      }).catch(() => {});
-      upsertUser(user.uid, fallbackUsername, user.email ?? '').catch(() => {});
+      if (user) {
+        const fallbackUsername =
+          user.displayName ?? user.email?.split('@')[0] ?? 'Trader';
+        setUser(user.uid, fallbackUsername, user.email ?? '');
+        getUser(user.uid).then((dbUser) => {
+          if (dbUser?.username) {
+            setUser(user.uid, dbUser.username, user.email ?? '');
+          }
+        }).catch(() => {});
+        upsertUser(user.uid, fallbackUsername, user.email ?? '').catch(() => {});
+        setAuthState('authenticated');
+      } else {
+        setAuthState('unauthenticated');
+      }
     });
     return unsub;
   }, [setUser]);
 
-  if (!hydrated) {
+  // Gate first paint on BOTH store rehydration and Firebase auth
+  // resolution so we never flash the wrong initial route.
+  if (!hydrated || authState === 'loading') {
     return <SafeAreaProvider><LoadingSplash /></SafeAreaProvider>;
   }
+
+  // Routing guard:
+  //  - authenticated            → main tabs (dashboard)
+  //  - unauth + local handle    → auth screen (just sign in)
+  //  - unauth + no local data   → onboarding from screen 1
+  const initialRoute =
+    authState === 'authenticated'
+      ? 'Main'
+      : handle.trim().length > 0
+        ? 'OnboardingAuth'
+        : 'OnboardingSplash';
 
   return (
     <SafeAreaProvider>
       <NavigationContainer>
         <Stack.Navigator
-          initialRouteName="Main"  // TEMP: onboarding skipped during dev. Restore when Firebase auth is set up.
+          initialRouteName={initialRoute}
           screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }}
         >
           <Stack.Screen name="OnboardingSplash"    component={OnboardingSplashScreen} />

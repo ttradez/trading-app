@@ -13,6 +13,21 @@ const firebaseConfig = {
   appId:             process.env.EXPO_PUBLIC_FIREBASE_APP_ID ?? '',
 };
 
+// Don't crash if env is unset (e.g. a contributor without .env) —
+// warn loudly instead. Auth/Firestore calls will fail at use-time
+// with a clear Firebase error rather than a blank-screen boot crash.
+const missing = Object.entries(firebaseConfig)
+  .filter(([, v]) => !v)
+  .map(([k]) => k);
+if (missing.length > 0) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    `[firebase] Missing EXPO_PUBLIC_FIREBASE_* env vars: ${missing.join(
+      ', ',
+    )}. Auth/Firestore will not work until .env is set and Metro is restarted with --clear.`,
+  );
+}
+
 const app = initializeApp(firebaseConfig);
 
 let _auth: Auth;
