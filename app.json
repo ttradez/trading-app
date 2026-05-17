@@ -23,8 +23,14 @@
             "CFBundleURLSchemes": [
               "com.googleusercontent.apps.1050185096223-6k49hu20736247ernmfs025of5g94gmq"
             ]
+          },
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.1050185096223-6k49hu20736247ernmfs025of5g94gmq"
+            ]
           }
-        ]
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -37,19 +43,17 @@
       "predictiveBackGestureEnabled": false
     },
     "plugins": [
-      [
-        "react-native-google-mobile-ads",
-        {
-          "androidAppId": "ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX",
-          "iosAppId": "ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX"
-        }
-      ],
       "expo-font",
       "expo-web-browser",
       "expo-apple-authentication"
     ],
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "9ec05aef-e135-4571-b7ab-f618c5de52ab"
+      }
     }
   }
 }

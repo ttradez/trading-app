@@ -40,7 +40,6 @@ import {
   startSession, advanceSession, getSession, fetchMarkets, openTrade, closeTrade, getAccount,
   changeSessionTimeframe, seekSession,
 } from '../services/api';
-import { useInterstitialAd } from '../services/adService';
 import { useSessionStore } from '../store/sessionStore';
 import { useAuthStore } from '../store/authStore';
 import { useTrainingTimer } from '../hooks/useTrainingTimer';
@@ -537,8 +536,6 @@ export default function TradingScreen({ route, navigation }: any) {
     reset, getSavedSessionId,
   } = useSessionStore();
 
-  const { startAdTimer, stopAdTimer } = useInterstitialAd();
-
   // Load markets list + user's saved account size
   useEffect(() => {
     fetchMarkets().then((mks) => {
@@ -557,7 +554,6 @@ export default function TradingScreen({ route, navigation }: any) {
 
   // Resume saved session OR auto-start one
   useEffect(() => {
-    startAdTimer();
     (async () => {
       if (sessionId) return;  // already have a session in memory
       const savedId = await getSavedSessionId();
@@ -572,7 +568,6 @@ export default function TradingScreen({ route, navigation }: any) {
         } catch { await reset(); }
       }
     })();
-    return () => stopAdTimer();
   }, []);
 
   // If still no session after resume attempt, auto-start one. When a
