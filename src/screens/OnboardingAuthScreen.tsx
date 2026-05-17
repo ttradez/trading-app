@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, Pressable, Animated, StyleSheet, StatusBar, ScrollView,
-  ActivityIndicator, TextInput, Alert,
+  ActivityIndicator, TextInput, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -227,14 +227,20 @@ export default function OnboardingAuthScreen({ navigation }: Props) {
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={BG} />
 
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: insets.top + 24, paddingBottom: 24 },
+          { paddingTop: insets.top + 24, paddingBottom: 24, flexGrow: 1 },
         ]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        bounces={false}
       >
         <Animated.View style={{ opacity: headOp }}>
           <Text style={styles.headline}>Save your progress</Text>
@@ -383,6 +389,7 @@ export default function OnboardingAuthScreen({ navigation }: Props) {
           </Text>
         </Animated.View>
       </ScrollView>
+      </KeyboardAvoidingView>
 
       {loading && (
         <View pointerEvents="auto" style={styles.loadingOverlay}>

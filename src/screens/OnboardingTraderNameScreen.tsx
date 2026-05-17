@@ -188,7 +188,8 @@ export default function OnboardingTraderNameScreen({ navigation }: Props) {
 
       <KeyboardAvoidingView
         style={styles.kav}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
         <Animated.View style={[styles.fader, { opacity }]}>
           <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
@@ -200,6 +201,7 @@ export default function OnboardingTraderNameScreen({ navigation }: Props) {
               ]}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
+              bounces={false}
             >
               <Text style={styles.headline}>Pick your trader name</Text>
               <Text style={styles.subheadline}>
