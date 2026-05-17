@@ -811,13 +811,23 @@ function CompactChallengeCard({
           {tag && <Text style={styles.cTag}>{tag}</Text>}
           <Text style={styles.cName} numberOfLines={1}>{t.name}</Text>
           <View style={{ flex: 1 }} />
-          {inst.completed ? (
-            <Ionicons name="checkmark-circle" size={18} color={GREEN} />
-          ) : (
-            <Text style={styles.cProg}>
-              {Math.floor(inst.progress)}/{inst.target}
+          <View style={styles.cRight}>
+            {inst.completed ? (
+              <Ionicons name="checkmark-circle" size={18} color={GREEN} />
+            ) : (
+              <Text style={styles.cProg}>
+                {Math.floor(inst.progress)}/{inst.target}
+              </Text>
+            )}
+            <Text
+              style={[styles.cXp, inst.completed && styles.cXpDone]}
+              allowFontScaling={false}
+            >
+              {inst.completed
+                ? `✓ +${inst.xpReward} XP`
+                : `+${inst.xpReward} XP`}
             </Text>
-          )}
+          </View>
           {onSwap && !inst.completed && (
             <Pressable
               onPress={onSwap}
@@ -1381,13 +1391,24 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: -0.1,
   },
+  cRight: {
+    alignItems: 'flex-end',
+    marginLeft: 8,
+  },
   cProg: {
     color: WHITE,
     fontSize: 13,
     fontWeight: '800',
     fontVariant: ['tabular-nums'],
-    marginLeft: 8,
   },
+  cXp: {
+    marginTop: 2,
+    color: GOLD,
+    fontSize: 12,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  cXpDone: { color: GREEN },
   cSwap: {
     marginLeft: 12,
     flexDirection: 'row',
