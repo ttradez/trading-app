@@ -239,11 +239,16 @@ export default function OnboardingAuthScreen({ navigation }: Props) {
       }
       setLoading(true);
       const cred = GoogleAuthProvider.credential(idToken);
+      console.log('[AUTH][Google] idToken present?', !!idToken, 'len', idToken?.length);
       signInWithCredential(auth, cred)
         .then((r) => finishAuth(r.user.uid))
         .catch((e: any) => {
+          console.error('[AUTH][Google] failed:', e?.code, e?.message, JSON.stringify(e));
           setLoading(false);
-          Alert.alert('Google sign-in failed', mapAuthError(e?.code ?? '').msg);
+          Alert.alert(
+            'Google sign-in failed',
+            `Google sign-in failed: ${e?.code ?? 'no-code'} — ${e?.message ?? e}`,
+          );
         });
     } else if (googleRes.type === 'error') {
       setLoading(false);
@@ -307,13 +312,18 @@ export default function OnboardingAuthScreen({ navigation }: Props) {
         idToken: appleCred.identityToken,
         rawNonce,
       });
+      console.log('[AUTH][Apple] identityToken?', !!appleCred.identityToken, 'rawNonce', rawNonce);
       const r = await signInWithCredential(auth, firebaseCred);
       await finishAuth(r.user.uid);
     } catch (e: any) {
       // User-cancelled the Apple sheet → quiet no-op.
       if (e?.code === 'ERR_REQUEST_CANCELED') { setLoading(false); return; }
+      console.error('[AUTH][Apple] failed:', e?.code, e?.message, JSON.stringify(e));
       setLoading(false);
-      Alert.alert('Apple sign-in failed', mapAuthError(e?.code ?? '').msg);
+      Alert.alert(
+        'Apple sign-in failed',
+        `Apple sign-in failed: ${e?.code ?? 'no-code'} — ${e?.message ?? e}`,
+      );
     }
   };
 
