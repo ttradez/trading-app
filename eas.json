@@ -7,7 +7,7 @@
         "simulator": false
       },
       "env": {
-        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyB9kBN0m-uJ05A5JuU-8ceeiQS4WG-MuU0",
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyB9kBN0m-u3O5A5JuU-8ceeiQS4WG-MuU0",
         "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "pocket-trade-prod.firebaseapp.com",
         "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "pocket-trade-prod",
         "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "pocket-trade-prod.firebasestorage.app",

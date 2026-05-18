@@ -28,13 +28,6 @@ if (missing.length > 0) {
   );
 }
 
-// eslint-disable-next-line no-console
-console.log('[FB CFG]',
-  'apiKey:', firebaseConfig.apiKey ? firebaseConfig.apiKey.slice(0, 6) + '…(' + firebaseConfig.apiKey.length + ')' : 'UNDEFINED',
-  'authDomain:', firebaseConfig.authDomain || 'UNDEFINED',
-  'projectId:', firebaseConfig.projectId || 'UNDEFINED',
-  'appId:', firebaseConfig.appId ? 'set' : 'UNDEFINED');
-
 const app = initializeApp(firebaseConfig);
 
 let _auth: Auth;
