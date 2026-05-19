@@ -6,6 +6,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
+import { signOut } from 'firebase/auth';
+import { auth } from '../services/firebase';
+import { useAuthStore } from '../store/authStore';
 import DSSectionHeader from '../components/SectionHeader';
 import { colors as ST } from '../theme/tokens';
 import { useOnboardingStore, Archetype, DailyCommitment } from '../store/onboardingStore';
@@ -199,6 +202,38 @@ export default function SettingsScreen({ navigation }: any) {
               index: 0,
               routes: [{ name: 'OnboardingSplash' }],
             });
+          },
+        },
+      ],
+    );
+  };
+
+  const signOutUser = () => {
+    Alert.alert(
+      'Sign out of Pocket Trade?',
+      'You can sign back in any time. Your account data is saved.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await signOut(auth);
+            } catch {
+              // Local state is cleared regardless; the auth-state
+              // listener will still route to the auth screen.
+            }
+            // Clear local user + onboarding profile so no previous
+            // user's data persists. Keep onboardingComplete = true
+            // (a device-lifecycle fact, not user data) so the
+            // routing guard lands on the AUTH screen, not the full
+            // onboarding flow. The App onAuthStateChanged guard does
+            // the navigation (no nav hack here).
+            useAuthStore.getState().clearUser();
+            const ob = useOnboardingStore.getState();
+            ob.reset();
+            ob.setOnboardingComplete(true);
           },
         },
       ],
@@ -409,6 +444,12 @@ export default function SettingsScreen({ navigation }: any) {
             onPress={redoOnboarding}
             leftIcon="refresh-outline"
             leftIconColor={GOLD}
+          />
+          <Separator />
+          <Row
+            label="Sign Out"
+            onPress={signOutUser}
+            leftIcon="log-out-outline"
           />
           <Separator />
           <Row

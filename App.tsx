@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -190,10 +190,31 @@ export default function App() {
   const [authState, setAuthState] =
     useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
 
-  // Local onboarding handle decides where an UNAUTHENTICATED user
-  // lands: a returning local user (handle set) goes straight to the
-  // auth screen to just sign in; a brand-new user starts onboarding.
+  // Navigator remount epoch — bumped ONLY on the authenticated →
+  // unauthenticated edge (Sign Out) so the routing guard re-applies
+  // `initialRoute` and lands on the auth screen. Sign-IN is left to
+  // `finishAuth`'s explicit navigation (returning → Main, brand-new
+  // → OnboardingWelcome) so we don't clobber the welcome handoff.
+  const [navEpoch, setNavEpoch] = useState(0);
+  const prevAuthRef = useRef<typeof authState>('loading');
+  useEffect(() => {
+    if (
+      prevAuthRef.current === 'authenticated' &&
+      authState === 'unauthenticated'
+    ) {
+      setNavEpoch((n) => n + 1);
+    }
+    prevAuthRef.current = authState;
+  }, [authState]);
+
+  // For an UNAUTHENTICATED user: someone who has onboarded before
+  // (or has local profile data) goes straight to the auth screen to
+  // just sign in; a genuinely brand-new device starts onboarding.
+  // `onboardingComplete` survives Sign Out (it's a device-lifecycle
+  // fact, not user data) so a signed-out returning user lands on
+  // the auth screen rather than the full 13-screen flow.
   const handle = useOnboardingStore((s) => s.handle);
+  const onboardingComplete = useOnboardingStore((s) => s.onboardingComplete);
 
   useEffect(() => {
     if (hydrated) return;
@@ -242,14 +263,19 @@ export default function App() {
   const initialRoute =
     authState === 'authenticated'
       ? 'Main'
-      : handle.trim().length > 0
+      : onboardingComplete || handle.trim().length > 0
         ? 'OnboardingAuth'
         : 'OnboardingSplash';
 
   return (
     <SafeAreaProvider>
       <NavigationContainer>
+        {/* Remount on the Sign-Out edge (navEpoch) so the guard
+            re-applies `initialRoute` and lands on the auth screen —
+            the routing guard itself doing the navigation, no
+            per-screen reset hack. */}
         <Stack.Navigator
+          key={navEpoch}
           initialRouteName={initialRoute}
           screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }}
         >

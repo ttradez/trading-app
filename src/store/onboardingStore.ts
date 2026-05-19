@@ -137,6 +137,19 @@ interface OnboardingState {
   setAuth: (method: AuthMethod) => void;
   setDailyTimeGoal: (minutes: number) => void;
   setOnboardingComplete: (complete: boolean) => void;
+  /** Shallow-merge a profile from an external source (Firestore on
+   *  returning sign-in). Only defined keys are written. */
+  hydrateProfile: (p: {
+    handle?: string;
+    displayName?: string;
+    archetype?: Archetype | null;
+    identity?: Identity | null;
+    goalCategory?: GoalCategory | null;
+    experienceLevel?: ExperienceLevel | null;
+    accountSize?: number;
+    dailyCommitment?: DailyCommitment;
+    dailyTimeGoalMinutes?: number;
+  }) => void;
   reset: () => void;
 }
 
@@ -194,6 +207,14 @@ export const useOnboardingStore = create<OnboardingState>()(
 
   setOnboardingComplete: (onboardingComplete) =>
     set({ onboardingComplete }),
+
+  hydrateProfile: (p) => {
+    const next: Record<string, unknown> = {};
+    (Object.keys(p) as (keyof typeof p)[]).forEach((k) => {
+      if (p[k] !== undefined) next[k] = p[k];
+    });
+    set(next);
+  },
 
   reset: () => set({
     archetype: null,

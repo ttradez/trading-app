@@ -14,7 +14,7 @@ import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword,
   GoogleAuthProvider, OAuthProvider, signInWithCredential,
 } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../services/firebase';
 import { useOnboardingStore } from '../store/onboardingStore';
 import PlayerCardPreview from '../components/onboarding/PlayerCardPreview';
@@ -158,31 +158,67 @@ export default function OnboardingAuthScreen({ navigation }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** Persist onboarding profile to Firestore, flag onboarding
-   *  complete, and hand off to the welcome screen. */
+  /**
+   * Shared post-sign-in handler (Apple / Google / email). Reads the
+   * user's Firestore profile:
+   *  - EXISTS  → returning user: hydrate the local profile, mark
+   *    onboarding complete, go straight to the dashboard (no
+   *    re-onboarding even though Sign Out cleared local state).
+   *  - MISSING → brand-new user: write the onboarding profile and
+   *    continue to the welcome screen (unchanged path).
+   */
   const finishAuth = async (uid: string) => {
     const s = useOnboardingStore.getState();
+    let returning = false;
     try {
-      await setDoc(
-        doc(db, 'users', uid),
-        {
-          displayName: s.displayName,
-          handle: s.handle,
-          archetype: s.archetype,
-          identity: s.identity,
-          experienceLevel: s.experienceLevel,
-          accountSize: s.accountSize,
-          dailyCommitment: s.dailyCommitment,
-          dailyTimeGoalMinutes: s.dailyTimeGoalMinutes,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      );
+      const snap = await getDoc(doc(db, 'users', uid));
+      if (snap.exists()) {
+        returning = true;
+        const d = snap.data() as Record<string, any>;
+        s.hydrateProfile({
+          handle: typeof d.handle === 'string' ? d.handle : undefined,
+          displayName:
+            typeof d.displayName === 'string' ? d.displayName : undefined,
+          archetype: d.archetype ?? undefined,
+          identity: d.identity ?? undefined,
+          experienceLevel: d.experienceLevel ?? undefined,
+          accountSize:
+            typeof d.accountSize === 'number' ? d.accountSize : undefined,
+          dailyCommitment: d.dailyCommitment ?? undefined,
+          dailyTimeGoalMinutes:
+            typeof d.dailyTimeGoalMinutes === 'number'
+              ? d.dailyTimeGoalMinutes
+              : undefined,
+        });
+        // Touch updatedAt only — don't clobber createdAt / profile.
+        await setDoc(
+          doc(db, 'users', uid),
+          { updatedAt: serverTimestamp() },
+          { merge: true },
+        );
+      } else {
+        // Brand-new user — original write path, unchanged.
+        await setDoc(
+          doc(db, 'users', uid),
+          {
+            displayName: s.displayName,
+            handle: s.handle,
+            archetype: s.archetype,
+            identity: s.identity,
+            experienceLevel: s.experienceLevel,
+            accountSize: s.accountSize,
+            dailyCommitment: s.dailyCommitment,
+            dailyTimeGoalMinutes: s.dailyTimeGoalMinutes,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true },
+        );
+      }
     } catch (e) {
       // Non-fatal: the account exists; profile sync can retry later.
       // eslint-disable-next-line no-console
-      console.warn('[auth] Firestore profile save failed', e);
+      console.warn('[auth] Firestore profile read/save failed', e);
     }
     // `setAuth` keeps the store's authMethod/isAuthed set. Real
     // method ids (apple/google/email) are a follow-up per the
@@ -190,7 +226,10 @@ export default function OnboardingAuthScreen({ navigation }: Props) {
     // value and only feeds analytics, not routing.
     setAuth('mock-email');
     s.setOnboardingComplete(true);
-    navigation.reset({ index: 0, routes: [{ name: 'OnboardingWelcome' }] });
+    navigation.reset({
+      index: 0,
+      routes: [{ name: returning ? 'Main' : 'OnboardingWelcome' }],
+    });
   };
 
   const submitEmail = async () => {
