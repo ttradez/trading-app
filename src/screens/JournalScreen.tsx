@@ -130,7 +130,7 @@ export default function JournalScreen({ navigation }: any) {
           <RecapsSection onOpen={setOpenRecap} />
           <View style={styles.empty}>
             <Text style={styles.emptyMessage}>
-              No trades yet. Start a replay session to place your first trade.
+              No trades yet. Start a session to place your first trade.
             </Text>
           </View>
         </ScrollView>

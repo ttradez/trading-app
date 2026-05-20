@@ -5,6 +5,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
+import { PRIMARY_ACTION_LABEL } from '../theme/copy';
 import { useJournalStore } from '../store/journalStore';
 import { useTradeJournalStore } from '../store/tradeJournalStore';
 import {
@@ -146,9 +147,9 @@ export default function InsightsScreen({ navigation }: any) {
             onPress={() => navigation.navigate('Main', { screen: 'Chart' })}
             style={({ pressed }) => [styles.cta, pressed && { opacity: 0.85 }]}
             accessibilityRole="button"
-            accessibilityLabel="Start trading"
+            accessibilityLabel={PRIMARY_ACTION_LABEL}
           >
-            <Text style={styles.ctaText}>Start trading</Text>
+            <Text style={styles.ctaText}>{PRIMARY_ACTION_LABEL}</Text>
           </Pressable>
         </View>
       </SafeAreaView>

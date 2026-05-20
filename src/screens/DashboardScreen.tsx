@@ -31,6 +31,7 @@ import RankBanner from '../components/RankBanner';
 import ProgressBar from '../components/ProgressBar';
 import SectionHeader from '../components/SectionHeader';
 import { colors as DT } from '../theme/tokens';
+import { PRIMARY_ACTION_LABEL } from '../theme/copy';
 
 /**
  * DashboardScreen — 3-zone restructure (2026-05-15).
@@ -676,7 +677,7 @@ export default function DashboardScreen({ navigation }: any) {
         {recentTrades.length === 0 ? (
           <View style={styles.emptyTrades}>
             <Text style={styles.emptyTradesText}>
-              No trades yet. Start a replay to place your first trade.
+              No trades yet. Start a session to place your first trade.
             </Text>
             <Pressable
               onPress={() => navigation.navigate('Chart')}
@@ -685,9 +686,9 @@ export default function DashboardScreen({ navigation }: any) {
                 pressed && { opacity: 0.7 },
               ]}
               accessibilityRole="button"
-              accessibilityLabel="Start training"
+              accessibilityLabel={PRIMARY_ACTION_LABEL}
             >
-              <Text style={styles.startBtnText}>Start training</Text>
+              <Text style={styles.startBtnText}>{PRIMARY_ACTION_LABEL}</Text>
             </Pressable>
           </View>
         ) : (
