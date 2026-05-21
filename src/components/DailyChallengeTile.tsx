@@ -3,8 +3,8 @@ import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
   type Icon,
-  RepeatIcon,
-  TargetIcon,
+  ArrowsClockwiseIcon,
+  CrosshairIcon,
   NotebookIcon,
   CompassIcon,
   CalendarCheckIcon,
@@ -17,18 +17,19 @@ import { colors } from '../theme';
 
 /**
  * Phosphor mapping for each challenge category — hero glyph at
- * weight="fill" + gold@80%. Picked the closest semantic match to
- * the previous MCI line icons.
+ * weight="fill" + gold@80%. Names match the spec's per-challenge
+ * suggestions (place trades → ArrowsClockwise, win in a row →
+ * Crosshair, different symbols → Compass).
  *
- *   volume       → Repeat        (reps / volume / sit-time)
- *   skill        → Target        (precision / aim)
- *   process      → Notebook      (journaling / checklist)
- *   discovery    → Compass       (explore / new symbols)
- *   consistency  → CalendarCheck (daily-cadence streaks)
+ *   volume       → ArrowsClockwise (place N trades, cycle of reps)
+ *   skill        → Crosshair       (precision / aim — "win in a row")
+ *   process      → Notebook        (journaling / checklist)
+ *   discovery    → Compass         (explore / new symbols)
+ *   consistency  → CalendarCheck   (daily-cadence streaks)
  */
 const CATEGORY_ICON: Record<string, Icon> = {
-  volume:      RepeatIcon,
-  skill:       TargetIcon,
+  volume:      ArrowsClockwiseIcon,
+  skill:       CrosshairIcon,
   process:     NotebookIcon,
   discovery:   CompassIcon,
   consistency: CalendarCheckIcon,
@@ -74,7 +75,7 @@ export default function DailyChallengeTile({ inst, onSwap, swapAvailable }: Prop
       <View style={styles.topRow}>
         {(() => {
           // Phosphor hero glyph — fill at gold@80% per icon spec.
-          const Glyph = CATEGORY_ICON[t.category] ?? TargetIcon;
+          const Glyph = CATEGORY_ICON[t.category] ?? CrosshairIcon;
           return <Glyph size={22} weight="fill" color="rgba(255,184,0,0.8)" />;
         })()}
         {onSwap && !inst.completed && swapAvailable && (

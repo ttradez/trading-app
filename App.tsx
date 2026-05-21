@@ -5,6 +5,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { onAuthStateChanged } from 'firebase/auth';
+import { Ionicons } from '@expo/vector-icons';
 import {
   useFonts,
   Inter_400Regular,
@@ -18,17 +19,12 @@ import {
   JetBrainsMono_500Medium,
   JetBrainsMono_700Bold,
 } from '@expo-google-fonts/jetbrains-mono';
-// Phosphor for HERO glyphs only — bottom nav, mission tip,
-// challenge tiles, long-term tiers. Utility icons stay Ionicons
-// (the project's Lucide-equivalent line set). The `*Icon` suffix
-// is the v3 export style; the bare-name exports are deprecated.
-import {
-  HouseIcon,
-  ChartLineUpIcon,
-  BookOpenIcon,
-  GraduationCapIcon,
-  TrophyIcon,
-} from 'phosphor-react-native';
+// Bottom-nav tab icons stay on the project's Lucide-equivalent
+// utility line set (Ionicons). Phosphor is reserved for hero-glyph
+// surfaces (mission tip, challenge tiles, long-term tiers). Active
+// state on the nav is signaled by the gold-tint pill behind the
+// icon (see tabStyles.iconWrapActive below), not by a filled
+// variant swap.
 
 import { auth } from './src/services/firebase';
 import { upsertUser, getUser } from './src/services/api';
@@ -142,26 +138,24 @@ function MainTabs() {
         },
         tabBarIconStyle: { marginTop: 0 },
         tabBarIcon: ({ focused }) => {
-          // Phosphor — hero-glyph swap. weight="fill" + gold when
-          // active, weight="regular" + white@50% when inactive.
-          // Inactive color overrides tabBarInactiveTintColor so we
-          // can use the spec'd white@50%; active uses brand gold.
-          const Icon = (() => {
-            switch (route.name) {
-              case 'Home':        return HouseIcon;
-              case 'Stats':       return ChartLineUpIcon;
-              case 'Journal':     return BookOpenIcon;
-              case 'Learn':       return GraduationCapIcon;
-              case 'Leaderboard': return TrophyIcon;
-              default:            return HouseIcon;
-            }
-          })();
+          // Lucide-equivalent line icons (Ionicons outline). Active
+          // state is signaled by the gold-tint pill behind the icon
+          // (iconWrapActive) + gold icon color; inactive stays a
+          // muted line at white@50%.
+          const lineIcon: Record<string, keyof typeof Ionicons.glyphMap> = {
+            Home:        'home-outline',
+            Stats:       'stats-chart-outline',
+            Journal:     'journal-outline',
+            Learn:       'school-outline',
+            Leaderboard: 'trophy-outline',
+          };
+          const name = lineIcon[route.name] ?? 'help';
           return (
-            <View style={tabStyles.iconWrap}>
+            <View style={[tabStyles.iconWrap, focused && tabStyles.iconWrapActive]}>
               {focused && <View style={tabStyles.activeDot} />}
-              <Icon
+              <Ionicons
+                name={name}
                 size={18}
-                weight={focused ? 'fill' : 'regular'}
                 color={focused ? colors.gold : 'rgba(255,255,255,0.5)'}
               />
             </View>
@@ -419,9 +413,17 @@ const tabStyles = StyleSheet.create({
   },
   underlineActive: { backgroundColor: colors.gold },
   iconWrap: {
-    width: 22,
+    minWidth: 28,
+    height: 22,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 10,
+    borderRadius: 999,
+  },
+  // Subtle gold tint behind the active tab icon — adds a "filled"
+  // feel without swapping the line icon for a fill variant.
+  iconWrapActive: {
+    backgroundColor: 'rgba(255, 184, 0, 0.10)',
   },
   // Tiny gold dot at the iOS-badge position above the active icon.
   activeDot: {

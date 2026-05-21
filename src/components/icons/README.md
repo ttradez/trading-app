@@ -31,12 +31,16 @@ Current Phosphor sites:
 
 | Surface | Icon | Weight | Color |
 |---|---|---|---|
-| Bottom-nav active tab | House / ChartLineUp / BookOpen / GraduationCap / Trophy | `fill` | brand gold `#FFB800` |
-| Bottom-nav inactive tab | same | `regular` | white@50% |
 | Today's Mission tip | Lightbulb | `fill` | gold@90% |
-| Daily Challenge tile | Repeat / Target / Notebook / Compass / CalendarCheck (per category) | `fill` | gold@80% |
-| Long-term weekly card | same set, mirroring the daily category | `duotone` (`duotoneOpacity={0.3}`) | gold primary |
-| Long-term monthly card | same set | `bold` | gold@90% |
+| Daily Challenge tile | ArrowsClockwise / Crosshair / Notebook / Compass / CalendarCheck (per category) | `fill` | gold@80% |
+| Long-term weekly card | Crosshair (fixed — tier signal, not per-category) | `bold` | gold |
+| Long-term monthly card | Compass (fixed — tier signal, not per-category) | `bold` | gold |
+
+Bottom-nav tab icons are deliberately on Ionicons line (the
+Lucide-equivalent utility set), NOT Phosphor. Active-tab feel
+is signaled by a gold-tint pill behind the icon
+(`rgba(255,184,0,0.10)`) plus the gold icon color — no filled
+variant swap. See `tabStyles.iconWrapActive` in App.tsx.
 
 ## Never
 
