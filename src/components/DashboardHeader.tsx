@@ -7,6 +7,7 @@ import { useOnboardingStore, Archetype } from '../store/onboardingStore';
 import { useXpStore } from '../store/xpStore';
 import { getRankForXP } from '../data/rankConfig';
 import StreakBadge from './StreakBadge';
+import TrainingTimeRing from './TrainingTimeRing';
 import { HeaderFreezeIndicator } from './HomeStreakSignals';
 
 /**
@@ -41,6 +42,12 @@ export default function DashboardHeader({ onSettingsPress }: Props) {
   const currentXP    = useXpStore((s) => s.currentXP);
   const rankInfo     = React.useMemo(() => getRankForXP(currentXP), [currentXP]);
   const archetypeMeta = archetype ? ARCHETYPE_META[archetype] : null;
+
+  // Daily time-goal ring lives in the header now (was a standalone
+  // card on Home before the polish pass). 36pt diameter, 8pt
+  // gradient stroke. Tap is a no-op here — popover deferred.
+  const minutesToday = useStreakStore((s) => s.todayTrainingMinutes);
+  const dailyGoalMin = useOnboardingStore((s) => s.dailyTimeGoalMinutes);
 
   return (
     <View style={styles.header}>
@@ -95,6 +102,12 @@ export default function DashboardHeader({ onSettingsPress }: Props) {
               holds a freeze. No count needed — cap is 1. */}
           <HeaderFreezeIndicator />
         </Pressable>
+        <TrainingTimeRing
+          minutes={minutesToday}
+          goal={dailyGoalMin}
+          size={36}
+          stroke={8}
+        />
         <Pressable
           onPress={onSettingsPress}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}

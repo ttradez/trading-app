@@ -37,12 +37,14 @@ const CATEGORY_ICON: Record<string, Icon> = {
 
 /**
  * Square-ish ~140 × 140pt tile for the Daily Challenges horizontal
- * scroller (DESIGN_AUDIT §3.1). Filled icon top-left, h2 title,
- * gold XP label, and a 2pt progress bar pinned to the bottom edge.
+ * scroller. Filled icon top-left, h2 title, gold XP label, and a
+ * 2pt progress bar pinned to the bottom edge.
  *
- * Done state: 1px green border + a small checkmark replacing the
- * progress count. Swap button stays — same 1-per-week semantics
- * the compact list card had.
+ * Done state (polish pass): a gold check medallion overhangs the
+ * top-right corner (slight ~8pt overhang via an outer wrapper
+ * with overflow visible); the inner tile content fades to 60%
+ * opacity so the achievement reads "settled" without losing the
+ * title. The progress bar still fills to 100% gold underneath.
  */
 
 const TILE_W   = 140;
@@ -64,66 +66,79 @@ export default function DailyChallengeTile({ inst, onSwap, swapAvailable }: Prop
   const t = getTemplate(inst.challengeId);
   if (!t) return null;
   const pct = Math.min(1, inst.target > 0 ? inst.progress / inst.target : 0);
+  const completed = inst.completed;
 
   return (
-    <View
-      style={[
-        styles.tile,
-        inst.completed && styles.tileDone,
-      ]}
-    >
-      <View style={styles.topRow}>
-        {(() => {
-          // Phosphor hero glyph — fill at gold@80% per icon spec.
-          const Glyph = CATEGORY_ICON[t.category] ?? CrosshairIcon;
-          return <Glyph size={22} weight="fill" color="rgba(255,184,0,0.8)" />;
-        })()}
-        {onSwap && !inst.completed && swapAvailable && (
-          <Pressable
-            onPress={onSwap}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            style={({ pressed }) => [styles.swapBtn, pressed && { opacity: 0.5 }]}
-            accessibilityRole="button"
-            accessibilityLabel={`Swap challenge ${t.name}`}
-          >
-            <Ionicons name="refresh" size={14} color={GOLD} />
-          </Pressable>
-        )}
-        {inst.completed && (
-          <Ionicons name="checkmark-circle" size={16} color={GREEN} />
-        )}
-      </View>
+    // Outer wrapper has overflow:'visible' so the check medallion
+    // can overhang the tile's rounded edge. The inner tile keeps
+    // its overflow:hidden so the progress bar still clips cleanly.
+    <View style={styles.wrap}>
+      <View style={[styles.tile, completed && styles.tileDone]}>
+        {/* Inner content fades to 60% when complete — title stays
+            full opacity for legibility (next sibling). */}
+        <View style={[styles.topRow, completed && styles.fadedBlock]}>
+          {(() => {
+            const Glyph = CATEGORY_ICON[t.category] ?? CrosshairIcon;
+            return <Glyph size={22} weight="fill" color="rgba(255,184,0,0.8)" />;
+          })()}
+          {onSwap && !completed && swapAvailable && (
+            <Pressable
+              onPress={onSwap}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={({ pressed }) => [styles.swapBtn, pressed && { opacity: 0.5 }]}
+              accessibilityRole="button"
+              accessibilityLabel={`Swap challenge ${t.name}`}
+            >
+              <Ionicons name="refresh" size={14} color={GOLD} />
+            </Pressable>
+          )}
+        </View>
 
-      <Text style={styles.title} numberOfLines={2}>
-        {t.name}
-      </Text>
+        <Text style={styles.title} numberOfLines={2}>
+          {t.name}
+        </Text>
 
-      <View style={styles.metaRow}>
-        <NumericText bold style={styles.xp} allowFontScaling={false}>
-          +{inst.xpReward} XP
-        </NumericText>
-        {!inst.completed && (
-          <NumericText bold style={styles.progLabel} allowFontScaling={false}>
-            {Math.floor(inst.progress)}/{inst.target}
+        <View style={[styles.metaRow, completed && styles.fadedBlock]}>
+          <NumericText bold style={styles.xp} allowFontScaling={false}>
+            +{inst.xpReward} XP
           </NumericText>
-        )}
+          {!completed && (
+            <NumericText bold style={styles.progLabel} allowFontScaling={false}>
+              {Math.floor(inst.progress)}/{inst.target}
+            </NumericText>
+          )}
+        </View>
+
+        <View style={styles.barWrap} pointerEvents="none">
+          <ProgressBar
+            progress={pct}
+            size="md"
+            variant={completed ? 'gold' : 'gold'}
+          />
+        </View>
       </View>
 
-      <View style={styles.barWrap} pointerEvents="none">
-        <ProgressBar
-          progress={pct}
-          size="md"
-          variant={inst.completed ? 'green' : 'gold'}
-        />
-      </View>
+      {completed && (
+        <View style={styles.checkOverlay} pointerEvents="none">
+          <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  tile: {
+  // Wrap allows the check medallion to overhang the tile edge.
+  wrap: {
     width: TILE_W,
     height: TILE_H,
+    position: 'relative',
+    // No overflow declared → visible by default, so the check
+    // medallion's -8/-8 offset reads as a proper overhang.
+  },
+  tile: {
+    width: '100%',
+    height: '100%',
     backgroundColor: CARD_BG,
     borderColor: BORDER,
     borderWidth: 1,
@@ -132,7 +147,10 @@ const styles = StyleSheet.create({
     padding: 12,
     overflow: 'hidden',
   },
-  tileDone: { borderColor: GREEN },
+  tileDone: { borderColor: 'rgba(255,184,0,0.6)' },
+  // Faded sub-blocks on completion — title stays at 100% so the
+  // tile remains scannable.
+  fadedBlock: { opacity: 0.6 },
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -174,5 +192,28 @@ const styles = StyleSheet.create({
     left: 12,
     right: 12,
     bottom: 6,
+  },
+
+  // Completion medallion — gold-filled circle with a white check,
+  // overhanging the tile by 8pt on the top-right.
+  checkOverlay: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: GOLD,
+    alignItems: 'center',
+    justifyContent: 'center',
+    // Subtle dark ring lifts the medallion off the L1 surface and
+    // off the green completion accent.
+    borderWidth: 2,
+    borderColor: '#000000',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    elevation: 4,
   },
 });

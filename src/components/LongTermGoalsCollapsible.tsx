@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CrosshairIcon, CompassIcon } from 'phosphor-react-native';
 
@@ -7,6 +7,7 @@ import { ChallengeInstance } from '../store/challengeStore';
 import { getTemplate } from '../data/challengePool';
 import ProgressBar from './ProgressBar';
 import NumericText from './NumericText';
+import PressableCard from './PressableCard';
 import { colors as DT } from '../theme/tokens';
 
 /**
@@ -46,14 +47,13 @@ export default function LongTermGoalsCollapsible({ weekly, monthly }: Props) {
 
   return (
     <View>
-      <Pressable
+      <PressableCard
         onPress={() => setExpanded((v) => !v)}
-        style={({ pressed }) => [styles.row, pressed && { opacity: 0.8 }]}
-        accessibilityRole="button"
+        baseBg={CARD_BG}
+        style={styles.row}
         accessibilityLabel={
           expanded ? 'Collapse long-term goals' : 'Expand long-term goals'
         }
-        accessibilityState={{ expanded }}
       >
         <Text style={styles.rowTitle} numberOfLines={1}>
           Long-term goals
@@ -65,7 +65,7 @@ export default function LongTermGoalsCollapsible({ weekly, monthly }: Props) {
           size={16}
           color="rgba(255,255,255,0.45)"
         />
-      </Pressable>
+      </PressableCard>
 
       {expanded && (
         <View style={styles.expandWrap}>

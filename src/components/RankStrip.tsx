@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, Pressable, StyleSheet, Animated, Easing,
+  View, Text, StyleSheet, Animated, Easing,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 import RankBanner from './RankBanner';
 import NumericText from './NumericText';
 import ProgressBar from './ProgressBar';
+import PressableCard from './PressableCard';
 import { RankForXP } from '../data/rankConfig';
 import { Badge } from '../data/badges';
 import { colors as DT } from '../theme/tokens';
@@ -88,9 +89,10 @@ export default function RankStrip({ rankInfo, nextBadge, onPress }: Props) {
     : 1;
 
   return (
-    <Pressable
+    <PressableCard
       onPress={onPress}
-      style={({ pressed }) => [styles.strip, pressed && { opacity: 0.85 }]}
+      baseBg={CARD_BG}
+      style={styles.strip}
       accessibilityRole="button"
       accessibilityLabel={
         nextBadge
@@ -99,7 +101,13 @@ export default function RankStrip({ rankInfo, nextBadge, onPress }: Props) {
       }
     >
       <View style={styles.chipWrap}>
-        <RankBanner rank={rankInfo.rank} width={56} subTier={rankInfo.subTier} />
+        {/* Inner glow wrapper — subtle gold halo lifts the emblem
+            off the L1 strip surface. iOS gets the shadow directly;
+            Android falls back to an elevation + faint gold border
+            (`chipGlowAndroidFallback`) to fake the same lift. */}
+        <View style={styles.chipGlow}>
+          <RankBanner rank={rankInfo.rank} width={56} subTier={rankInfo.subTier} />
+        </View>
       </View>
 
       <View style={styles.middle}>
@@ -152,7 +160,7 @@ export default function RankStrip({ rankInfo, nextBadge, onPress }: Props) {
         color="rgba(255,255,255,0.3)"
         style={{ marginLeft: 8 }}
       />
-    </Pressable>
+    </PressableCard>
   );
 }
 
@@ -171,6 +179,19 @@ const styles = StyleSheet.create({
   },
   chipWrap: {
     marginRight: 10,
+  },
+  chipGlow: {
+    // iOS shadow renders the gold halo directly.
+    shadowColor: '#FFB800',
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 0 },
+    // Android fallback — elevation + a faint gold ring to fake the
+    // halo, since shadowOpacity alone doesn't translate cleanly.
+    elevation: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 184, 0, 0.10)',
   },
   middle: {
     flex: 1,

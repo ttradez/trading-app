@@ -6,11 +6,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LightbulbIcon as PhLightbulb } from 'phosphor-react-native';
 import Svg, {
-  Circle, Defs, LinearGradient, RadialGradient, Rect, Stop,
+  Defs, RadialGradient, Rect, Stop,
 } from 'react-native-svg';
 
 import { useStreakStore } from '../store/streakStore';
-import { useOnboardingStore } from '../store/onboardingStore';
 import { useJournalStore } from '../store/journalStore';
 import { useIsTodaySetupComplete } from '../store/dailySetupStore';
 import { useWatchlistStore, savedSetupStartUnixSeconds } from '../store/watchlistStore';
@@ -34,7 +33,9 @@ import {
 import LongTermGoalsCollapsible from '../components/LongTermGoalsCollapsible';
 import RankStrip from '../components/RankStrip';
 import DashboardHeader from '../components/DashboardHeader';
+import PressableCard from '../components/PressableCard';
 import { colors as DT } from '../theme/tokens';
+import { surface } from '../theme';
 
 /**
  * Home — the "what to do right now" surface (5-tab restructure).
@@ -57,9 +58,7 @@ const BG          = '#000000';
 // Today's Mission overrides this back up to L3 via `missionElevated`.
 const CARD_BG     = '#0A0A0A';
 const CARD_BORDER = '#1F1F1F';
-const TRACK       = '#1F1F1F';
 const GOLD        = '#FFB800';
-const GOLD_WARM   = '#FFD466';
 const GREEN       = '#00D395';
 const RED         = '#FF4757';
 const WHITE       = '#FFFFFF';
@@ -75,54 +74,9 @@ function formatSavedDate(ymd: string): string {
   return `${MONTHS_SHORT[m - 1]} ${d}, ${y}`;
 }
 
-// ── Premium daily time-goal ring ───────────────────────────────────
-
-function TrainingTimeRing({
-  minutes, goal, size = 56, stroke = 10,
-}: { minutes: number; goal: number; size?: number; stroke?: number }) {
-  const safeGoal = Math.max(1, goal);
-  const ratio    = Math.min(1, minutes / safeGoal);
-  const radius   = (size - stroke) / 2;
-  const cx = size / 2;
-  const cy = size / 2;
-  const circ = 2 * Math.PI * radius;
-  const offset = circ * (1 - ratio);
-  const done = ratio >= 1;
-
-  const angle = -Math.PI / 2 + ratio * 2 * Math.PI;
-  const dotX = cx + radius * Math.cos(angle);
-  const dotY = cy + radius * Math.sin(angle);
-
-  return (
-    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
-        <Defs>
-          <LinearGradient id="timeArc" x1="0" y1="0" x2="1" y2="1">
-            <Stop offset="0" stopColor={GOLD} />
-            <Stop offset="1" stopColor={GOLD_WARM} />
-          </LinearGradient>
-        </Defs>
-        <Circle cx={cx} cy={cy} r={radius} stroke={TRACK} strokeWidth={stroke} fill="none" />
-        <Circle
-          cx={cx} cy={cy} r={radius}
-          stroke="url(#timeArc)"
-          strokeWidth={stroke}
-          fill="none"
-          strokeDasharray={`${circ} ${circ}`}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-          transform={`rotate(-90 ${cx} ${cy})`}
-        />
-        {ratio > 0 && !done && (
-          <Circle cx={dotX} cy={dotY} r={stroke / 2 - 1} fill={GOLD_WARM} />
-        )}
-      </Svg>
-      {done && (
-        <Ionicons name="checkmark" size={Math.round(size * 0.42)} color={GOLD} />
-      )}
-    </View>
-  );
-}
+// Daily time-goal ring now lives in DashboardHeader — see
+// src/components/TrainingTimeRing.tsx. The standalone Home card
+// was retired in the polish pass.
 
 // ── Today's Mission radial gold ambient ────────────────────────────
 
@@ -149,12 +103,10 @@ function MissionGlow({ width, height }: { width: number; height: number }) {
 // ── Screen ─────────────────────────────────────────────────────────
 
 export default function HomeScreen({ navigation }: any) {
-  // Streak / training time
+  // Streak — drives the next-badge memo's dependency list (the
+  // training-minutes / daily-goal ring lives in DashboardHeader
+  // now, so we no longer read them here).
   const streakCount  = useStreakStore((s) => s.currentStreak);
-  const minutesToday = useStreakStore((s) => s.todayTrainingMinutes);
-
-  // Onboarding goal
-  const dailyGoalMin = useOnboardingStore((s) => s.dailyTimeGoalMinutes);
 
   // Daily mission
   const todaySetup = useMemo(() => getTodaySetup(), []);
@@ -198,8 +150,6 @@ export default function HomeScreen({ navigation }: any) {
     return cands[0] ?? null;
   }, [entries, unlockedBadges, streakCount, savedSetups]);
 
-  const goalDone = minutesToday >= dailyGoalMin;
-
   const goToBadges = () =>
     navigation.navigate('Leaderboard', { initialSegment: 'badges' });
 
@@ -220,7 +170,7 @@ export default function HomeScreen({ navigation }: any) {
         <AtRiskChip />
 
         {/* ── Today's Mission ─────────────────────────────────── */}
-        <View style={styles.sectionGap}>
+        <View style={styles.firstSectionGap}>
           <TodaysMissionCard
             todaySetup={todaySetup}
             setupComplete={setupComplete}
@@ -257,32 +207,8 @@ export default function HomeScreen({ navigation }: any) {
           />
         </View>
 
-        {/* ── Daily time-goal ring ───────────────────────────── */}
-        <Pressable
-          style={[styles.card, styles.trainCard, styles.sectionGap]}
-          onPress={() => navigation.navigate('Chart')}
-          accessibilityRole="button"
-          accessibilityLabel={`${Math.floor(minutesToday)} of ${dailyGoalMin} training minutes today`}
-        >
-          <TrainingTimeRing
-            minutes={minutesToday}
-            goal={dailyGoalMin}
-            size={64}
-            stroke={10}
-          />
-          <View style={styles.trainText}>
-            {goalDone ? (
-              <Text style={styles.trainBigDone}>Goal hit ✓</Text>
-            ) : (
-              <>
-                <NumericText bold style={styles.trainBig}>
-                  {Math.floor(minutesToday)} / {dailyGoalMin} min
-                </NumericText>
-                <Text style={styles.trainSub}>minutes today</Text>
-              </>
-            )}
-          </View>
-        </Pressable>
+        {/* The daily time-goal ring moved into DashboardHeader in
+            the polish pass — no standalone card on Home anymore. */}
 
         {/* ── Saved Setups (conditional) ─────────────────────── */}
         {savedSetups.length > 0 && (
@@ -352,18 +278,32 @@ function TodaysMissionCard({
 }) {
   const [size, setSize] = React.useState({ w: 0, h: 0 });
   return (
-    <View
+    // Whole card is now tappable — same action as the Primary CTA
+    // inside. The inner Button's onPress still fires on direct
+    // taps in its hit area; outer taps trigger via PressableCard.
+    // Press feedback (scale + bg lift) provides the universal
+    // tactile signal from the polish-pass spec.
+    <PressableCard
+      onPress={setupComplete ? undefined : onTrade}
+      baseBg={DT.surfaceElevated}
+      pressedBg={DT.surfaceElevated}
+      accessibilityLabel={
+        setupComplete ? 'Today\'s mission completed' : 'Today\'s mission — trade this setup'
+      }
       style={[
         styles.card,
         styles.missionCard,
         styles.missionElevated,
         setupComplete && styles.missionCardDone,
       ]}
-      onLayout={(e) => {
-        const { width, height } = e.nativeEvent.layout;
-        setSize({ w: width, h: height });
-      }}
     >
+      <View
+        onLayout={(e) => {
+          const { width, height } = e.nativeEvent.layout;
+          setSize({ w: width, h: height });
+        }}
+        style={{ flexDirection: 'row', flex: 1 }}
+      >
       <MissionGlow width={size.w} height={size.h} />
       {setupComplete && <View style={styles.missionAccent} />}
       <View style={styles.missionInner}>
@@ -379,11 +319,16 @@ function TodaysMissionCard({
         <Text style={styles.missionDescription}>
           {todaySetup.description}
         </Text>
-        <View style={styles.missionTipRow}>
-          {/* Hero glyph — Phosphor fill at gold@90% per icon spec. */}
-          <View style={styles.missionTipIcon}>
-            <PhLightbulb size={14} weight="fill" color="rgba(255,184,0,0.9)" />
-          </View>
+        {/* Tip — wrapped in its own inset card so it reads as a
+            distinct quote/aside, not as continuation prose. Gold@6%
+            background + gold@16% border, gold@90% glyph + text. */}
+        <View style={styles.missionTipCard}>
+          <PhLightbulb
+            size={16}
+            weight="fill"
+            color="rgba(255,184,0,0.9)"
+            style={styles.missionTipIcon}
+          />
           <Text style={[styles.missionTip, styles.missionTipText]}>
             {todaySetup.tip}
           </Text>
@@ -404,7 +349,8 @@ function TodaysMissionCard({
           )}
         </View>
       </View>
-    </View>
+      </View>
+    </PressableCard>
   );
 }
 
@@ -484,7 +430,11 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 100,
   },
+  // 24pt between every section on Home (polish-pass spec). The
+  // first section uses a tighter 16pt below the header (or below
+  // the at-risk chip if it's visible) — see firstSectionGap.
   sectionGap: { marginTop: 24 },
+  firstSectionGap: { marginTop: 16 },
   card: {
     backgroundColor: CARD_BG,
     borderColor: CARD_BORDER,
@@ -513,15 +463,18 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 1.5,
   },
+  // Refined: 1px border, label-size text at 13pt, 4/10 padding per
+  // the polish-pass spec. Reads as a proper meta chip rather than
+  // a chunky button.
   diffBadge: {
     borderWidth: 1,
     borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
   diffBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 13,
+    fontWeight: '700',
     letterSpacing: 0.4,
   },
   missionTitle: {
@@ -544,14 +497,22 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     lineHeight: 21,
   },
-  missionTipRow: {
-    marginTop: 12,
+  // Inset gold tip card — sits between the description paragraph
+  // and the Primary CTA. Gold@6% bg + gold@16% border per spec.
+  missionTipCard: {
+    marginTop: 14,
     flexDirection: 'row',
     alignItems: 'flex-start',
+    backgroundColor: 'rgba(255, 184, 0, 0.06)',
+    borderColor: 'rgba(255, 184, 0, 0.16)',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
   },
-  missionTipIcon: { marginRight: 6, marginTop: 2 },
+  missionTipIcon: { marginRight: 8, marginTop: 2 },
   missionTip: {
-    color: 'rgba(255,184,0,0.85)',
+    color: 'rgba(255,184,0,0.9)',
     fontSize: 13,
     fontStyle: 'italic',
     lineHeight: 19,
@@ -572,35 +533,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     letterSpacing: 0.2,
-  },
-
-  // Training (compact, inline)
-  trainCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    gap: 14,
-  },
-  trainText: { flex: 1 },
-  trainBig: {
-    color: WHITE,
-    fontSize: 18,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-    fontVariant: ['tabular-nums'],
-  },
-  trainBigDone: {
-    color: GREEN,
-    fontSize: 18,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-  },
-  trainSub: {
-    marginTop: 3,
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 13,
-    fontWeight: '600',
   },
 
   sectionHeader: {
