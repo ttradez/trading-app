@@ -72,6 +72,41 @@ export default function JournalScreen({ navigation }: any) {
         />
       </View>
 
+      {/* Recent Trades — relocated from Dashboard (DESIGN_AUDIT §3.1).
+          3 most-recent entries, or an inline empty state with the
+          same Start-session affordance the Dashboard used to host. */}
+      <View style={styles.recentSection}>
+        <View style={styles.recentHeader}>
+          <Text style={styles.recentLabel}>RECENT TRADES</Text>
+        </View>
+        {entries.length === 0 ? (
+          <View style={styles.recentEmpty}>
+            <Text style={styles.recentEmptyText}>
+              No trades yet. Start a session to place your first trade.
+            </Text>
+            <Button
+              label={PRIMARY_ACTION_LABEL}
+              variant="secondary"
+              onPress={() => navigation.navigate('Chart')}
+              style={styles.recentEmptyCta}
+            />
+          </View>
+        ) : (
+          <View style={styles.recentList}>
+            {[...entries]
+              .sort((a, b) => b.savedAt - a.savedAt)
+              .slice(0, 3)
+              .map((e) => (
+                <JournalTradeCard
+                  key={`recent-${e.id}`}
+                  entry={e}
+                  onPress={() => setEditing(e)}
+                />
+              ))}
+          </View>
+        )}
+      </View>
+
       {/* Filter pills — locked FilterChip (DESIGN_AUDIT §2.4) */}
       <View style={styles.filterRow}>
         {(['all', 'wins', 'losses'] as Filter[]).map((f) => (
@@ -356,6 +391,34 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, color: colors.textPrimary, fontSize: fontSize.sm },
 
   filterRow: { flexDirection: 'row', paddingHorizontal: spacing.lg, gap: 8, marginBottom: spacing.sm },
+
+  // Recent Trades section (relocated from Dashboard — §3.1).
+  recentSection: {
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  recentHeader: { marginBottom: spacing.sm },
+  recentLabel: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+  },
+  recentList: { gap: 10 },
+  recentEmpty: {
+    alignItems: 'center',
+    paddingVertical: 16,
+  },
+  recentEmptyText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 14,
+    fontWeight: '500',
+    lineHeight: 20,
+    textAlign: 'center',
+    maxWidth: 280,
+  },
+  recentEmptyCta: { marginTop: 12 },
 
   summary: {
     flexDirection: 'row', justifyContent: 'space-between',

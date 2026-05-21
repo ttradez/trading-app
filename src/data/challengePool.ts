@@ -67,11 +67,14 @@ export const CONDITION_MODE: Record<string, 'add' | 'max'> = {
   // everything else defaults to 'add'
 };
 
+// Filled / duotone variants — DESIGN_AUDIT §3.1 PART C. Filled icons
+// read with more weight against the dark surface and reinforce
+// Daily Challenges as a distinct, "active" section.
 const CATEGORY_ICON: Record<ChallengeCategory, string> = {
   volume: 'repeat',
   skill: 'target',
   process: 'notebook-edit',
-  discovery: 'compass-outline',
+  discovery: 'compass',
   consistency: 'calendar-check',
 };
 export function challengeIcon(cat: ChallengeCategory): string {

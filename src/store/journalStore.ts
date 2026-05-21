@@ -24,6 +24,13 @@ export interface JournalEntry {
   takeProfit: number | null;
   pnl: number;
   rMultiple: number | null;
+  /** Realized reward$ / risk$ at exit. Surfaces in the Dashboard
+   *  Avg R:R metric. Null when the trade closed without a planned
+   *  risk-amount (legacy entries, plan-skipped trades). */
+  rrAchieved: number | null;
+  /** Risk in account dollars (stopLossDistance × lots × tickValue).
+   *  Required to derive rrAchieved at exit. Null = unknown. */
+  riskAmount: number | null;
   openedAt: number;
   closedAt: number;
   // pre-trade plan (intent captured BEFORE placement; never edited)
@@ -118,6 +125,12 @@ export const useJournalStore = create<JournalState>((set, get) => ({
           planStopPrice: e.planStopPrice ?? null,
           planTargetPrice: e.planTargetPrice ?? null,
           planSkipped: e.planSkipped ?? false,
+          // Backfill new metric fields. Older entries default to
+          // rMultiple where available (it IS the realized R) so
+          // avgRR has data on day one; new trades should populate
+          // these explicitly at the execution site.
+          rrAchieved: e.rrAchieved ?? e.rMultiple ?? null,
+          riskAmount: e.riskAmount ?? null,
         };
       });
       set({ entries: migrated });

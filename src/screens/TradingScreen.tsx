@@ -353,6 +353,15 @@ export default function TradingScreen({ route, navigation }: any) {
       takeProfit: t.take_profit ?? null,
       pnl:        typeof t.pnl === 'number' ? t.pnl : 0,
       rMultiple:  typeof t.r_multiple === 'number' ? t.r_multiple : null,
+      // TODO(metrics): the execution engine returns r_multiple (the
+      // realized R) but no explicit risk$ amount, so rrAchieved is
+      // currently aliased to r_multiple and riskAmount stays null.
+      // A future pass should compute risk$ from planStopPrice ×
+      // contract spec and divide realized $ P&L by it for a true
+      // rrAchieved — needed for accurate Dashboard Avg R:R when
+      // r_multiple isn't emitted by the backend.
+      rrAchieved: typeof t.r_multiple === 'number' ? t.r_multiple : null,
+      riskAmount: null,
       openedAt:   toEpochMs(t.opened_at),
       closedAt:   toEpochMs(t.closed_at),
       planSetupType:   t.planSetupType ?? null,

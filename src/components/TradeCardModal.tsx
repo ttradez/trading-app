@@ -80,6 +80,10 @@ export default function TradeCardModal({ trade, onClose }: Props) {
       planStopPrice:   prev?.planStopPrice ?? null,
       planTargetPrice: prev?.planTargetPrice ?? null,
       planSkipped:     prev?.planSkipped ?? false,
+      // Carry forward metric fields if previously populated by the
+      // auto-journal at close (TradingScreen). See §3.1 metrics TODO.
+      rrAchieved:      prev?.rrAchieved ?? rMultiple ?? null,
+      riskAmount:      prev?.riskAmount ?? null,
       notes: '',
       mistakes: '',
       wentWell: '',

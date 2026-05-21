@@ -33,6 +33,7 @@ import SettingsScreen     from './src/screens/SettingsScreen';
 import SetupLibraryScreen from './src/screens/SetupLibraryScreen';
 import SetupDetailScreen  from './src/screens/SetupDetailScreen';
 import InsightsScreen     from './src/screens/InsightsScreen';
+import AccountDetailScreen from './src/screens/AccountDetailScreen';
 import { useJournalStore } from './src/store/journalStore';
 import OnboardingSplashScreen    from './src/screens/OnboardingSplashScreen';
 import OnboardingPremiseScreen   from './src/screens/OnboardingPremiseScreen';
@@ -117,16 +118,26 @@ function MainTabs() {
         },
         tabBarIconStyle: { marginTop: 0 },
         tabBarIcon: ({ color, focused }) => {
-          const iconMap: Record<string, keyof typeof Ionicons.glyphMap> = {
+          // Filled when active, line when inactive — a standard
+          // premium-app pattern (§3.1 PART C). Inactive keeps the
+          // quieter outline silhouette.
+          const filled: Record<string, keyof typeof Ionicons.glyphMap> = {
+            Dashboard:   'home',
+            Chart:       'analytics',
+            Journal:     'journal',
+            Leaderboard: 'trophy',
+          };
+          const outline: Record<string, keyof typeof Ionicons.glyphMap> = {
             Dashboard:   'home-outline',
             Chart:       'analytics-outline',
             Journal:     'journal-outline',
             Leaderboard: 'trophy-outline',
           };
+          const name = (focused ? filled : outline)[route.name] ?? 'help';
           return (
             <View style={tabStyles.iconWrap}>
               {focused && <View style={tabStyles.activeDot} />}
-              <Ionicons name={iconMap[route.name] ?? 'help'} size={18} color={color} />
+              <Ionicons name={name} size={18} color={color} />
             </View>
           );
         },
@@ -313,6 +324,9 @@ export default function App() {
           {/* "Your Tendencies" — pushed from the Journal card and
               the dashboard insights link. */}
           <Stack.Screen name="Insights"              component={InsightsScreen} />
+          {/* Account performance detail — stub destination for the
+              Dashboard Account hero card tap (§3.1). */}
+          <Stack.Screen name="AccountDetail"         component={AccountDetailScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>

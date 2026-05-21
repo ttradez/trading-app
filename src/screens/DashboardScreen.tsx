@@ -1,56 +1,59 @@
-import React, { useMemo, useRef, useEffect } from 'react';
+import React, { useMemo } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, Pressable, Animated,
-  Easing, Alert,
+  View, Text, ScrollView, StyleSheet, Pressable, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import Svg, { Circle } from 'react-native-svg';
+import Svg, {
+  Circle, Defs, LinearGradient, RadialGradient, Rect, Stop,
+} from 'react-native-svg';
 
 import { useStreakStore, computeDisplayStatus } from '../store/streakStore';
 import { useOnboardingStore, Archetype } from '../store/onboardingStore';
-import { useJournalStore, JournalEntry } from '../store/journalStore';
-import { useTradeJournalStore, TradeGrade } from '../store/tradeJournalStore';
+import { useJournalStore } from '../store/journalStore';
 import { useIsTodaySetupComplete } from '../store/dailySetupStore';
 import { useWatchlistStore, savedSetupStartUnixSeconds } from '../store/watchlistStore';
 import { useBadgeStore } from '../store/badgeStore';
-import { BADGES, BADGE_COUNT, Badge } from '../data/badges';
+import { BADGES, Badge } from '../data/badges';
 import { SETUP_LIBRARY_COUNT } from '../data/setupLibrary';
 import { buildBadgeContext, getBadgeProgress } from '../utils/badgeChecker';
 import { useXpStore } from '../store/xpStore';
 import { getRankForXP } from '../data/rankConfig';
 import { useChallengeStore, ChallengeInstance } from '../store/challengeStore';
-import { getTemplate, challengeIcon } from '../data/challengePool';
 import {
   getTodaySetup, setupStartUnixSeconds, SetupDifficulty,
 } from '../data/dailySetups';
 
 import StreakBadge from '../components/StreakBadge';
-import TradeCard from '../components/TradeCard';
-import RankBanner from '../components/RankBanner';
-import ProgressBar from '../components/ProgressBar';
 import SectionHeader from '../components/SectionHeader';
 import Button from '../components/ui/Button';
+import AccountPerformanceCard from '../components/AccountPerformanceCard';
+import MetricsCard from '../components/MetricsCard';
+import DailyChallengeTile from '../components/DailyChallengeTile';
+import LongTermGoalsCollapsible from '../components/LongTermGoalsCollapsible';
+import RankStrip from '../components/RankStrip';
 import { colors as DT } from '../theme/tokens';
-import { PRIMARY_ACTION_LABEL } from '../theme/copy';
 
 /**
- * DashboardScreen — 3-zone restructure (2026-05-15).
+ * DashboardScreen — restructured around trading performance and
+ * visual variety (DESIGN_AUDIT §3.1 + user feedback).
  *
- * Reads exclusively from in-process Zustand stores so the first
- * paint is immediate. Organized into three scannable zones so the
- * answer to "why open the app right now" is always above the fold:
+ * Top to bottom:
+ *  1. Header                — archetype · handle · streak · cog
+ *  2. AccountPerformanceCard — equity hero with count-up + sparkline
+ *  3. MetricsCard           — single divided card, 4 cells
+ *  4. Today's Mission       — staged-poster card, radial-gold glow
+ *  5. Daily Challenges      — horizontal scroller of square tiles
+ *  6. Long-term Goals       — collapsed row, expands to 2 cards
+ *  7. RankStrip             — slim 64pt strip, replaces rank card
+ *                             + next-badge grid + process stats
+ *  8. Setup Library         — row card with stacked-cards glyph
+ *  9. Daily time goal       — premium ring (gradient + dot)
+ *  (10. Saved Setups        — only when ≥1, kept from prior IA)
  *
- *   ZONE 1 · TODAY     — Today's Mission, Daily Challenges
- *                        (compact), small inline Training ring.
- *   ZONE 2 · PROGRESS  — Rank progression, Next Badges, process
- *                        stats (Trades / Win Rate / Journal Rate /
- *                        Avg Grade).
- *   ZONE 3 · ACTIVITY  — Recent Trades, Saved Setups (only when
- *                        the user has ≥1 — empty states never take
- *                        dashboard real estate).
- *
- * A thin divider + extra gap separates zones for visual grouping.
+ * Recent Trades moved to the top of JournalScreen. The standalone
+ * "Start session" footer button is removed — Today's Mission is the
+ * one Primary CTA on the screen.
  */
 
 const BG          = '#000000';
@@ -58,15 +61,13 @@ const CARD_BG     = '#0F0F0F';
 const CARD_BORDER = '#1F1F1F';
 const TRACK       = '#1F1F1F';
 const GOLD        = '#FFB800';
+const GOLD_WARM   = '#FFD466';
 const GREEN       = '#00D395';
 const RED         = '#FF4757';
 const WHITE       = '#FFFFFF';
 
 type MCIName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 
-/** Archetype meta — third inline copy of the name + icon mapping.
- *  Convergence into a shared module is deferred (would require
- *  touching onboarding screens). */
 const ARCHETYPE_META: Record<Archetype, { name: string; icon: MCIName }> = {
   scalper:         { name: 'Scalper',         icon: 'lightning-bolt' },
   day_trader:      { name: 'Day Trader',      icon: 'clock-outline' },
@@ -79,46 +80,56 @@ const MONTHS_SHORT = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
 
-/** "2022-09-13" → "Sep 13, 2022". String-parsed (no `new Date()`)
- *  so a YYYY-MM-DD never shifts a day in negative-UTC zones. */
+/** "2022-09-13" → "Sep 13, 2022", string-parsed (no `new Date()`). */
 function formatSavedDate(ymd: string): string {
   const [y, m, d] = ymd.split('-').map((n) => parseInt(n, 10));
   if (!y || !m || !d) return ymd;
   return `${MONTHS_SHORT[m - 1]} ${d}, ${y}`;
 }
 
-// Journal grade ↔ number mapping for the "Avg Grade" stat tile.
-const GRADE_NUM: Record<string, number> = { 'A+': 5, A: 4, B: 3, C: 2, F: 1 };
-const NUM_GRADE: Record<number, string> = { 5: 'A+', 4: 'A', 3: 'B', 2: 'C', 1: 'F' };
+// ── Premium daily time-goal ring (gradient stroke + arc-end dot) ───
 
-// ── Daily training progress ring (parameterized; now a small
-//    supporting element, not a hero) ─────────────────────────────
-
-function ProgressRing({
-  minutes, goal, size, stroke,
-}: { minutes: number; goal: number; size: number; stroke: number }) {
+function TrainingTimeRing({
+  minutes, goal, size = 56, stroke = 10,
+}: { minutes: number; goal: number; size?: number; stroke?: number }) {
   const safeGoal = Math.max(1, goal);
   const ratio    = Math.min(1, minutes / safeGoal);
   const radius   = (size - stroke) / 2;
-  const circ     = 2 * Math.PI * radius;
-  const offset   = circ * (1 - ratio);
-  const done     = ratio >= 1;
+  const cx = size / 2;
+  const cy = size / 2;
+  const circ = 2 * Math.PI * radius;
+  const offset = circ * (1 - ratio);
+  const done = ratio >= 1;
+
+  // Indicator dot at arc end. Arc starts at -90° (top) and sweeps
+  // clockwise; the dot rides the leading edge of the gold stroke.
+  const angle = -Math.PI / 2 + ratio * 2 * Math.PI;
+  const dotX = cx + radius * Math.cos(angle);
+  const dotY = cy + radius * Math.sin(angle);
 
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
       <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
+        <Defs>
+          <LinearGradient id="timeArc" x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0" stopColor={GOLD} />
+            <Stop offset="1" stopColor={GOLD_WARM} />
+          </LinearGradient>
+        </Defs>
+        <Circle cx={cx} cy={cy} r={radius} stroke={TRACK} strokeWidth={stroke} fill="none" />
         <Circle
-          cx={size / 2} cy={size / 2} r={radius}
-          stroke={TRACK} strokeWidth={stroke} fill="none"
-        />
-        <Circle
-          cx={size / 2} cy={size / 2} r={radius}
-          stroke={GOLD} strokeWidth={stroke} fill="none"
+          cx={cx} cy={cy} r={radius}
+          stroke="url(#timeArc)"
+          strokeWidth={stroke}
+          fill="none"
           strokeDasharray={`${circ} ${circ}`}
           strokeDashoffset={offset}
           strokeLinecap="round"
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          transform={`rotate(-90 ${cx} ${cy})`}
         />
+        {ratio > 0 && !done && (
+          <Circle cx={dotX} cy={dotY} r={stroke / 2 - 1} fill={GOLD_WARM} />
+        )}
       </Svg>
       {done && (
         <Ionicons name="checkmark" size={Math.round(size * 0.42)} color={GOLD} />
@@ -127,28 +138,47 @@ function ProgressRing({
   );
 }
 
-// ── Per-trade grade-aware wrapper around TradeCard ─────────────────────────
+// ── Setup Library stacked-cards glyph (3 offset rounded rects) ─────
 
-function RecentTradeRow({ entry }: { entry: JournalEntry }) {
-  const grade = useTradeJournalStore((s) => s.entries[entry.id]?.grade);
+function StackedCardsGlyph({ size = 28 }: { size?: number }) {
   return (
-    <TradeCard
-      symbol={entry.symbol}
-      direction={entry.side === 'buy' ? 'long' : 'short'}
-      entryPrice={entry.entryPrice}
-      exitPrice={entry.exitPrice}
-      pnl={entry.pnl}
-      entryTime={entry.openedAt}
-      exitTime={entry.closedAt}
-      contracts={entry.lots}
-      status="closed"
-      grade={grade}
-      planSetupType={entry.planSetupType}
-    />
+    <Svg width={size} height={size} viewBox="0 0 28 28">
+      {/* Back card */}
+      <Rect x={6} y={4} width={16} height={14} rx={3} ry={3}
+        stroke="rgba(255,255,255,0.18)" strokeWidth={1.2} fill="none" />
+      {/* Middle card */}
+      <Rect x={4} y={7} width={16} height={14} rx={3} ry={3}
+        stroke="rgba(255,255,255,0.22)" strokeWidth={1.2} fill="none" />
+      {/* Front card */}
+      <Rect x={2} y={10} width={16} height={14} rx={3} ry={3}
+        stroke="rgba(255,255,255,0.32)" strokeWidth={1.4} fill="none" />
+    </Svg>
   );
 }
 
-// ── Screen ─────────────────────────────────────────────────────────────────
+// ── Today's Mission radial gold ambient ────────────────────────────
+
+function MissionGlow({ width, height }: { width: number; height: number }) {
+  if (width <= 0) return null;
+  return (
+    <Svg
+      width={width}
+      height={height}
+      style={StyleSheet.absoluteFill}
+      pointerEvents="none"
+    >
+      <Defs>
+        <RadialGradient id="missionGlow" cx="50%" cy="35%" rx="65%" ry="55%">
+          <Stop offset="0" stopColor={GOLD} stopOpacity="0.06" />
+          <Stop offset="1" stopColor={GOLD} stopOpacity="0" />
+        </RadialGradient>
+      </Defs>
+      <Rect x={0} y={0} width={width} height={height} fill="url(#missionGlow)" />
+    </Svg>
+  );
+}
+
+// ── Screen ─────────────────────────────────────────────────────────
 
 export default function DashboardScreen({ navigation }: any) {
   // Streak / training time
@@ -169,114 +199,24 @@ export default function DashboardScreen({ navigation }: any) {
   // User-curated watchlist (bookmarked from the chart screen).
   const savedSetups = useWatchlistStore((s) => s.savedSetups);
 
-  // Badge unlock ledger — drives the "Next Badges" picker.
+  // Badge unlock ledger — drives the "next badge" inline on RankStrip.
   const unlockedBadges = useBadgeStore((s) => s.unlockedBadges);
+
+  // Trade entries — used by the badge "next" picker dependency list.
+  const entries = useJournalStore((s) => s.entries);
 
   // Real XP / rank progression.
   const currentXP = useXpStore((s) => s.currentXP);
   const rankInfo = useMemo(() => getRankForXP(currentXP), [currentXP]);
 
-  const scrollRef = useRef<ScrollView>(null);
-
-  // Goal-gradient (Kivetz et al. 2006): the closer to the next
-  // tier, the louder the cue. ≥80 % → pulsing glow; ≥95 % → a
-  // specific, actionable nudge mapped from the XP gap.
-  const pct = rankInfo.next
-    ? Math.min(1, rankInfo.xpInTier / Math.max(1, rankInfo.xpNeededForNext))
-    : 1;
-  const gap = rankInfo.next
-    ? Math.max(0, rankInfo.xpNeededForNext - rankInfo.xpInTier)
-    : 0;
-  const showPulse = !!rankInfo.next && pct >= 0.8;
-  const showNudge = !!rankInfo.next && pct >= 0.95;
-
-  const glow = useRef(new Animated.Value(0.3)).current;
-  useEffect(() => {
-    if (!showPulse) { glow.setValue(0.3); return; }
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(glow, {
-          toValue: 0.7, duration: 750, easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(glow, {
-          toValue: 0.3, duration: 750, easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [showPulse, glow]);
-
-  // Smallest gap = most specific bucket (evaluate tightest first).
-  const nudge = useMemo(() => {
-    if (!showNudge || !rankInfo.next) return null;
-    const to = rankInfo.next.label;
-    if (gap <= 15) {
-      return { text: `1 journaled trade to ${to}`, action: 'chart' as const };
-    }
-    if (gap <= 30) {
-      return { text: `2 trades to ${to}`, action: 'chart' as const };
-    }
-    if (gap <= 50) {
-      return { text: `1 Daily Setup away from ${to}`, action: 'top' as const };
-    }
-    return { text: `${gap} XP to ${to}`, action: 'challenges' as const };
-  }, [showNudge, gap, rankInfo.next]);
-
-  const onNudge = () => {
-    if (!nudge) return;
-    if (nudge.action === 'chart') { navigation.navigate('Chart'); return; }
-    if (nudge.action === 'top') {
-      scrollRef.current?.scrollTo({ y: 0, animated: true });
-      return;
-    }
-    scrollRef.current?.scrollToEnd({ animated: true });
-  };
-
-  // Trade history — auto-persisted on close by TradingScreen.
-  const entries = useJournalStore((s) => s.entries);
-  // Per-trade grades / reflections (keyed by the trade id).
-  const tjEntries = useTradeJournalStore((s) => s.entries);
-
-  // Derived process stats (outcome stats — Total P&L / Best Trade —
-  // intentionally dropped in favor of process metrics).
-  const stats = useMemo(() => {
-    const total = entries.length;
-    if (total === 0) {
-      return {
-        hasTrades: false, total: 0, winRate: 0,
-        journalRate: null as number | null, avgGrade: null as string | null,
-      };
-    }
-    const wins = entries.filter((e) => e.pnl > 0).length;
-    const journaled = entries.filter((e) => tjEntries[e.id]).length;
-    const grades = entries
-      .map((e) => tjEntries[e.id]?.grade)
-      .filter((g): g is TradeGrade => !!g)
-      .map((g) => GRADE_NUM[g]);
-    const avgGrade =
-      grades.length > 0
-        ? NUM_GRADE[Math.min(5, Math.max(1, Math.round(
-            grades.reduce((a, b) => a + b, 0) / grades.length,
-          )))]
-        : null;
-    return {
-      hasTrades: true,
-      total,
-      winRate: (wins / total) * 100,
-      journalRate: Math.round((journaled / total) * 100),
-      avgGrade,
-    };
-  }, [entries, tjEntries]);
-
-  // Next 3 unlockable badges — the locked numeric-progress badges
-  // closest to completion (ratio desc, then smallest remaining).
-  // Boolean-only badges (no clean "x/y") are skipped here.
-  const nextBadges = useMemo(() => {
+  // Single closest-to-completion next badge (drives RankStrip's
+  // right side). Locked badges with numeric progress, ratio desc,
+  // tie-broken by lowest remaining.
+  const nextBadge = useMemo(() => {
     const ctx = buildBadgeContext();
-    const cands: { badge: Badge; current: number; target: number; ratio: number }[] = [];
+    const cands: {
+      badge: Badge; current: number; target: number; ratio: number;
+    }[] = [];
     for (const b of BADGES) {
       if (unlockedBadges[b.id]) continue;
       const prog = getBadgeProgress(b.id, ctx);
@@ -293,24 +233,24 @@ export default function DashboardScreen({ navigation }: any) {
         b.ratio - a.ratio ||
         (a.target - a.current) - (b.target - b.current),
     );
-    return cands.slice(0, 3);
-  }, [entries, tjEntries, unlockedBadges, streakCount, savedSetups]);
+    return cands[0] ?? null;
+  }, [entries, unlockedBadges, streakCount, savedSetups]);
 
-  const recentTrades = useMemo(() => entries.slice(0, 3), [entries]);
   const goalDone = minutesToday >= dailyGoalMin;
 
   const goToBadges = () =>
     navigation.navigate('Leaderboard', { initialSegment: 'badges' });
 
+  const startSession = () => navigation.navigate('Chart');
+
   return (
     <SafeAreaView edges={['top']} style={styles.root}>
       <ScrollView
-        ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── HEADER — identity + rank + streak, one compact row ── */}
+        {/* ── 1 · HEADER ────────────────────────────────────── */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             {archetypeMeta && (
@@ -375,79 +315,58 @@ export default function DashboardScreen({ navigation }: any) {
           </View>
         </View>
 
-        {/* ═══════════ ZONE 1 · TODAY ═══════════ */}
-
-        {/* SECTION 1 — Today's Mission (unchanged, best card in app) */}
-        <View
-          style={[
-            styles.card,
-            styles.missionCard,
-            styles.missionElevated,
-            setupComplete && styles.missionCardDone,
-          ]}
-        >
-          {setupComplete && <View style={styles.missionAccent} />}
-          <View style={styles.missionInner}>
-            <View style={styles.missionTopRow}>
-              <Text style={styles.missionLabel}>TODAY'S MISSION</Text>
-              <DifficultyBadge difficulty={todaySetup.difficulty} />
-            </View>
-
-            <Text style={styles.missionTitle}>{todaySetup.title}</Text>
-            <Text style={styles.missionSubtitle}>
-              {todaySetup.symbol} · {todaySetup.setupType}
-            </Text>
-            <Text style={styles.missionDescription}>
-              {todaySetup.description}
-            </Text>
-            <View style={styles.missionTipRow}>
-              <Ionicons
-                name="bulb-outline"
-                size={14}
-                color={GOLD}
-                style={styles.missionTipIcon}
-              />
-              <Text style={[styles.missionTip, styles.missionTipText]}>
-                {todaySetup.tip}
-              </Text>
-            </View>
-
-            <View style={styles.ctaWrap}>
-              {setupComplete ? (
-                // Completed state — distinct from primary/secondary
-                // (transparent + green border + check). Not a button
-                // variant; deliberately inline.
-                <View style={styles.missionCtaDone}>
-                  <Text style={styles.missionCtaTextDone}>Completed ✓</Text>
-                </View>
-              ) : (
-                <Button
-                  label="Trade this setup"
-                  variant="primary"
-                  hero
-                  onPress={() =>
-                    navigation.navigate('Chart', {
-                      dailySetup: {
-                        symbol: todaySetup.symbol,
-                        timeframe: todaySetup.timeframe,
-                        startTs: setupStartUnixSeconds(todaySetup),
-                        date: todaySetup.date,
-                        key: `${todaySetup.id}-${Date.now()}`,
-                      },
-                    })
-                  }
-                />
-              )}
-            </View>
-          </View>
-        </View>
-
-        {/* SECTION 2 — Daily Challenges (compact) + long-term */}
+        {/* ── 2 · ACCOUNT PERFORMANCE HERO ───────────────────── */}
         <View style={styles.sectionGap}>
-          <ChallengesSection />
+          <AccountPerformanceCard
+            onPress={() => navigation.navigate('AccountDetail')}
+            onStartSession={startSession}
+          />
         </View>
 
-        {/* Setup Library entry — the curriculum layer. */}
+        {/* ── 3 · KEY METRICS ────────────────────────────────── */}
+        <View style={styles.sectionGap}>
+          <MetricsCard />
+        </View>
+
+        {/* ── 4 · TODAY'S MISSION ────────────────────────────── */}
+        <View style={styles.sectionGap}>
+          <TodaysMissionCard
+            todaySetup={todaySetup}
+            setupComplete={setupComplete}
+            onTrade={() =>
+              navigation.navigate('Chart', {
+                dailySetup: {
+                  symbol: todaySetup.symbol,
+                  timeframe: todaySetup.timeframe,
+                  startTs: setupStartUnixSeconds(todaySetup),
+                  date: todaySetup.date,
+                  key: `${todaySetup.id}-${Date.now()}`,
+                },
+              })
+            }
+          />
+        </View>
+
+        {/* ── 5 · DAILY CHALLENGES (horizontal scroller) ─────── */}
+        <View style={styles.sectionGap}>
+          <DailyChallengesStrip />
+        </View>
+
+        {/* ── 6 · LONG-TERM GOALS (collapsed row) ────────────── */}
+        <View style={styles.sectionGap}>
+          <LongTermGoalsRow />
+        </View>
+
+        {/* ── 7 · RANK STRIP (replaces rank card + badges grid) */}
+        <View style={styles.sectionGap}>
+          <RankStrip
+            rankInfo={rankInfo}
+            nextBadge={nextBadge}
+            onPress={goToBadges}
+          />
+        </View>
+
+        {/* ── 8 · SETUP LIBRARY ──────────────────────────────── */}
         <Pressable
           style={[styles.card, styles.libCard, styles.sectionGap]}
           onPress={() => navigation.navigate('SetupLibrary')}
@@ -461,6 +380,12 @@ export default function DashboardScreen({ navigation }: any) {
               {SETUP_LIBRARY_COUNT} patterns to learn
             </Text>
           </View>
+          {/* Decorative stacked-cards glyph hints at "library of
+              patterns." White@30% so it reads as ambient, not as
+              an actionable affordance. */}
+          <View style={styles.libGlyph}>
+            <StackedCardsGlyph size={36} />
+          </View>
           <Ionicons
             name="chevron-forward"
             size={18}
@@ -468,18 +393,18 @@ export default function DashboardScreen({ navigation }: any) {
           />
         </Pressable>
 
-        {/* SECTION 3 — Training Progress (small inline) */}
+        {/* ── 9 · DAILY TIME GOAL RING ───────────────────────── */}
         <Pressable
           style={[styles.card, styles.trainCard, styles.sectionGap]}
           onPress={() => navigation.navigate('Chart')}
           accessibilityRole="button"
           accessibilityLabel={`${Math.floor(minutesToday)} of ${dailyGoalMin} training minutes today`}
         >
-          <ProgressRing
+          <TrainingTimeRing
             minutes={minutesToday}
             goal={dailyGoalMin}
-            size={56}
-            stroke={6}
+            size={64}
+            stroke={10}
           />
           <View style={styles.trainText}>
             {goalDone ? (
@@ -495,193 +420,7 @@ export default function DashboardScreen({ navigation }: any) {
           </View>
         </Pressable>
 
-        {/* ── zone divider ── */}
-        <View style={styles.zoneDivider} />
-
-        {/* ═══════════ ZONE 2 · PROGRESS ═══════════ */}
-
-        {/* SECTION 4 — Rank Progression (moved up) */}
-        <View style={[styles.card, styles.rankCard]}>
-          <View style={styles.rankBannerWrap}>
-            <RankBanner
-              rank={rankInfo.rank}
-              width={130}
-              subTier={rankInfo.subTier}
-            />
-          </View>
-          <View style={styles.rankTextWrap}>
-            <Text style={styles.rankName}>{rankInfo.label}</Text>
-            <View style={styles.rankBarTrack}>
-              <ProgressBar
-                progress={pct}
-                size="lg"
-                variant="gold"
-                glow
-                animated
-              />
-            </View>
-            <Text style={styles.rankSub}>
-              {rankInfo.next
-                ? `${rankInfo.xpInTier} / ${rankInfo.xpNeededForNext} XP to ${rankInfo.next.label}`
-                : 'Max rank reached'}
-            </Text>
-          </View>
-        </View>
-
-        {/* Goal-gradient nudge — only at ≥95 %. */}
-        {nudge && (
-          <Pressable
-            onPress={onNudge}
-            style={({ pressed }) => [
-              styles.nudgeCard,
-              pressed && { opacity: 0.8 },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel={nudge.text}
-          >
-            <View style={styles.nudgeAccent} />
-            <View style={styles.nudgeInner}>
-              <MaterialCommunityIcons
-                name="rocket-launch-outline"
-                size={18}
-                color={GOLD}
-                style={{ marginRight: 10 }}
-              />
-              <Text style={styles.nudgeText}>{nudge.text}</Text>
-              <View style={{ flex: 1 }} />
-              <Ionicons
-                name="chevron-forward"
-                size={16}
-                color="rgba(255,255,255,0.4)"
-              />
-            </View>
-          </Pressable>
-        )}
-
-        {/* SECTION 5 — Next Badges (replaces the 0/30 counter) */}
-        <View style={[styles.sectionHeader, styles.sectionGap]}>
-          <SectionHeader
-            title="Next Badges"
-            icon={<MaterialCommunityIcons name="medal-outline" size={16} color="rgba(255,255,255,0.5)" />}
-            actionLabel="View all"
-            actionCount={BADGE_COUNT}
-            onActionPress={goToBadges}
-          />
-        </View>
-        {nextBadges.length > 0 && (
-          <View style={styles.badgeRow}>
-            {nextBadges.map(({ badge, current, target }) => (
-              <Pressable
-                key={badge.id}
-                style={({ pressed }) => [
-                  styles.badgeItem,
-                  pressed && { opacity: 0.7 },
-                ]}
-                onPress={goToBadges}
-                accessibilityRole="button"
-                accessibilityLabel={`${badge.name}, ${current} of ${target}`}
-              >
-                <MaterialCommunityIcons
-                  name={badge.icon}
-                  size={24}
-                  color="rgba(255,184,0,0.5)"
-                />
-                <Text style={styles.badgeName} numberOfLines={2}>
-                  {badge.name}
-                </Text>
-                <Text style={styles.badgeProg}>
-                  {current}/{target}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        )}
-        {/* "View all" moved into the SectionHeader action above. */}
-
-        {/* SECTION 6 — Process Stats (2 × 2) */}
-        <View style={[styles.statsGrid, styles.sectionGap]}>
-          <StatCard
-            label="Trades"
-            value={String(stats.total)}
-            muted={!stats.hasTrades}
-            icon={<Ionicons name="repeat" size={14} color={DT.textQuaternary} />}
-          />
-          <StatCard
-            label="Win Rate"
-            value={stats.hasTrades
-              ? `${Math.round(stats.winRate)}% (${stats.total})`
-              : '—'}
-            color={stats.hasTrades
-              ? (stats.winRate >= 50 ? GREEN : RED)
-              : undefined}
-            muted={!stats.hasTrades}
-            icon={<MaterialCommunityIcons name="target" size={14} color={GOLD} />}
-          />
-          <StatCard
-            label="Journal Rate"
-            value={stats.journalRate !== null ? `${stats.journalRate}%` : '—'}
-            color={stats.journalRate !== null
-              ? (stats.journalRate >= 50 ? GREEN : undefined)
-              : undefined}
-            muted={!stats.hasTrades}
-            icon={<MaterialCommunityIcons name="notebook-edit-outline" size={14} color={GOLD} />}
-          />
-          <StatCard
-            label="Avg Grade"
-            value={stats.avgGrade ?? '—'}
-            color={stats.avgGrade
-              ? (GRADE_NUM[stats.avgGrade] >= 4 ? GREEN
-                : GRADE_NUM[stats.avgGrade] <= 2 ? RED : undefined)
-              : undefined}
-            muted={!stats.avgGrade}
-            icon={<Ionicons name="school-outline" size={14} color={GOLD} />}
-          />
-        </View>
-
-        {/* "Your Tendencies" — behavioral insights from history. */}
-        <Button
-          label="View trading insights"
-          variant="tertiary"
-          onPress={() => navigation.navigate('Insights')}
-          style={styles.insightsLink}
-        />
-
-        {/* ── zone divider ── */}
-        <View style={styles.zoneDivider} />
-
-        {/* ═══════════ ZONE 3 · ACTIVITY ═══════════ */}
-
-        {/* SECTION 7 — Recent Trades */}
-        <View style={styles.sectionHeaderTight}>
-          <SectionHeader
-            title="Recent Trades"
-            icon={<Ionicons name="time-outline" size={16} color="rgba(255,255,255,0.5)" />}
-            actionLabel={stats.hasTrades ? 'View all' : undefined}
-            onActionPress={() => navigation.navigate('Journal')}
-          />
-        </View>
-
-        {recentTrades.length === 0 ? (
-          <View style={styles.emptyTrades}>
-            <Text style={styles.emptyTradesText}>
-              No trades yet. Start a session to place your first trade.
-            </Text>
-            <Button
-              label={PRIMARY_ACTION_LABEL}
-              variant="secondary"
-              onPress={() => navigation.navigate('Chart')}
-              style={styles.startBtn}
-            />
-          </View>
-        ) : (
-          <View style={styles.tradeList}>
-            {recentTrades.map((e) => (
-              <RecentTradeRow key={e.id} entry={e} />
-            ))}
-          </View>
-        )}
-
-        {/* SECTION 8 — Saved Setups (only when ≥1; no empty state) */}
+        {/* ── 10 · SAVED SETUPS (conditional, kept from prior IA) */}
         {savedSetups.length > 0 && (
           <>
             <View style={[styles.sectionHeader, styles.sectionGap]}>
@@ -734,7 +473,80 @@ export default function DashboardScreen({ navigation }: any) {
   );
 }
 
-// ── Difficulty badge ───────────────────────────────────────────────────────
+// ── Today's Mission card ───────────────────────────────────────────
+
+function TodaysMissionCard({
+  todaySetup, setupComplete, onTrade,
+}: {
+  todaySetup: ReturnType<typeof getTodaySetup>;
+  setupComplete: boolean;
+  onTrade: () => void;
+}) {
+  const [size, setSize] = React.useState({ w: 0, h: 0 });
+  return (
+    <View
+      style={[
+        styles.card,
+        styles.missionCard,
+        styles.missionElevated,
+        setupComplete && styles.missionCardDone,
+      ]}
+      onLayout={(e) => {
+        const { width, height } = e.nativeEvent.layout;
+        setSize({ w: width, h: height });
+      }}
+    >
+      {/* Radial gold ambient — turns the card from "flat dark
+          rectangle" into a stage (~6% peak per §3.1). */}
+      <MissionGlow width={size.w} height={size.h} />
+      {setupComplete && <View style={styles.missionAccent} />}
+      <View style={styles.missionInner}>
+        <View style={styles.missionTopRow}>
+          <Text style={styles.missionLabel}>TODAY'S MISSION</Text>
+          <DifficultyBadge difficulty={todaySetup.difficulty} />
+        </View>
+
+        <Text style={styles.missionTitle}>{todaySetup.title}</Text>
+        <Text style={styles.missionSubtitle}>
+          {todaySetup.symbol} · {todaySetup.setupType}
+        </Text>
+        <Text style={styles.missionDescription}>
+          {todaySetup.description}
+        </Text>
+        <View style={styles.missionTipRow}>
+          {/* Filled bulb at gold@90% (PART C — filled where it
+              should read with weight). */}
+          <Ionicons
+            name="bulb"
+            size={14}
+            color="rgba(255,184,0,0.9)"
+            style={styles.missionTipIcon}
+          />
+          <Text style={[styles.missionTip, styles.missionTipText]}>
+            {todaySetup.tip}
+          </Text>
+        </View>
+
+        <View style={styles.missionCtaWrap}>
+          {setupComplete ? (
+            <View style={styles.missionCtaDone}>
+              <Text style={styles.missionCtaTextDone}>Completed ✓</Text>
+            </View>
+          ) : (
+            <Button
+              label="Trade this setup"
+              variant="primary"
+              hero
+              onPress={onTrade}
+            />
+          )}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// ── Difficulty badge — refined to label-size, 1px border ──────────
 
 function DifficultyBadge({ difficulty }: { difficulty: SetupDifficulty }) {
   const color =
@@ -749,128 +561,10 @@ function DifficultyBadge({ difficulty }: { difficulty: SetupDifficulty }) {
   );
 }
 
-// ── Stat card ──────────────────────────────────────────────────────────────
+// ── Daily Challenges horizontal scroller ───────────────────────────
 
-function StatCard({
-  label, value, color, muted, icon,
-}: {
-  label: string; value: string; color?: string; muted?: boolean;
-  icon?: React.ReactNode;
-}) {
-  return (
-    <View style={[styles.statCard, muted && styles.statCardMuted]}>
-      {icon ? <View style={styles.statIcon}>{icon}</View> : null}
-      <Text
-        style={[
-          styles.statValue,
-          color ? { color } : null,
-          muted && styles.statValueMuted,
-        ]}
-        allowFontScaling={false}
-        numberOfLines={1}
-      >
-        {value}
-      </Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
-  );
-}
-
-// ── Challenges (compact) ───────────────────────────────────────────────────
-
-function CompactChallengeCard({
-  inst, tag, large, onSwap, swapAvailable,
-}: {
-  inst: ChallengeInstance;
-  tag?: 'WEEKLY' | 'MONTHLY';
-  large?: boolean;
-  onSwap?: () => void;
-  swapAvailable?: boolean;
-}) {
-  const t = getTemplate(inst.challengeId);
-  if (!t) return null;
-  const pct = Math.min(1, inst.target > 0 ? inst.progress / inst.target : 0);
-  // Left stripe colored by cadence so the type reads at a glance:
-  // weekly green · monthly red · daily = neutral white@30% (was
-  // gold; demoted per DESIGN_AUDIT §2.2 — the stripe is decorative,
-  // not actionable, so it shouldn't compete with primary-CTA gold).
-  const stripeColor =
-    tag === 'WEEKLY' ? GREEN
-      : tag === 'MONTHLY' ? RED
-        : 'rgba(255,255,255,0.3)';
-  return (
-    <View
-      style={[
-        styles.cCard,
-        inst.completed && styles.cCardDone,
-      ]}
-    >
-      <View style={[styles.cAccent, { backgroundColor: stripeColor }]} />
-      <View style={[styles.cInner, large && styles.cInnerLarge]}>
-        {/* Row 1: icon + (tag) + title + progress/check + swap.
-            `cName` takes flex so the title gets the full available
-            width and stops truncating mid-word (§3.8 fix). The +XP
-            reward and "1 swap left" hint move to row 2 below. */}
-        <View style={styles.cRow}>
-          <MaterialCommunityIcons
-            name={challengeIcon(t.category) as any}
-            size={16}
-            color="rgba(255,255,255,0.4)"
-            style={styles.cIcon}
-          />
-          {tag && <Text style={styles.cTag}>{tag}</Text>}
-          <Text style={[styles.cName, { flex: 1 }]} numberOfLines={1}>
-            {t.name}
-          </Text>
-          {inst.completed ? (
-            <Ionicons name="checkmark-circle" size={18} color={GREEN} />
-          ) : (
-            <Text style={styles.cProg}>
-              {Math.floor(inst.progress)}/{inst.target}
-            </Text>
-          )}
-          {onSwap && !inst.completed && (
-            <Pressable
-              onPress={onSwap}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              style={({ pressed }) => [styles.cSwap, pressed && { opacity: 0.5 }]}
-              accessibilityRole="button"
-              accessibilityLabel={`Swap challenge ${t.name}`}
-            >
-              <Ionicons name="refresh" size={16} color={GOLD} />
-            </Pressable>
-          )}
-        </View>
-        {/* Row 2: meta strip — +XP and (optional) "1 swap left". */}
-        <View style={styles.cMetaRow}>
-          <Text
-            style={[styles.cXp, inst.completed && styles.cXpDone]}
-            allowFontScaling={false}
-          >
-            {inst.completed
-              ? `✓ +${inst.xpReward} XP`
-              : `+${inst.xpReward} XP`}
-          </Text>
-          {onSwap && !inst.completed && swapAvailable && (
-            <Text style={styles.cSwapBadge}>1 swap left</Text>
-          )}
-        </View>
-        <View style={styles.cBarTrack}>
-          <ProgressBar
-            progress={pct}
-            size="md"
-            variant={inst.completed ? 'green' : 'gold'}
-          />
-        </View>
-      </View>
-    </View>
-  );
-}
-
-function ChallengesSection() {
+function DailyChallengesStrip() {
   const dailies   = useChallengeStore((s) => s.activeDailies);
-  const weekly    = useChallengeStore((s) => s.activeWeekly);
-  const monthly   = useChallengeStore((s) => s.activeMonthly);
   const skipsUsed = useChallengeStore((s) => s.skipsUsedThisWeek);
   const skipDaily = useChallengeStore((s) => s.skipDaily);
   const userRank  = useXpStore((s) => s.currentRank);
@@ -890,9 +584,14 @@ function ChallengesSection() {
         <Text style={styles.cAllDone}>All daily challenges complete ✓</Text>
       )}
 
-      <View style={[styles.cList, allComplete && styles.cListDone]}>
-        {dailies.map((d, i) => (
-          <CompactChallengeCard
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.dailiesRow}
+        style={[allComplete && { opacity: 0.7 }]}
+      >
+        {dailies.map((d: ChallengeInstance, i: number) => (
+          <DailyChallengeTile
             key={d.challengeId}
             inst={d}
             onSwap={
@@ -903,28 +602,21 @@ function ChallengesSection() {
             swapAvailable={canSwap}
           />
         ))}
-      </View>
-
-      {(weekly || monthly) && (
-        <>
-          <View style={styles.cLongTermLabel}>
-            <SectionHeader title="Long-term" variant="eyebrow" />
-          </View>
-          <View style={styles.cList}>
-            {weekly && (
-              <CompactChallengeCard inst={weekly} tag="WEEKLY" large />
-            )}
-            {monthly && (
-              <CompactChallengeCard inst={monthly} tag="MONTHLY" large />
-            )}
-          </View>
-        </>
-      )}
+      </ScrollView>
     </View>
   );
 }
 
-// ── Styles ─────────────────────────────────────────────────────────────────
+// ── Long-term Goals collapsed row ──────────────────────────────────
+
+function LongTermGoalsRow() {
+  const weekly  = useChallengeStore((s) => s.activeWeekly);
+  const monthly = useChallengeStore((s) => s.activeMonthly);
+  if (!weekly && !monthly) return null;
+  return <LongTermGoalsCollapsible weekly={weekly} monthly={monthly} />;
+}
+
+// ── Styles ─────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG },
@@ -932,19 +624,11 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 20,
     paddingTop: 8,
-    // ~100 px clear of the tab bar so the last card isn't hidden.
-    paddingBottom: 100,
+    paddingBottom: 100, // ~100px clear of the tab bar
   },
 
-  // Gap between sections within a zone (~16 px).
-  sectionGap: { marginTop: 16 },
-  // Between zones: extra space + a hairline rule for visual grouping.
-  zoneDivider: {
-    marginTop: 24,
-    marginBottom: 0,
-    height: 1,
-    backgroundColor: CARD_BORDER,
-  },
+  // PART B — more breathing room: 24pt between major sections.
+  sectionGap: { marginTop: 24 },
 
   // Header — one compact row
   header: {
@@ -952,7 +636,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 8,
-    marginBottom: 16,
+    marginBottom: 8,
   },
   headerLeft: {
     flex: 1,
@@ -981,63 +665,44 @@ const styles = StyleSheet.create({
     borderColor: CARD_BORDER,
     borderWidth: 1,
     borderTopColor: DT.hairlineHighlight,
-    borderRadius: 14,
+    borderRadius: 16,
   },
 
-  // TODAY'S MISSION
+  // ── Today's Mission ──
   missionCard: {
     flexDirection: 'row',
     overflow: 'hidden',
   },
-  // Hero card sits one surface-tier above the rest (#141414).
   missionElevated: {
     backgroundColor: DT.surfaceElevated,
   },
-  missionTipRow: {
-    marginTop: 12,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  missionTipIcon: { marginRight: 6, marginTop: 2 },
-  missionTipText: { marginTop: 0, flex: 1 },
-  missionCardDone: {
-    borderColor: GREEN,
-  },
-  missionAccent: {
-    width: 3,
-    backgroundColor: GREEN,
-  },
-  missionInner: {
-    flex: 1,
-    padding: 20,
-  },
+  missionCardDone: { borderColor: GREEN },
+  missionAccent: { width: 3, backgroundColor: GREEN },
+  missionInner: { flex: 1, padding: 20 },
   missionTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  // KEPT GOLD — deliberate exception to the §2.2 demotion. This is
-  // the ONLY gold eyebrow on the dashboard and marks the singular
-  // "do this right now" hero card; demoting it would equalise the
-  // Today's Mission card with the rest of the page, which defeats
-  // its hero status. (Choice documented per spec: "Confirm with a
-  // comment which way you took it.")
+  // KEPT GOLD — deliberate exception (singular hero card eyebrow).
   missionLabel: {
     color: GOLD,
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 1.5,
   },
+  // Refined: 1px border, smaller padding so the pill reads as a
+  // label-sized chip rather than a chunky button.
   diffBadge: {
     borderWidth: 1,
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
   },
   diffBadgeText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
   },
   missionTitle: {
     marginTop: 14,
@@ -1059,17 +724,20 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     lineHeight: 21,
   },
-  missionTip: {
+  missionTipRow: {
     marginTop: 12,
-    color: 'rgba(255,184,0,0.8)',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  missionTipIcon: { marginRight: 6, marginTop: 2 },
+  missionTip: {
+    color: 'rgba(255,184,0,0.85)',
     fontSize: 13,
     fontStyle: 'italic',
     lineHeight: 19,
   },
-  ctaWrap: {
-    marginTop: 18,
-  },
-  // Completed state — visual only; not a button variant.
+  missionTipText: { flex: 1 },
+  missionCtaWrap: { marginTop: 18 },
   missionCtaDone: {
     height: 52,
     borderRadius: 999,
@@ -1086,7 +754,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
 
-  // Setup Library entry card
+  // ── Setup Library entry card ──
   libCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1107,8 +775,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
+  libGlyph: {
+    marginRight: 4,
+  },
 
-  // Training (compact, inline)
+  // ── Training (compact, inline) ──
   trainCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1137,192 +808,28 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Stats grid
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  statCard: {
-    flexBasis: '48%',
-    flexGrow: 1,
-    backgroundColor: CARD_BG,
-    borderColor: CARD_BORDER,
-    borderWidth: 1,
-    borderTopColor: DT.hairlineHighlight,
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    position: 'relative',
-  },
-  statCardMuted: { opacity: 0.6 },
-  statIcon: { position: 'absolute', top: 10, right: 10 },
-  statValue: {
-    color: WHITE,
-    fontSize: 20,
-    fontWeight: '800',
-    letterSpacing: -0.4,
-    fontVariant: ['tabular-nums'],
-  },
-  statValueMuted: { color: 'rgba(255,255,255,0.5)' },
-  statLabel: {
-    marginTop: 4,
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 0.2,
-  },
-
-  // Section headers
+  // ── Section header (light-weight) ──
   sectionHeader: {
     marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'baseline',
     justifyContent: 'space-between',
   },
-  sectionHeaderTight: {
-    marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-  },
-  sectionTitle: {
-    color: WHITE,
-    fontSize: 18,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-  },
-  viewAllLink: {
-    color: GOLD,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  tradeList: { gap: 10 },
-  emptyTrades: {
-    alignItems: 'center',
-    paddingVertical: 20,
-    paddingHorizontal: 16,
-  },
-  emptyTradesText: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 14,
-    fontWeight: '500',
-    lineHeight: 20,
-    textAlign: 'center',
-    maxWidth: 280,
-  },
-  startBtn: {
-    marginTop: 14,
-  },
 
-  // Rank progression
-  rankCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-  },
-  rankBannerWrap: { marginRight: 12 },
-  rankTextWrap: { flex: 1 },
-  rankName: {
-    color: WHITE,
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: -0.2,
-  },
-  rankBarTrack: {
-    marginTop: 8,
-  },
-  rankBarFill: {
-    height: '100%',
-    backgroundColor: GOLD,
-    borderRadius: 2,
-  },
-  rankBarGlow: {
-    position: 'absolute',
-    left: 0,
-    top: -2,
-    height: 8,
-    backgroundColor: '#FFE08A',
-    borderRadius: 4,
-  },
-  rankSub: {
-    marginTop: 6,
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 0.1,
-  },
-
-  nudgeCard: {
-    marginTop: 10,
-    flexDirection: 'row',
-    backgroundColor: CARD_BG,
-    borderColor: CARD_BORDER,
-    borderWidth: 1,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  nudgeAccent: { width: 3, backgroundColor: GOLD },
-  nudgeInner: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-  },
-  nudgeText: {
-    color: WHITE,
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: -0.1,
-  },
-
-  // Next Badges
-  badgeRow: {
-    flexDirection: 'row',
+  // ── Daily Challenges row ──
+  dailiesRow: {
+    paddingRight: 4,
+    paddingTop: 8,
     gap: 10,
   },
-  badgeItem: {
-    flex: 1,
-    backgroundColor: CARD_BG,
-    borderColor: CARD_BORDER,
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-  },
-  badgeName: {
-    marginTop: 8,
-    color: WHITE,
-    fontSize: 11,
-    fontWeight: '700',
-    textAlign: 'center',
-    letterSpacing: -0.1,
-  },
-  badgeProg: {
-    marginTop: 4,
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 11,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
-  },
-  badgeViewAll: {
-    marginTop: 10,
-    alignSelf: 'flex-start',
-  },
-  badgeViewAllText: {
-    color: GOLD,
+  cAllDone: {
+    color: GREEN,
     fontSize: 13,
     fontWeight: '700',
-  },
-  insightsLink: {
-    marginTop: 14,
-    alignSelf: 'flex-start',
+    marginTop: 10,
   },
 
-  // Saved Setups (watchlist) — conditional, Zone 3
+  // ── Saved Setups (watchlist) ──
   savedCount: {
     color: 'rgba(255,255,255,0.5)',
     fontSize: 14,
@@ -1358,89 +865,5 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.4)',
     fontSize: 12,
     fontWeight: '500',
-  },
-
-  // Challenges (compact)
-  cAllDone: {
-    color: GREEN,
-    fontSize: 13,
-    fontWeight: '700',
-    marginTop: 10,
-  },
-  cList: { gap: 8, marginTop: 12 },
-  cListDone: { opacity: 0.7 },
-  cLongTermLabel: {
-    marginTop: 16,
-    marginBottom: 0,
-    color: 'rgba(255,255,255,0.4)',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.5,
-  },
-  cCard: {
-    flexDirection: 'row',
-    backgroundColor: CARD_BG,
-    borderColor: CARD_BORDER,
-    borderWidth: 1,
-    borderTopColor: DT.hairlineHighlight,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  cCardDone: { borderColor: GREEN },
-  cAccent: { width: 3, backgroundColor: GREEN },
-  cInner: { flex: 1, paddingVertical: 10, paddingHorizontal: 12 },
-  cInnerLarge: { paddingVertical: 13 },
-  cRow: { flexDirection: 'row', alignItems: 'center' },
-  cIcon: { marginRight: 8 },
-  cTag: {
-    color: GOLD,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1,
-    marginRight: 6,
-  },
-  cName: {
-    flexShrink: 1,
-    color: WHITE,
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: -0.1,
-  },
-  cRight: {
-    alignItems: 'flex-end',
-    marginLeft: 8,
-  },
-  cProg: {
-    marginLeft: 8,
-    color: WHITE,
-    fontSize: 13,
-    fontWeight: '800',
-    fontVariant: ['tabular-nums'],
-  },
-  cMetaRow: {
-    marginTop: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  cXp: {
-    color: GOLD,
-    fontSize: 12,
-    fontWeight: '800',
-    fontVariant: ['tabular-nums'],
-  },
-  cXpDone: { color: GREEN },
-  cSwap: {
-    marginLeft: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  cSwapBadge: {
-    color: GOLD,
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  cBarTrack: {
-    marginTop: 8,
   },
 });
