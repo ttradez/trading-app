@@ -112,13 +112,15 @@ export default function BadgeTile({
               />
             </>
           ) : (
+            // Muted-locked: solid ring in the canonical border token,
+            // not a decorative gold dashed ring. The lock glyph
+            // carries the "not yet" meaning.
             <Circle
               cx={CIRCLE / 2}
               cy={CIRCLE / 2}
               r={R}
-              stroke={colors.goldDim}
+              stroke={colors.border}
               strokeWidth={STROKE}
-              strokeDasharray="4 4"
               fill="none"
             />
           )}
@@ -135,7 +137,7 @@ export default function BadgeTile({
           <Ionicons
             name="lock-closed"
             size={22}
-            color={colors.textQuaternary}
+            color="rgba(255,255,255,0.4)"
           />
         ) : (
           <MaterialCommunityIcons
@@ -247,7 +249,8 @@ const styles = StyleSheet.create({
   hint: {
     ...typo.caption,
     marginTop: 8,
-    color: colors.textQuaternary,
+    // Locked title — muted but readable (white ~55%, per spec).
+    color: colors.textTertiary,
     textAlign: 'center',
   },
   pct: {

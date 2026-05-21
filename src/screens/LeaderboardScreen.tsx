@@ -13,9 +13,11 @@ import {
   BADGES, BADGE_COUNT, CATEGORY_ORDER, CATEGORY_LABEL,
   RARITY_COLOR, Badge,
 } from '../data/badges';
-import { getBadgeProgress } from '../utils/badgeChecker';
+import { buildBadgeContext, getBadgeProgress } from '../utils/badgeChecker';
+import { useNavigation } from '@react-navigation/native';
 import { colors, radius, spacing, fontSize, fontWeight, labelStyle } from '../theme';
 import { colors as LT } from '../theme/tokens';
+import { PRIMARY_ACTION_LABEL } from '../theme/copy';
 import ProgressBar from '../components/ProgressBar';
 import SectionHeader from '../components/SectionHeader';
 import BadgeTile from '../components/BadgeTile';
@@ -250,10 +252,45 @@ export default function LeaderboardScreen({ route }: any) {
 /** Trophy case — progress bar + category-grouped 4-per-row grid.
  *  Tap any badge → detail modal (unlocked: description + date;
  *  locked: condition + numeric progress when applicable). */
+/** Per-category unit suffix for the "next badge" progress label. */
+const NEXT_BADGE_UNIT: Record<string, string> = {
+  volume: 'trades',
+  skill: 'wins',
+  consistency: 'days',
+  discovery: '',
+  journal: 'trades',
+};
+
 function TrophyCase() {
+  const navigation = useNavigation<any>();
   const unlockedMap = useBadgeStore((s) => s.unlockedBadges);
   const unlockedCount = Object.keys(unlockedMap).length;
   const [selected, setSelected] = useState<Badge | null>(null);
+
+  // The single "next badge to earn": highest ratio of current /
+  // target among LOCKED badges with numeric progress; tie-break by
+  // lowest absolute threshold (easiest to grab). For a brand-new
+  // user (all zero progress) this naturally surfaces Rookie
+  // (target 1) — as the audit example expects.
+  const nextBadge = (() => {
+    const ctx = buildBadgeContext();
+    const cand: {
+      badge: Badge; current: number; target: number; ratio: number;
+    }[] = [];
+    for (const b of BADGES) {
+      if (unlockedMap[b.id]) continue;
+      const p = getBadgeProgress(b.id, ctx);
+      if (!p || p.target <= 0) continue;
+      cand.push({
+        badge: b,
+        current: p.current,
+        target: p.target,
+        ratio: p.current / p.target,
+      });
+    }
+    cand.sort((a, b) => (b.ratio - a.ratio) || (a.target - b.target));
+    return cand[0] ?? null;
+  })();
 
   return (
     <>
@@ -261,21 +298,67 @@ function TrophyCase() {
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxxl }}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.tcCount}>
-          {unlockedCount} / {BADGE_COUNT} unlocked
-        </Text>
-        <View style={styles.tcBarRow}>
-          <View style={styles.tcBarFlex}>
+        {/* ── Hero: Next Badge to Earn ── */}
+        {nextBadge && (
+          <View style={styles.heroCard}>
+            <Text style={styles.heroEyebrow}>NEXT BADGE</Text>
+            <View style={styles.heroRow}>
+              <View style={styles.heroIconWrap}>
+                <MaterialCommunityIcons
+                  name={nextBadge.badge.icon}
+                  size={32}
+                  color={colors.gold}
+                />
+              </View>
+              <View style={styles.heroTextWrap}>
+                <Text style={styles.heroTitle} numberOfLines={1}>
+                  {nextBadge.badge.name}
+                </Text>
+                <Text style={styles.heroDesc}>
+                  {nextBadge.badge.description}
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.heroProgressLabel}>
+              {nextBadge.current} / {nextBadge.target}
+              {NEXT_BADGE_UNIT[nextBadge.badge.category]
+                ? ` ${NEXT_BADGE_UNIT[nextBadge.badge.category]}`
+                : ''}
+            </Text>
+            <View style={styles.heroBarWrap}>
+              <ProgressBar
+                progress={nextBadge.current / nextBadge.target}
+                size="md"
+                variant="gold"
+                glow
+              />
+            </View>
+            <Pressable
+              style={({ pressed }) => [
+                styles.heroCta,
+                pressed && { opacity: 0.85 },
+              ]}
+              onPress={() => navigation.navigate('Chart')}
+              accessibilityRole="button"
+              accessibilityLabel={PRIMARY_ACTION_LABEL}
+            >
+              <Text style={styles.heroCtaText}>{PRIMARY_ACTION_LABEL}</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* Demoted summary — no longer the lede. */}
+        <View style={styles.tcSummaryRow}>
+          <Text style={styles.tcSummaryText}>
+            {unlockedCount} / {BADGE_COUNT} UNLOCKED
+          </Text>
+          <View style={styles.tcSummaryBar}>
             <ProgressBar
               progress={unlockedCount / BADGE_COUNT}
-              size="lg"
+              size="sm"
               variant="gold"
-              glow
             />
           </View>
-          <Text style={styles.tcBarPct}>
-            {Math.round((unlockedCount / BADGE_COUNT) * 100)}%
-          </Text>
         </View>
 
         {CATEGORY_ORDER.map((cat) => (
@@ -538,7 +621,88 @@ const styles = StyleSheet.create({
   },
   segTextActive: { color: colors.gold },
 
-  // Trophy case
+  // Trophy case — Next Badge hero card
+  heroCard: {
+    backgroundColor: colors.card,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderTopColor: LT.hairlineHighlight,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  heroEyebrow: {
+    color: LT.textTertiary,
+    fontSize: 11,
+    fontWeight: fontWeight.bold,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    marginBottom: spacing.md,
+  },
+  heroRow: { flexDirection: 'row', alignItems: 'center' },
+  heroIconWrap: {
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: LT.goldTint,
+    borderWidth: 2, borderColor: colors.gold,
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: spacing.md,
+    shadowColor: colors.gold,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4, shadowRadius: 10, elevation: 4,
+  },
+  heroTextWrap: { flex: 1 },
+  heroTitle: {
+    color: LT.textPrimary,
+    fontSize: 22,
+    fontWeight: fontWeight.bold,
+    letterSpacing: -0.3,
+  },
+  heroDesc: {
+    marginTop: 4,
+    color: LT.textSecondary,
+    fontSize: 14,
+    fontWeight: fontWeight.semibold,
+    lineHeight: 20,
+  },
+  heroProgressLabel: {
+    marginTop: spacing.md,
+    color: LT.textTertiary,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.bold,
+    fontVariant: ['tabular-nums'],
+    letterSpacing: 0.3,
+  },
+  heroBarWrap: { marginTop: 6 },
+  heroCta: {
+    marginTop: spacing.lg,
+    backgroundColor: colors.gold,
+    height: 44,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroCtaText: {
+    color: '#000000',
+    fontSize: 15,
+    fontWeight: fontWeight.bold,
+    letterSpacing: 0.3,
+  },
+
+  // Demoted "X / N unlocked" summary — no longer the lede.
+  tcSummaryRow: { marginBottom: spacing.lg },
+  tcSummaryText: {
+    color: LT.textTertiary,
+    fontSize: 11,
+    fontWeight: fontWeight.bold,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    fontVariant: ['tabular-nums'],
+    marginBottom: 6,
+  },
+  tcSummaryBar: { },
+
+  // Legacy trophy-case styles (kept for reference; superseded by the
+  // hero card + demoted summary above).
   tcCount: {
     color: colors.textPrimary,
     fontSize: fontSize.lg,
