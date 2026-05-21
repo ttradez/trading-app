@@ -30,6 +30,7 @@ import TradeCard from '../components/TradeCard';
 import RankBanner from '../components/RankBanner';
 import ProgressBar from '../components/ProgressBar';
 import SectionHeader from '../components/SectionHeader';
+import Button from '../components/ui/Button';
 import { colors as DT } from '../theme/tokens';
 import { PRIMARY_ACTION_LABEL } from '../theme/copy';
 
@@ -412,42 +413,31 @@ export default function DashboardScreen({ navigation }: any) {
             </View>
 
             <View style={styles.ctaWrap}>
-              {!setupComplete && (
-                <View pointerEvents="none" style={styles.ctaGlow} />
+              {setupComplete ? (
+                // Completed state — distinct from primary/secondary
+                // (transparent + green border + check). Not a button
+                // variant; deliberately inline.
+                <View style={styles.missionCtaDone}>
+                  <Text style={styles.missionCtaTextDone}>Completed ✓</Text>
+                </View>
+              ) : (
+                <Button
+                  label="Trade this setup"
+                  variant="primary"
+                  hero
+                  onPress={() =>
+                    navigation.navigate('Chart', {
+                      dailySetup: {
+                        symbol: todaySetup.symbol,
+                        timeframe: todaySetup.timeframe,
+                        startTs: setupStartUnixSeconds(todaySetup),
+                        date: todaySetup.date,
+                        key: `${todaySetup.id}-${Date.now()}`,
+                      },
+                    })
+                  }
+                />
               )}
-              <Pressable
-                onPress={() =>
-                  navigation.navigate('Chart', {
-                    dailySetup: {
-                      symbol: todaySetup.symbol,
-                      timeframe: todaySetup.timeframe,
-                      startTs: setupStartUnixSeconds(todaySetup),
-                      date: todaySetup.date,
-                      key: `${todaySetup.id}-${Date.now()}`,
-                    },
-                  })
-                }
-                disabled={setupComplete}
-                style={({ pressed }) => [
-                  styles.missionCta,
-                  setupComplete && styles.missionCtaDone,
-                  !setupComplete && pressed && { opacity: 0.85 },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  setupComplete ? 'Mission completed' : 'Trade this setup'
-                }
-                accessibilityState={{ disabled: setupComplete }}
-              >
-                <Text
-                  style={[
-                    styles.missionCtaText,
-                    setupComplete && styles.missionCtaTextDone,
-                  ]}
-                >
-                  {setupComplete ? 'Completed ✓' : 'Trade this setup'}
-                </Text>
-              </Pressable>
             </View>
           </View>
         </View>
@@ -649,15 +639,12 @@ export default function DashboardScreen({ navigation }: any) {
         </View>
 
         {/* "Your Tendencies" — behavioral insights from history. */}
-        <Pressable
+        <Button
+          label="View trading insights"
+          variant="tertiary"
           onPress={() => navigation.navigate('Insights')}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          style={({ pressed }) => [styles.insightsLink, pressed && { opacity: 0.6 }]}
-          accessibilityRole="button"
-          accessibilityLabel="View trading insights"
-        >
-          <Text style={styles.insightsLinkText}>View trading insights →</Text>
-        </Pressable>
+          style={styles.insightsLink}
+        />
 
         {/* ── zone divider ── */}
         <View style={styles.zoneDivider} />
@@ -679,17 +666,12 @@ export default function DashboardScreen({ navigation }: any) {
             <Text style={styles.emptyTradesText}>
               No trades yet. Start a session to place your first trade.
             </Text>
-            <Pressable
+            <Button
+              label={PRIMARY_ACTION_LABEL}
+              variant="secondary"
               onPress={() => navigation.navigate('Chart')}
-              style={({ pressed }) => [
-                styles.startBtn,
-                pressed && { opacity: 0.7 },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={PRIMARY_ACTION_LABEL}
-            >
-              <Text style={styles.startBtnText}>{PRIMARY_ACTION_LABEL}</Text>
-            </Pressable>
+              style={styles.startBtn}
+            />
           </View>
         ) : (
           <View style={styles.tradeList}>
@@ -1086,44 +1068,22 @@ const styles = StyleSheet.create({
   },
   ctaWrap: {
     marginTop: 18,
-    position: 'relative',
   },
-  // Radial-ish gold halo behind the CTA — gives the button depth
-  // and pulls the eye to the primary action.
-  ctaGlow: {
-    position: 'absolute',
-    left: '-5%',
-    right: '-5%',
-    top: '-20%',
-    bottom: '-20%',
-    backgroundColor: 'rgba(255,184,0,0.15)',
-    borderRadius: 30,
-    shadowColor: GOLD,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.45,
-    shadowRadius: 18,
-    elevation: 0,
-  },
-  missionCta: {
-    height: 48,
-    borderRadius: 10,
-    backgroundColor: GOLD,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  // Completed state — visual only; not a button variant.
   missionCtaDone: {
+    height: 52,
+    borderRadius: 999,
     backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: GREEN,
-  },
-  missionCtaText: {
-    color: '#000000',
-    fontSize: 15,
-    fontWeight: '800',
-    letterSpacing: 0.3,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   missionCtaTextDone: {
     color: GREEN,
+    fontSize: 16,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
 
   // Setup Library entry card
@@ -1253,17 +1213,6 @@ const styles = StyleSheet.create({
   },
   startBtn: {
     marginTop: 14,
-    borderWidth: 1,
-    borderColor: GOLD,
-    borderRadius: 10,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-  },
-  startBtnText: {
-    color: GOLD,
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: 0.4,
   },
 
   // Rank progression
@@ -1371,11 +1320,6 @@ const styles = StyleSheet.create({
   insightsLink: {
     marginTop: 14,
     alignSelf: 'flex-start',
-  },
-  insightsLinkText: {
-    color: GOLD,
-    fontSize: 13,
-    fontWeight: '700',
   },
 
   // Saved Setups (watchlist) — conditional, Zone 3

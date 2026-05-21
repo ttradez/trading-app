@@ -13,6 +13,8 @@ import {
 import { useXpStore } from '../store/xpStore';
 import { RANK_BEATS, RankId } from '../data/rankConfig';
 import { typography } from '../theme';
+import Button from '../components/ui/Button';
+import FilterChip from '../components/ui/FilterChip';
 
 /**
  * SetupLibraryScreen — the pattern encyclopedia. A Classic/ICT
@@ -156,38 +158,21 @@ export default function SetupLibraryScreen({ navigation }: any) {
           })}
         </View>
 
-        {/* Category filter chips */}
+        {/* Category filter chips — locked FilterChip (DESIGN_AUDIT §2.4) */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.filterRow}
         >
-          {filters.map((f) => {
-            const active = filter === f.id;
-            return (
-              <Pressable
-                key={f.id}
-                onPress={() => setFilter(f.id)}
-                style={({ pressed }) => [
-                  styles.filterChip,
-                  active && styles.filterChipActive,
-                  pressed && !active && { opacity: 0.7 },
-                ]}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                accessibilityLabel={`${f.label} setups`}
-              >
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    active && styles.filterChipTextActive,
-                  ]}
-                >
-                  {f.label}
-                </Text>
-              </Pressable>
-            );
-          })}
+          {filters.map((f) => (
+            <FilterChip
+              key={f.id}
+              label={f.label}
+              selected={filter === f.id}
+              onPress={() => setFilter(f.id)}
+              accessibilityLabel={`${f.label} setups`}
+            />
+          ))}
         </ScrollView>
 
         {/* Setup cards */}
@@ -237,7 +222,13 @@ export default function SetupLibraryScreen({ navigation }: any) {
                     Unlock at {RANK_LABEL[s.unlock!]}
                   </Text>
                 ) : (
-                  <Text style={styles.cardLink}>Learn &amp; Practice →</Text>
+                  <View style={styles.cardLinkWrap}>
+                    <Button
+                      label="Learn & Practice"
+                      variant="tertiary"
+                      onPress={() => openSetup(s)}
+                    />
+                  </View>
                 )}
               </Pressable>
             );
@@ -337,25 +328,6 @@ const styles = StyleSheet.create({
     paddingRight: 8,
     gap: 8,
   },
-  filterChip: {
-    backgroundColor: CARD_BG,
-    borderColor: CARD_BORDER,
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  filterChipActive: {
-    backgroundColor: GOLD,
-    borderColor: GOLD,
-  },
-  filterChipText: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
-  filterChipTextActive: { color: '#000000' },
 
   list: { marginTop: 20, gap: 12 },
   card: {
@@ -400,12 +372,9 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     lineHeight: 21,
   },
-  cardLink: {
-    marginTop: 14,
-    color: GOLD,
-    fontSize: 14,
-    fontWeight: '700',
-    textAlign: 'right',
+  cardLinkWrap: {
+    marginTop: 10,
+    alignSelf: 'flex-end',
   },
   cardLockText: {
     marginTop: 14,

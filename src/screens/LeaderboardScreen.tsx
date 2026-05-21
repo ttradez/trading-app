@@ -21,6 +21,7 @@ import { PRIMARY_ACTION_LABEL } from '../theme/copy';
 import ProgressBar from '../components/ProgressBar';
 import SectionHeader from '../components/SectionHeader';
 import BadgeTile from '../components/BadgeTile';
+import Button from '../components/ui/Button';
 
 /** lucide isn't installed — map each category to an @expo glyph. */
 const CAT_ICON: Record<string, React.ReactNode> = {
@@ -333,17 +334,12 @@ function TrophyCase() {
                 glow
               />
             </View>
-            <Pressable
-              style={({ pressed }) => [
-                styles.heroCta,
-                pressed && { opacity: 0.85 },
-              ]}
+            <Button
+              label={PRIMARY_ACTION_LABEL}
+              variant="primary"
               onPress={() => navigation.navigate('Chart')}
-              accessibilityRole="button"
-              accessibilityLabel={PRIMARY_ACTION_LABEL}
-            >
-              <Text style={styles.heroCtaText}>{PRIMARY_ACTION_LABEL}</Text>
-            </Pressable>
+              style={styles.heroCta}
+            />
           </View>
         )}
 
@@ -675,17 +671,6 @@ const styles = StyleSheet.create({
   heroBarWrap: { marginTop: 6 },
   heroCta: {
     marginTop: spacing.lg,
-    backgroundColor: colors.gold,
-    height: 44,
-    borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  heroCtaText: {
-    color: '#000000',
-    fontSize: 15,
-    fontWeight: fontWeight.bold,
-    letterSpacing: 0.3,
   },
 
   // Demoted "X / N unlocked" summary — no longer the lede.

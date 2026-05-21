@@ -9,6 +9,9 @@ import { useJournalStore, JournalEntry, Emotion } from '../store/journalStore';
 import TradeCard from '../components/TradeCard';
 import SectionHeader from '../components/SectionHeader';
 import MoneyText from '../components/MoneyText';
+import Button from '../components/ui/Button';
+import FilterChip from '../components/ui/FilterChip';
+import { PRIMARY_ACTION_LABEL } from '../theme/copy';
 import { colors as JT } from '../theme/tokens';
 import { useTradeJournalStore } from '../store/tradeJournalStore';
 import { useRecapList } from '../store/recapStore';
@@ -69,16 +72,15 @@ export default function JournalScreen({ navigation }: any) {
         />
       </View>
 
-      {/* Filter pills */}
+      {/* Filter pills — locked FilterChip (DESIGN_AUDIT §2.4) */}
       <View style={styles.filterRow}>
         {(['all', 'wins', 'losses'] as Filter[]).map((f) => (
-          <TouchableOpacity
+          <FilterChip
             key={f}
-            style={[styles.filterPill, filter === f && styles.filterPillActive]}
+            label={f.toUpperCase()}
+            selected={filter === f}
             onPress={() => setFilter(f)}
-          >
-            <Text style={[styles.filterText, filter === f && styles.filterTextActive]}>{f.toUpperCase()}</Text>
-          </TouchableOpacity>
+          />
         ))}
       </View>
 
@@ -139,6 +141,12 @@ export default function JournalScreen({ navigation }: any) {
             <Text style={styles.emptyMessage}>
               No trades yet. Start a session to place your first trade.
             </Text>
+            <Button
+              label={PRIMARY_ACTION_LABEL}
+              variant="primary"
+              onPress={() => navigation.navigate('Chart')}
+              style={styles.emptyCta}
+            />
           </View>
         </ScrollView>
       ) : (
@@ -347,14 +355,7 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, color: colors.textPrimary, fontSize: fontSize.sm },
 
-  filterRow: { flexDirection: 'row', paddingHorizontal: spacing.lg, gap: 6, marginBottom: spacing.sm },
-  filterPill: {
-    paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.sm,
-    backgroundColor: colors.cardAlt, borderWidth: 1, borderColor: colors.border,
-  },
-  filterPillActive: { backgroundColor: colors.gold, borderColor: colors.gold },
-  filterText: { color: colors.textSecondary, fontSize: fontSize.xs, fontWeight: fontWeight.bold, letterSpacing: 0.5 },
-  filterTextActive: { color: colors.bg },
+  filterRow: { flexDirection: 'row', paddingHorizontal: spacing.lg, gap: 8, marginBottom: spacing.sm },
 
   summary: {
     flexDirection: 'row', justifyContent: 'space-between',
@@ -401,7 +402,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xl },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xl, paddingVertical: spacing.xl },
   emptyMessage: {
     color: 'rgba(255,255,255,0.5)',
     fontSize: 15,
@@ -410,6 +411,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     maxWidth: 280,
   },
+  emptyCta: { marginTop: spacing.lg },
 
   // Trade-card list — vertical stack with 10 px gap, matching spec.
   listContent: {

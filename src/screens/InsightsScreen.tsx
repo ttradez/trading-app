@@ -7,6 +7,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { PRIMARY_ACTION_LABEL } from '../theme/copy';
 import { typography } from '../theme';
+import Button from '../components/ui/Button';
 import { useJournalStore } from '../store/journalStore';
 import { useTradeJournalStore } from '../store/tradeJournalStore';
 import {
@@ -148,14 +149,12 @@ export default function InsightsScreen({ navigation }: any) {
             Place at least 5 trades to start seeing your patterns. The
             more you trade and journal, the sharper your insights get.
           </Text>
-          <Pressable
+          <Button
+            label={PRIMARY_ACTION_LABEL}
+            variant="primary"
             onPress={() => navigation.navigate('Main', { screen: 'Chart' })}
-            style={({ pressed }) => [styles.cta, pressed && { opacity: 0.85 }]}
-            accessibilityRole="button"
-            accessibilityLabel={PRIMARY_ACTION_LABEL}
-          >
-            <Text style={styles.ctaText}>{PRIMARY_ACTION_LABEL}</Text>
-          </Pressable>
+            style={styles.cta}
+          />
         </View>
       </SafeAreaView>
     );
@@ -519,17 +518,5 @@ const styles = StyleSheet.create({
   },
   cta: {
     marginTop: 28,
-    backgroundColor: GOLD,
-    height: 52,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-  },
-  ctaText: {
-    color: '#000000',
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: 0.3,
   },
 });
