@@ -1,12 +1,32 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
+import {
+  type Icon,
+  RepeatIcon,
+  TargetIcon,
+  NotebookIcon,
+  CompassIcon,
+  CalendarCheckIcon,
+} from 'phosphor-react-native';
 
 import { ChallengeInstance } from '../store/challengeStore';
-import { getTemplate, challengeIcon } from '../data/challengePool';
+import { getTemplate } from '../data/challengePool';
 import ProgressBar from './ProgressBar';
 import NumericText from './NumericText';
 import { colors as DT } from '../theme/tokens';
+
+/** Mirror of the DailyChallengeTile mapping — same Phosphor family
+ *  per category so a challenge that rotates from daily → weekly
+ *  keeps the same iconography, just with a different weight to
+ *  signal tier (fill = daily, duotone = weekly, bold-line = monthly). */
+const CATEGORY_ICON: Record<string, Icon> = {
+  volume:      RepeatIcon,
+  skill:       TargetIcon,
+  process:     NotebookIcon,
+  discovery:   CompassIcon,
+  consistency: CalendarCheckIcon,
+};
 
 /**
  * Collapsed long-term goals row (DESIGN_AUDIT §3.1).
@@ -87,12 +107,36 @@ function LongTermCard({
       <View style={[styles.accent, { backgroundColor: stripe }]} />
       <View style={styles.cardInner}>
         <View style={styles.cardTopRow}>
-          <MaterialCommunityIcons
-            name={challengeIcon(t.category) as any}
-            size={16}
-            color="rgba(255,255,255,0.45)"
-            style={{ marginRight: 8 }}
-          />
+          {(() => {
+            // Tier differentiation via Phosphor weight:
+            //   weekly  → duotone (gold primary + 30% secondary)
+            //   monthly → bold (line, gold@90%)
+            // `phosphor-react-native` duotone takes a secondary color
+            // via `duotoneColor` + `duotoneOpacity` — we override
+            // `duotoneOpacity` to 0.3 to match the spec's 30% second
+            // colour without introducing a new hue.
+            const Glyph = CATEGORY_ICON[t.category] ?? TargetIcon;
+            if (tag === 'WEEKLY') {
+              return (
+                <Glyph
+                  size={16}
+                  weight="duotone"
+                  color={GOLD}
+                  duotoneColor={GOLD}
+                  duotoneOpacity={0.3}
+                  style={{ marginRight: 8 }}
+                />
+              );
+            }
+            return (
+              <Glyph
+                size={16}
+                weight="bold"
+                color="rgba(255,184,0,0.9)"
+                style={{ marginRight: 8 }}
+              />
+            );
+          })()}
           <Text style={styles.cardTag}>{tag}</Text>
           <Text style={[styles.cardName, { flex: 1 }]} numberOfLines={1}>
             {t.name}

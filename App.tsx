@@ -5,7 +5,6 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { onAuthStateChanged } from 'firebase/auth';
-import { Ionicons } from '@expo/vector-icons';
 import {
   useFonts,
   Inter_400Regular,
@@ -19,6 +18,17 @@ import {
   JetBrainsMono_500Medium,
   JetBrainsMono_700Bold,
 } from '@expo-google-fonts/jetbrains-mono';
+// Phosphor for HERO glyphs only — bottom nav, mission tip,
+// challenge tiles, long-term tiers. Utility icons stay Ionicons
+// (the project's Lucide-equivalent line set). The `*Icon` suffix
+// is the v3 export style; the bare-name exports are deprecated.
+import {
+  HouseIcon,
+  ChartLineUpIcon,
+  BookOpenIcon,
+  GraduationCapIcon,
+  TrophyIcon,
+} from 'phosphor-react-native';
 
 import { auth } from './src/services/firebase';
 import { upsertUser, getUser } from './src/services/api';
@@ -131,31 +141,29 @@ function MainTabs() {
           marginTop: -3,
         },
         tabBarIconStyle: { marginTop: 0 },
-        tabBarIcon: ({ color, focused }) => {
-          // Filled when active, line when inactive. Lucide names
-          // mapped to Ionicons (lucide-react-native isn't a dep).
-          //   Home  → home          Stats → stats-chart
-          //   Journal → journal     Learn → school (≈ GraduationCap)
-          //   Leaderboard (label "RANKS") → trophy
-          const filled: Record<string, keyof typeof Ionicons.glyphMap> = {
-            Home:        'home',
-            Stats:       'stats-chart',
-            Journal:     'journal',
-            Learn:       'school',
-            Leaderboard: 'trophy',
-          };
-          const outline: Record<string, keyof typeof Ionicons.glyphMap> = {
-            Home:        'home-outline',
-            Stats:       'stats-chart-outline',
-            Journal:     'journal-outline',
-            Learn:       'school-outline',
-            Leaderboard: 'trophy-outline',
-          };
-          const name = (focused ? filled : outline)[route.name] ?? 'help';
+        tabBarIcon: ({ focused }) => {
+          // Phosphor — hero-glyph swap. weight="fill" + gold when
+          // active, weight="regular" + white@50% when inactive.
+          // Inactive color overrides tabBarInactiveTintColor so we
+          // can use the spec'd white@50%; active uses brand gold.
+          const Icon = (() => {
+            switch (route.name) {
+              case 'Home':        return HouseIcon;
+              case 'Stats':       return ChartLineUpIcon;
+              case 'Journal':     return BookOpenIcon;
+              case 'Learn':       return GraduationCapIcon;
+              case 'Leaderboard': return TrophyIcon;
+              default:            return HouseIcon;
+            }
+          })();
           return (
             <View style={tabStyles.iconWrap}>
               {focused && <View style={tabStyles.activeDot} />}
-              <Ionicons name={name} size={18} color={color} />
+              <Icon
+                size={18}
+                weight={focused ? 'fill' : 'regular'}
+                color={focused ? colors.gold : 'rgba(255,255,255,0.5)'}
+              />
             </View>
           );
         },

@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { LightbulbIcon as PhLightbulb } from 'phosphor-react-native';
 import Svg, {
   Circle, Defs, LinearGradient, RadialGradient, Rect, Stop,
 } from 'react-native-svg';
@@ -367,12 +368,10 @@ function TodaysMissionCard({
           {todaySetup.description}
         </Text>
         <View style={styles.missionTipRow}>
-          <Ionicons
-            name="bulb"
-            size={14}
-            color="rgba(255,184,0,0.9)"
-            style={styles.missionTipIcon}
-          />
+          {/* Hero glyph — Phosphor fill at gold@90% per icon spec. */}
+          <View style={styles.missionTipIcon}>
+            <PhLightbulb size={14} weight="fill" color="rgba(255,184,0,0.9)" />
+          </View>
           <Text style={[styles.missionTip, styles.missionTipText]}>
             {todaySetup.tip}
           </Text>

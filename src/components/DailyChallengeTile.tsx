@@ -1,11 +1,38 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
-import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
+import {
+  type Icon,
+  RepeatIcon,
+  TargetIcon,
+  NotebookIcon,
+  CompassIcon,
+  CalendarCheckIcon,
+} from 'phosphor-react-native';
 import { ChallengeInstance } from '../store/challengeStore';
-import { getTemplate, challengeIcon } from '../data/challengePool';
+import { getTemplate } from '../data/challengePool';
 import ProgressBar from './ProgressBar';
 import NumericText from './NumericText';
 import { colors } from '../theme';
+
+/**
+ * Phosphor mapping for each challenge category — hero glyph at
+ * weight="fill" + gold@80%. Picked the closest semantic match to
+ * the previous MCI line icons.
+ *
+ *   volume       → Repeat        (reps / volume / sit-time)
+ *   skill        → Target        (precision / aim)
+ *   process      → Notebook      (journaling / checklist)
+ *   discovery    → Compass       (explore / new symbols)
+ *   consistency  → CalendarCheck (daily-cadence streaks)
+ */
+const CATEGORY_ICON: Record<string, Icon> = {
+  volume:      RepeatIcon,
+  skill:       TargetIcon,
+  process:     NotebookIcon,
+  discovery:   CompassIcon,
+  consistency: CalendarCheckIcon,
+};
 
 /**
  * Square-ish ~140 × 140pt tile for the Daily Challenges horizontal
@@ -45,13 +72,11 @@ export default function DailyChallengeTile({ inst, onSwap, swapAvailable }: Prop
       ]}
     >
       <View style={styles.topRow}>
-        <MaterialCommunityIcons
-          name={challengeIcon(t.category) as any}
-          size={22}
-          // 80% gold per spec — has presence without crowding the
-          // tile against the Today's Mission CTA.
-          color="rgba(255,184,0,0.8)"
-        />
+        {(() => {
+          // Phosphor hero glyph — fill at gold@80% per icon spec.
+          const Glyph = CATEGORY_ICON[t.category] ?? TargetIcon;
+          return <Glyph size={22} weight="fill" color="rgba(255,184,0,0.8)" />;
+        })()}
         {onSwap && !inst.completed && swapAvailable && (
           <Pressable
             onPress={onSwap}
