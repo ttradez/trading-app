@@ -33,6 +33,30 @@ export const borders = {
   card:     'rgba(255, 255, 255, 0.03)',
 } as const;
 
+/**
+ * Data-viz palette (CRAFT_RESEARCH.md). Shared across every chart
+ * so the visual language stays consistent — equity sparkline today,
+ * calendar heatmap / per-setup bars / P&L histogram next.
+ *
+ *  - equityStroke: ALWAYS gold for the equity line itself, even on
+ *    a loss day. The fill underneath carries the gain / loss signal;
+ *    the line stays a single brand color.
+ *  - gainFill / lossFill: linear-gradient stops below the line.
+ *  - referenceLine: the dashed baseline at startingBalance.
+ *  - crosshair: reserved for the future scrub-to-value interaction.
+ *  - gridLine: reserved for axis-bearing charts (heatmap, histogram).
+ */
+export const chart = {
+  equityStroke:    '#FFB800',
+  gainFillTop:     'rgba(0, 211, 149, 0.24)',
+  gainFillBottom:  'rgba(0, 211, 149, 0)',
+  lossFillTop:     'rgba(255, 71, 87, 0.24)',
+  lossFillBottom:  'rgba(255, 71, 87, 0)',
+  referenceLine:   'rgba(255, 255, 255, 0.20)',
+  crosshair:       'rgba(255, 255, 255, 0.80)',
+  gridLine:        'rgba(59, 130, 246, 0.08)',
+} as const;
+
 export const colors = {
   // Backgrounds — pure black to match the logo's black square
   bg:        '#000000',  // app background — true black

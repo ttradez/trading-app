@@ -1,31 +1,29 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, Pressable, Animated, Easing, LayoutChangeEvent,
 } from 'react-native';
-import Svg, {
-  Defs, LinearGradient, Stop, Path,
-} from 'react-native-svg';
 
 import Button from './ui/Button';
 import NumericText from './NumericText';
+import EquityCurveSparkline from './EquityCurveSparkline';
 import { PRIMARY_ACTION_LABEL } from '../theme/copy';
 import { useJournalStore } from '../store/journalStore';
 import { useOnboardingStore } from '../store/onboardingStore';
-import { buildEquityCurve, totalPnl } from '../lib/tradeMetrics';
+import { computeEquitySeries } from '../lib/equitySeries';
 import { colors } from '../theme';
 
 /**
- * Dashboard hero (DESIGN_AUDIT §3.1). Account equity in a huge
- * tabular-figures display, delta row beneath, full-bleed sparkline
- * with a vertical gradient fill that bleeds to the card radius.
+ * Stats hero — equity, delta-since-start, equity-curve sparkline.
+ * The line is always gold; the gain/loss signal lives in the
+ * gradient fill underneath (CRAFT_RESEARCH chart pass).
  *
- * On mount: equity counts up from $0 → current over ~600 ms, and
- * the sparkline draws left-to-right via strokeDashoffset over
- * ~800 ms. Empty state (0 trades): no sparkline, no count-up;
- * dotted placeholder + Secondary "Start session" CTA.
+ * Empty state: equity displays as `startingBalance`, no delta row,
+ * the sparkline renders its own dashed placeholder, and a Secondary
+ * "Start session" CTA sits below the message.
  *
- * P&L color: green positive, red negative, white zero. NEVER gold
- * — gold is reward currency, not P&L (§2.2).
+ * Count-up animation plays ONCE per app session via a module-level
+ * Set — re-mounts inside the same session render the final value
+ * directly so revisiting the tab doesn't replay the entrance.
  */
 
 const GREEN = colors.green;
@@ -33,13 +31,15 @@ const RED   = colors.red;
 const WHITE = colors.textPrimary;
 const CARD_BG     = '#0F0F0F';
 const CARD_BORDER = '#1F1F1F';
-
-const COUNTUP_MS  = 600;
-const SPARK_MS    = 800;
-const SPARK_H     = 70;
 const CARD_R      = 16;
+const CARD_PAD_X  = 20;
+const SPARK_H     = 70;
+const COUNTUP_MS  = 600;
 
-const AnimatedPath = Animated.createAnimatedComponent(Path);
+/** Module-level guard — once a screen-keyed entrance has played in
+ *  this app session, subsequent mounts skip the animation. */
+const ANIMATED_THIS_SESSION = new Set<string>();
+const ANIM_KEY = 'stats-account-equity';
 
 interface Props {
   onPress?: () => void;
@@ -50,21 +50,30 @@ export default function AccountPerformanceCard({ onPress, onStartSession }: Prop
   const entries = useJournalStore((s) => s.entries);
   const startBalance = useOnboardingStore((s) => s.accountSize);
 
-  const realizedPnl = useMemo(() => totalPnl(entries), [entries]);
-  const equity      = startBalance + realizedPnl;
-  const pctChange   = startBalance > 0 ? (realizedPnl / startBalance) * 100 : 0;
+  const equitySeries = React.useMemo(
+    () => computeEquitySeries(entries, startBalance),
+    [entries, startBalance],
+  );
+  const hasTrades = equitySeries.length > 0;
+  const equity = hasTrades
+    ? equitySeries[equitySeries.length - 1].equity
+    : startBalance;
+  const realizedPnl = equity - startBalance;
+  const pctChange = startBalance > 0 ? (realizedPnl / startBalance) * 100 : 0;
 
-  const hasTrades = entries.length > 0;
-
-  // ── Mount animations ──────────────────────────────────────────
-  const count = useRef(new Animated.Value(0)).current;
-  const [displayedEquity, setDisplayedEquity] = useState<number>(hasTrades ? 0 : equity);
+  // ── Equity count-up — first mount per session only ──────────
+  const shouldAnimate = !ANIMATED_THIS_SESSION.has(ANIM_KEY);
+  const count = useRef(new Animated.Value(shouldAnimate ? 0 : 1)).current;
+  const [displayedEquity, setDisplayedEquity] = useState<number>(
+    shouldAnimate ? 0 : equity,
+  );
 
   useEffect(() => {
-    if (!hasTrades) {
+    if (!shouldAnimate) {
       setDisplayedEquity(equity);
       return;
     }
+    ANIMATED_THIS_SESSION.add(ANIM_KEY);
     count.setValue(0);
     const id = count.addListener(({ value }) => {
       setDisplayedEquity(value * equity);
@@ -76,66 +85,27 @@ export default function AccountPerformanceCard({ onPress, onStartSession }: Prop
       useNativeDriver: false,
     }).start();
     return () => count.removeListener(id);
-  }, [equity, hasTrades, count]);
+    // mount-once; later equity changes update via separate effect
+    // below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // ── Sparkline geometry ────────────────────────────────────────
+  // After the entrance animation has played (or been skipped),
+  // keep the displayed value in lockstep with the live equity so
+  // a new trade close updates the hero number immediately.
+  useEffect(() => {
+    if (!shouldAnimate) setDisplayedEquity(equity);
+  }, [equity, shouldAnimate]);
+
+  // ── Card width for the sparkline ────────────────────────────
   const [cardWidth, setCardWidth] = useState(0);
   const onLayout = (e: LayoutChangeEvent) => {
     const w = e.nativeEvent.layout.width;
     if (w && w !== cardWidth) setCardWidth(w);
   };
+  const chartWidth = Math.max(0, cardWidth - CARD_PAD_X * 2);
 
-  const sparkline = useMemo(() => {
-    if (!hasTrades || cardWidth <= 0) return null;
-    const series = buildEquityCurve(entries, startBalance);
-    if (series.length < 2) return null;
-    const ys = series.map((p) => p.equity);
-    const min = Math.min(...ys);
-    const max = Math.max(...ys);
-    const span = max - min || 1;
-    const w = cardWidth;
-    const h = SPARK_H;
-    // Inset stroke 2px so a peak at min/max isn't clipped.
-    const PAD = 4;
-    const points = series.map((p, i) => {
-      const x = (i / (series.length - 1)) * w;
-      const y = h - PAD - ((p.equity - min) / span) * (h - PAD * 2);
-      return { x, y };
-    });
-    const pathD = points.reduce(
-      (acc, pt, i) => acc + (i === 0 ? `M ${pt.x} ${pt.y}` : ` L ${pt.x} ${pt.y}`),
-      '',
-    );
-    // Area path = line path + close down the right edge + along the
-    // bottom + back up to start, for the gradient fill below the line.
-    const areaD =
-      pathD +
-      ` L ${points[points.length - 1].x} ${h}` +
-      ` L ${points[0].x} ${h} Z`;
-    // Approximate path length so strokeDashoffset can animate cleanly.
-    let len = 0;
-    for (let i = 1; i < points.length; i++) {
-      len += Math.hypot(
-        points[i].x - points[i - 1].x,
-        points[i].y - points[i - 1].y,
-      );
-    }
-    return { pathD, areaD, len, w, h };
-  }, [entries, startBalance, hasTrades, cardWidth]);
-
-  const dashOffset = useRef(new Animated.Value(1)).current; // 1 = hidden
-  useEffect(() => {
-    if (!sparkline) return;
-    dashOffset.setValue(sparkline.len);
-    Animated.timing(dashOffset, {
-      toValue: 0,
-      duration: SPARK_MS,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  }, [sparkline, dashOffset]);
-
-  // ── Render ────────────────────────────────────────────────────
+  // ── Delta row colors / signs ────────────────────────────────
   const deltaColor = realizedPnl > 0 ? GREEN : realizedPnl < 0 ? RED : WHITE;
   const deltaSign  = realizedPnl > 0 ? '+' : realizedPnl < 0 ? '-' : '';
   const pctSign    = pctChange > 0 ? '+' : pctChange < 0 ? '-' : '';
@@ -151,8 +121,8 @@ export default function AccountPerformanceCard({ onPress, onStartSession }: Prop
       accessibilityRole={onPress ? 'button' : undefined}
       accessibilityLabel={
         hasTrades
-          ? `Account equity ${formatMoney(equity)}, ${pctSign}${Math.abs(pctChange).toFixed(2)}%`
-          : 'No trades yet'
+          ? `Account equity ${formatMoney(equity)}, ${pctSign}${Math.abs(pctChange).toFixed(2)}% since you started`
+          : `Account equity ${formatMoney(startBalance)}, no trades yet`
       }
     >
       <View style={styles.inner}>
@@ -161,7 +131,7 @@ export default function AccountPerformanceCard({ onPress, onStartSession }: Prop
           {formatMoney(displayedEquity)}
         </NumericText>
 
-        {hasTrades ? (
+        {hasTrades && (
           <View style={styles.deltaRow}>
             <NumericText bold style={[styles.deltaMoney, { color: deltaColor }]} allowFontScaling={false}>
               {deltaSign}${formatAbs(Math.abs(realizedPnl))}
@@ -170,50 +140,39 @@ export default function AccountPerformanceCard({ onPress, onStartSession }: Prop
             <NumericText bold style={[styles.deltaPct, { color: deltaColor }]} allowFontScaling={false}>
               {pctSign}{Math.abs(pctChange).toFixed(2)}%
             </NumericText>
+            <Text style={styles.deltaSuffix}>· since you started</Text>
           </View>
-        ) : (
+        )}
+
+        {!hasTrades && (
           <Text style={styles.emptyBody}>
             Place your first trade to start tracking your performance.
           </Text>
         )}
       </View>
 
-      {/* Full-bleed sparkline / placeholder — overflow:hidden on the
-          card clips it to the rounded corners. */}
-      {hasTrades && sparkline ? (
-        <Svg width={sparkline.w} height={sparkline.h} style={styles.spark}>
-          <Defs>
-            <LinearGradient id="acpFill" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor={deltaColor} stopOpacity="0.25" />
-              <Stop offset="1" stopColor={deltaColor} stopOpacity="0" />
-            </LinearGradient>
-          </Defs>
-          <Path d={sparkline.areaD} fill="url(#acpFill)" />
-          <AnimatedPath
-            d={sparkline.pathD}
-            stroke={deltaColor}
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            fill="none"
-            strokeDasharray={`${sparkline.len} ${sparkline.len}`}
-            strokeDashoffset={dashOffset as unknown as number}
+      {/* Sparkline — chart palette tokens, gold stroke, direction
+          fill, baseline at startingBalance. Renders a dashed
+          placeholder itself when data is empty. */}
+      <View style={styles.chartWrap}>
+        <EquityCurveSparkline
+          data={equitySeries}
+          startingBalance={startBalance}
+          width={chartWidth}
+          height={SPARK_H}
+          animateOnMount={shouldAnimate}
+        />
+      </View>
+
+      {!hasTrades && onStartSession && (
+        <View style={styles.emptyCtaWrap}>
+          <Button
+            label={PRIMARY_ACTION_LABEL}
+            variant="secondary"
+            onPress={onStartSession}
           />
-        </Svg>
-      ) : !hasTrades ? (
-        <View style={styles.placeholderWrap}>
-          <View style={[styles.dottedLine]} pointerEvents="none" />
-          {onStartSession && (
-            <View style={styles.emptyCtaWrap}>
-              <Button
-                label={PRIMARY_ACTION_LABEL}
-                variant="secondary"
-                onPress={onStartSession}
-              />
-            </View>
-          )}
         </View>
-      ) : null}
+      )}
     </Pressable>
   );
 }
@@ -240,7 +199,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   inner: {
-    paddingHorizontal: 20,
+    paddingHorizontal: CARD_PAD_X,
     paddingTop: 18,
     paddingBottom: 8,
   },
@@ -265,8 +224,9 @@ const styles = StyleSheet.create({
   deltaRow: {
     marginTop: 6,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    alignItems: 'baseline',
+    flexWrap: 'wrap',
+    gap: 6,
   },
   deltaMoney: {
     fontSize: 16,
@@ -283,8 +243,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
   },
-  spark: {
-    marginTop: 6,
+  deltaSuffix: {
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  chartWrap: {
+    paddingHorizontal: CARD_PAD_X,
+    paddingTop: 10,
+    paddingBottom: 10,
   },
   emptyBody: {
     marginTop: 8,
@@ -294,20 +261,9 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     maxWidth: 320,
   },
-  placeholderWrap: {
-    height: SPARK_H,
-    paddingHorizontal: 20,
-    justifyContent: 'center',
-  },
-  dottedLine: {
-    height: 1,
-    borderStyle: 'dashed',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    width: '100%',
-    marginBottom: 14,
-  },
   emptyCtaWrap: {
     alignSelf: 'flex-start',
+    paddingHorizontal: CARD_PAD_X,
+    paddingBottom: 16,
   },
 });
