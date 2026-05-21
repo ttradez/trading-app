@@ -17,9 +17,9 @@ import WeeklyRecapModal from './src/components/WeeklyRecapModal';
 import { useBadgeWatchers } from './src/hooks/useBadgeWatchers';
 import { useXpWatchers } from './src/hooks/useXpWatchers';
 import { useChallengeRotation } from './src/hooks/useChallengeRotation';
-import BadgeToastHost from './src/components/BadgeToastHost';
 import ChallengeToastHost from './src/components/ChallengeToastHost';
-import RankUpCelebrationHost from './src/components/RankUpCelebrationHost';
+import CelebrationHost from './src/components/CelebrationHost';
+import { useCelebrationTriggers } from './src/hooks/useCelebrationTriggers';
 import { colors } from './src/theme';
 
 import DashboardScreen    from './src/screens/DashboardScreen';
@@ -55,6 +55,10 @@ function MainTabs() {
   // Streak daily-check runs when the user enters the main app
   // (post-onboarding) and on every background → foreground.
   useStreakManager();
+
+  // Unified celebration moments (badge unlock / rank up / streak
+  // milestone). Pure observer — no business-logic side-effects.
+  useCelebrationTriggers();
 
   // Sunday Wrap: auto-decides whether to surface the weekly recap
   // on app open (once per mount). Renders the modal as an overlay
@@ -167,9 +171,7 @@ function MainTabs() {
       recap={weeklyRecap}
       onClose={dismissRecap}
     />
-    <BadgeToastHost />
     <ChallengeToastHost />
-    <RankUpCelebrationHost />
     </>
   );
 }
@@ -269,6 +271,11 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
+      {/* Unified celebration overlay (badge / rank / streak). Sibling
+          of NavigationContainer so it floats above any screen,
+          including onboarding. Host is a no-op until something
+          enqueues; the modal handles its own visible state. */}
+      <CelebrationHost />
       <NavigationContainer>
         {/* Remount on the Sign-Out edge (navEpoch) so the guard
             re-applies `initialRoute` and lands on the auth screen —
