@@ -7,6 +7,7 @@ import Svg, {
 } from 'react-native-svg';
 
 import Button from './ui/Button';
+import NumericText from './NumericText';
 import { PRIMARY_ACTION_LABEL } from '../theme/copy';
 import { useJournalStore } from '../store/journalStore';
 import { useOnboardingStore } from '../store/onboardingStore';
@@ -156,19 +157,19 @@ export default function AccountPerformanceCard({ onPress, onStartSession }: Prop
     >
       <View style={styles.inner}>
         <Text style={styles.eyebrow}>ACCOUNT</Text>
-        <Text style={styles.equity} allowFontScaling={false} numberOfLines={1}>
+        <NumericText bold style={styles.equity} allowFontScaling={false} numberOfLines={1}>
           {formatMoney(displayedEquity)}
-        </Text>
+        </NumericText>
 
         {hasTrades ? (
           <View style={styles.deltaRow}>
-            <Text style={[styles.deltaMoney, { color: deltaColor }]} allowFontScaling={false}>
+            <NumericText bold style={[styles.deltaMoney, { color: deltaColor }]} allowFontScaling={false}>
               {deltaSign}${formatAbs(Math.abs(realizedPnl))}
-            </Text>
+            </NumericText>
             <Text style={styles.deltaDot}>·</Text>
-            <Text style={[styles.deltaPct, { color: deltaColor }]} allowFontScaling={false}>
+            <NumericText bold style={[styles.deltaPct, { color: deltaColor }]} allowFontScaling={false}>
               {pctSign}{Math.abs(pctChange).toFixed(2)}%
-            </Text>
+            </NumericText>
           </View>
         ) : (
           <Text style={styles.emptyBody}>

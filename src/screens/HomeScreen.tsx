@@ -25,6 +25,7 @@ import {
 
 import SectionHeader from '../components/SectionHeader';
 import Button from './../components/ui/Button';
+import NumericText from '../components/NumericText';
 import DailyChallengeTile from '../components/DailyChallengeTile';
 import LongTermGoalsCollapsible from '../components/LongTermGoalsCollapsible';
 import RankStrip from '../components/RankStrip';
@@ -263,9 +264,9 @@ export default function HomeScreen({ navigation }: any) {
               <Text style={styles.trainBigDone}>Goal hit ✓</Text>
             ) : (
               <>
-                <Text style={styles.trainBig}>
+                <NumericText bold style={styles.trainBig}>
                   {Math.floor(minutesToday)} / {dailyGoalMin} min
-                </Text>
+                </NumericText>
                 <Text style={styles.trainSub}>minutes today</Text>
               </>
             )}
@@ -280,7 +281,7 @@ export default function HomeScreen({ navigation }: any) {
                 title="Saved Setups"
                 icon={<Ionicons name="bookmark-outline" size={16} color="rgba(255,255,255,0.5)" />}
               />
-              <Text style={styles.savedCount}>{savedSetups.length} saved</Text>
+              <NumericText style={styles.savedCount}>{savedSetups.length} saved</NumericText>
             </View>
             <ScrollView
               horizontal

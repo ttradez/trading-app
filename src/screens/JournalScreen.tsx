@@ -11,6 +11,7 @@ import SectionHeader from '../components/SectionHeader';
 import MoneyText from '../components/MoneyText';
 import Button from '../components/ui/Button';
 import FilterChip from '../components/ui/FilterChip';
+import NumericText from '../components/NumericText';
 import { PRIMARY_ACTION_LABEL } from '../theme/copy';
 import { colors as JT } from '../theme/tokens';
 import { useTradeJournalStore } from '../store/tradeJournalStore';
@@ -138,11 +139,11 @@ export default function JournalScreen({ navigation }: any) {
         </View>
         <View style={styles.summaryItem}>
           <Text style={[labelStyle, styles.summaryLabel]}>WIN RATE</Text>
-          <Text style={styles.summaryValue}>{winRate}%</Text>
+          <NumericText bold style={styles.summaryValue}>{winRate}%</NumericText>
         </View>
         <View style={styles.summaryItem}>
           <Text style={[labelStyle, styles.summaryLabel]}>W/L</Text>
-          <Text style={styles.summaryValue}>{wins}/{losses}</Text>
+          <NumericText bold style={styles.summaryValue}>{wins}/{losses}</NumericText>
         </View>
       </View>
 
@@ -240,17 +241,18 @@ function RecapsSection({ onOpen }: { onOpen: (r: WeeklyRecap) => void }) {
             >
               <View style={{ flex: 1 }}>
                 <Text style={styles.recapRange}>{recap.dateRange}</Text>
-                <Text style={styles.recapSub}>
+                <NumericText style={styles.recapSub}>
                   {recap.totalTrades} {recap.totalTrades === 1 ? 'trade' : 'trades'}
                   {recap.winRate != null ? `  ·  ${recap.winRate}% win` : ''}
-                </Text>
+                </NumericText>
               </View>
-              <Text
+              <NumericText
+                bold
                 style={[styles.recapPnl, pnlPos ? styles.green : styles.red]}
                 allowFontScaling={false}
               >
                 {pnlPos ? '+' : '-'}${Math.abs(recap.totalPnL).toFixed(2)}
-              </Text>
+              </NumericText>
               <Ionicons
                 name="chevron-forward"
                 size={16}

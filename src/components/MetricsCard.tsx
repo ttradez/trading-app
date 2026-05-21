@@ -9,6 +9,7 @@ import WinRateGlyph from './icons/metrics/WinRateGlyph';
 import ProfitFactorGlyph from './icons/metrics/ProfitFactorGlyph';
 import AvgRRGlyph from './icons/metrics/AvgRRGlyph';
 import ConsistencyGlyph from './icons/metrics/ConsistencyGlyph';
+import NumericText from './NumericText';
 
 /**
  * Key metrics row (DESIGN_AUDIT §3.1). ONE card with FOUR cells
@@ -77,9 +78,9 @@ function Cell({
   return (
     <View style={styles.cell}>
       <View style={styles.glyphWrap}>{glyph}</View>
-      <Text style={styles.value} allowFontScaling={false} numberOfLines={1}>
+      <NumericText bold style={styles.value} allowFontScaling={false} numberOfLines={1}>
         {value}
-      </Text>
+      </NumericText>
       <Text style={styles.label} numberOfLines={1}>{label}</Text>
     </View>
   );

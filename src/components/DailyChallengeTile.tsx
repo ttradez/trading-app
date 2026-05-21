@@ -4,6 +4,7 @@ import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { ChallengeInstance } from '../store/challengeStore';
 import { getTemplate, challengeIcon } from '../data/challengePool';
 import ProgressBar from './ProgressBar';
+import NumericText from './NumericText';
 import { colors } from '../theme';
 
 /**
@@ -70,13 +71,13 @@ export default function DailyChallengeTile({ inst, onSwap, swapAvailable }: Prop
       </Text>
 
       <View style={styles.metaRow}>
-        <Text style={styles.xp} allowFontScaling={false}>
+        <NumericText bold style={styles.xp} allowFontScaling={false}>
           +{inst.xpReward} XP
-        </Text>
+        </NumericText>
         {!inst.completed && (
-          <Text style={styles.progLabel} allowFontScaling={false}>
+          <NumericText bold style={styles.progLabel} allowFontScaling={false}>
             {Math.floor(inst.progress)}/{inst.target}
-          </Text>
+          </NumericText>
         )}
       </View>
 

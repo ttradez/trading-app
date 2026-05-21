@@ -1,5 +1,6 @@
 import React from 'react';
 import { Text, StyleProp, TextStyle } from 'react-native';
+import { fonts } from '../theme';
 
 /**
  * MoneyText — renders a USD P&L value with a designed hierarchy:
@@ -7,7 +8,8 @@ import { Text, StyleProp, TextStyle } from 'react-native';
  * digits full size. Makes "+$839.68" read as typeset, not typed.
  *
  * Color / weight / shadow come from `style` (the digits inherit
- * them); only the relative font sizes are managed here.
+ * them); only the relative font sizes + the locked JetBrains Mono
+ * family + tabular-nums are managed here.
  */
 
 interface Props {
@@ -28,7 +30,14 @@ export default function MoneyText({
   });
   return (
     <Text
-      style={[{ fontSize: size, fontVariant: ['tabular-nums'] }, style]}
+      style={[
+        style,
+        {
+          fontSize: size,
+          fontVariant: ['tabular-nums'],
+          fontFamily: fonts.monoBold,
+        },
+      ]}
       allowFontScaling={allowFontScaling}
       numberOfLines={1}
     >

@@ -488,7 +488,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
 
-  // P&L hero
+  // P&L hero — fontFamily/weight handled inside MoneyText (which
+  // imposes JetBrainsMono_700Bold). Keep the rest here.
   pnl: {
     marginTop: 10,
     fontSize: 28,
@@ -507,13 +508,14 @@ const styles = StyleSheet.create({
     textTransform: 'lowercase',
   },
 
-  // Price support line
+  // Price support line — JBM for the entry/exit prices.
   prices: {
     marginTop: 8,
     color: 'rgba(255,255,255,0.5)',
     fontSize: 13,
     fontWeight: '500',
     fontVariant: ['tabular-nums'],
+    fontFamily: 'JetBrainsMono_500Medium',
   },
 
   // Metadata
@@ -527,6 +529,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     fontVariant: ['tabular-nums'],
+    fontFamily: 'JetBrainsMono_500Medium',
   },
   // Date is supporting-supporting info — one tier dimmer than the
   // duration/contracts so it doesn't compete with the prices.

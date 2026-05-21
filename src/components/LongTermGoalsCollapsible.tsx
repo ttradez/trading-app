@@ -5,6 +5,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { ChallengeInstance } from '../store/challengeStore';
 import { getTemplate, challengeIcon } from '../data/challengePool';
 import ProgressBar from './ProgressBar';
+import NumericText from './NumericText';
 import { colors as DT } from '../theme/tokens';
 
 /**
@@ -54,7 +55,8 @@ export default function LongTermGoalsCollapsible({ weekly, monthly }: Props) {
       >
         <Text style={styles.rowTitle} numberOfLines={1}>
           Long-term goals
-          <Text style={styles.rowSub}> · {summary}</Text>
+          {' · '}
+          <NumericText style={styles.rowSub}>{summary}</NumericText>
         </Text>
         <Ionicons
           name={expanded ? 'chevron-up' : 'chevron-down'}
@@ -97,15 +99,15 @@ function LongTermCard({
           {inst.completed ? (
             <Ionicons name="checkmark-circle" size={18} color={GREEN} />
           ) : (
-            <Text style={styles.cardProg}>
+            <NumericText bold style={styles.cardProg}>
               {Math.floor(inst.progress)}/{inst.target}
-            </Text>
+            </NumericText>
           )}
         </View>
         <View style={styles.cardMetaRow}>
-          <Text style={styles.cardXp} allowFontScaling={false}>
+          <NumericText bold style={styles.cardXp} allowFontScaling={false}>
             {inst.completed ? `✓ +${inst.xpReward} XP` : `+${inst.xpReward} XP`}
-          </Text>
+          </NumericText>
         </View>
         <View style={{ marginTop: 8 }}>
           <ProgressBar

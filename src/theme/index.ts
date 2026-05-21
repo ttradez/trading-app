@@ -56,16 +56,41 @@ export const spacing = {
   xxxl: 48,
 } as const;
 
+/**
+ * Loaded-font family tokens (bundled via @expo-google-fonts/inter
+ * and @expo-google-fonts/jetbrains-mono — see App.tsx useFonts).
+ *
+ *  - `body` family is Inter at the relevant weight, used for prose,
+ *    titles, labels, and button text.
+ *  - `heading` is also Inter Bold/Black today. The original spec
+ *    called for an Inter DISPLAY optical variant, but
+ *    `@expo-google-fonts/inter` doesn't expose Display weights as
+ *    a separate sub-family — so heading deliberately reuses Inter
+ *    Bold/Black at display sizes. Swap to a real Display family
+ *    here if it becomes available.
+ *  - `mono` is JetBrains Mono, used for every numeric value in the
+ *    app (equity, P&L, XP, progress fractions, rank thresholds).
+ *    Wrapped by `<NumericText>` so call sites stay terse.
+ */
+export const fonts = {
+  body:        'Inter_400Regular',
+  bodyMedium:  'Inter_500Medium',
+  bodySemi:    'Inter_600SemiBold',
+  bodyBold:    'Inter_700Bold',
+  heading:     'Inter_700Bold',
+  headingBlack:'Inter_900Black',
+  mono:        'JetBrainsMono_500Medium',
+  monoBold:    'JetBrainsMono_700Bold',
+} as const;
+
+/** Legacy alias kept for older call sites that reference `font.*`
+ *  (none in tree at the time of the typography upgrade). Prefer
+ *  `fonts` above for new code. */
 export const font = {
-  // Sans-serif: Inter preferred when loaded, system default fallback
-  // (San Francisco on iOS, Roboto on Android — both modern sans-serifs).
-  // Inter isn't bundled via expo-font yet; switch these to 'Inter' /
-  // 'Inter-Bold' once the family is registered.
-  sans:     'System',
-  sansBold: 'System',
-  // Monospace — used for ALL numbers (prices, P&L, percentages, balances).
-  mono:     'SpaceMono-Regular',
-  monoBold: 'SpaceMono-Bold',
+  sans:     fonts.body,
+  sansBold: fonts.bodyBold,
+  mono:     fonts.mono,
+  monoBold: fonts.monoBold,
 } as const;
 
 export const fontSize = {
@@ -125,43 +150,63 @@ export const labelStyle = {
  *
  * Don't invent a 7th step — surface the mismatch instead.
  */
+// Cast helper: RN's TextStyle expects a *mutable* FontVariant[],
+// so a `readonly` tuple from `as const` is rejected. This single
+// shared array satisfies the type once instead of casting at every
+// call site.
+const TABULAR: Array<'tabular-nums'> = ['tabular-nums'];
+
 export const typography = {
+  // Display + h1 use the heading family (Inter Bold/Black today;
+  // swap to a real Inter Display optical variant if one is added).
   display: {
+    fontFamily: fonts.headingBlack,
     fontSize: 28,
     lineHeight: 32,
     fontWeight: fontWeight.bold,
     letterSpacing: letterSpacing.tight,
+    fontVariant: TABULAR,
   },
   h1: {
+    fontFamily: fonts.heading,
     fontSize: 22,
     lineHeight: 28,
     fontWeight: fontWeight.bold,
     letterSpacing: -0.3,
+    fontVariant: TABULAR,
   },
   h2: {
+    fontFamily: fonts.bodySemi,
     fontSize: 17,
     lineHeight: 22,
     fontWeight: fontWeight.semibold,
     letterSpacing: -0.2,
+    fontVariant: TABULAR,
   },
   body: {
+    fontFamily: fonts.body,
     fontSize: 15,
     lineHeight: 22,
     fontWeight: fontWeight.regular,
+    fontVariant: TABULAR,
   },
   label: {
+    fontFamily: fonts.bodyMedium,
     fontSize: 13,
     lineHeight: 18,
     fontWeight: fontWeight.medium,
+    fontVariant: TABULAR,
   },
   eyebrow: {
+    fontFamily: fonts.bodyMedium,
     fontSize: 11,
     lineHeight: 14,
     fontWeight: fontWeight.medium,
     letterSpacing: 0.8,
     textTransform: 'uppercase' as const,
+    fontVariant: TABULAR,
   },
-} as const;
+};
 
 // Reusable shadow recipes
 export const shadows = {

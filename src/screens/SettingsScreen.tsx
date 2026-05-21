@@ -10,6 +10,7 @@ import { signOut } from 'firebase/auth';
 import { auth } from '../services/firebase';
 import { useAuthStore } from '../store/authStore';
 import DSSectionHeader from '../components/SectionHeader';
+import NumericText from '../components/NumericText';
 import { colors as ST } from '../theme/tokens';
 import { typography, spacing } from '../theme';
 import { useOnboardingStore, Archetype, DailyCommitment } from '../store/onboardingStore';
@@ -370,7 +371,7 @@ export default function SettingsScreen({ navigation }: any) {
         <View style={styles.group}>
           <Row
             label="Daily Time Goal"
-            value={`${dailyGoal} min`}
+            value={<NumericText style={styles.rowValue}>{`${dailyGoal} min`}</NumericText>}
             onPress={() => setPicker('goal')}
           />
           <Separator />
@@ -382,7 +383,7 @@ export default function SettingsScreen({ navigation }: any) {
           <Separator />
           <Row
             label="Default Contract Size"
-            value={String(contractSize)}
+            value={<NumericText style={styles.rowValue}>{String(contractSize)}</NumericText>}
             onPress={() => setPicker('contract')}
           />
         </View>
@@ -472,7 +473,15 @@ export default function SettingsScreen({ navigation }: any) {
         {/* ABOUT */}
         <SectionHeader title="About" />
         <View style={styles.group}>
-          <Row label="Version" value={`${APP_NAME} v${APP_VERSION}`} />
+          <Row
+            label="Version"
+            value={
+              <Text style={styles.rowValue}>
+                {APP_NAME}{' '}
+                <NumericText style={styles.rowValue}>v{APP_VERSION}</NumericText>
+              </Text>
+            }
+          />
           <Separator />
           <Row
             label="Support"
@@ -555,7 +564,9 @@ function Separator() {
 
 interface RowProps {
   label: string;
-  value?: string;
+  /** Either a plain string (default Text rendering) or a ReactNode
+   *  for callers that want JBM-mono numerals via <NumericText>. */
+  value?: string | React.ReactNode;
   onPress?: () => void;
   leftIcon?: React.ComponentProps<typeof Ionicons>['name'];
   leftIconColor?: string;
@@ -581,7 +592,11 @@ function Row({
       </Text>
       <View style={{ flex: 1 }} />
       {rightAccessory}
-      {value != null && <Text style={styles.rowValue}>{value}</Text>}
+      {value != null && (
+        typeof value === 'string'
+          ? <Text style={styles.rowValue}>{value}</Text>
+          : <View style={styles.rowValueWrap}>{value}</View>
+      )}
       {onPress && (
         <Ionicons
           name="chevron-forward"
@@ -729,6 +744,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
   },
+  rowValueWrap: {},
   rowChevron: { marginLeft: 8 },
 
   lockRow: { flexDirection: 'row', alignItems: 'center' },

@@ -3,6 +3,7 @@ import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 import RankBanner from './RankBanner';
+import NumericText from './NumericText';
 import { RankForXP } from '../data/rankConfig';
 import { Badge } from '../data/badges';
 import { colors as DT } from '../theme/tokens';
@@ -54,11 +55,13 @@ export default function RankStrip({ rankInfo, nextBadge, onPress }: Props) {
 
       <View style={styles.middle}>
         <Text style={styles.rankLabel} numberOfLines={1}>{rankInfo.label}</Text>
-        <Text style={styles.xpLabel} numberOfLines={1}>
-          {rankInfo.next
-            ? `${rankInfo.xpInTier}/${rankInfo.xpNeededForNext} XP to ${rankInfo.next.label}`
-            : 'Max rank reached'}
-        </Text>
+        {rankInfo.next ? (
+          <NumericText style={styles.xpLabel} numberOfLines={1}>
+            {rankInfo.xpInTier}/{rankInfo.xpNeededForNext} XP to {rankInfo.next.label}
+          </NumericText>
+        ) : (
+          <Text style={styles.xpLabel} numberOfLines={1}>Max rank reached</Text>
+        )}
       </View>
 
       {nextBadge && (
@@ -70,8 +73,15 @@ export default function RankStrip({ rankInfo, nextBadge, onPress }: Props) {
           />
           <View style={styles.badgeText}>
             <Text style={styles.badgeEyebrow}>NEXT</Text>
+            {/* Mixed prose + digits — keep the Text wrapper for the
+                badge name and nest a NumericText for the fraction so
+                only the digits get JBM. */}
             <Text style={styles.badgeName} numberOfLines={1}>
-              {nextBadge.badge.name} ({nextBadge.current}/{nextBadge.target})
+              {nextBadge.badge.name} (
+              <NumericText style={styles.badgeName}>
+                {nextBadge.current}/{nextBadge.target}
+              </NumericText>
+              )
             </Text>
           </View>
         </View>

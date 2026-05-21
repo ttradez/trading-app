@@ -6,6 +6,19 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { onAuthStateChanged } from 'firebase/auth';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  useFonts,
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
+  Inter_900Black,
+} from '@expo-google-fonts/inter';
+import {
+  JetBrainsMono_400Regular,
+  JetBrainsMono_500Medium,
+  JetBrainsMono_700Bold,
+} from '@expo-google-fonts/jetbrains-mono';
 
 import { auth } from './src/services/firebase';
 import { upsertUser, getUser } from './src/services/api';
@@ -200,6 +213,22 @@ function MainTabs() {
 export default function App() {
   const setUser = useAuthStore((s) => s.setUser);
 
+  // Bundled font families — JetBrains Mono for numerals,
+  // Inter for everything else (no Display optical variant
+  // available in @expo-google-fonts/inter at the time of writing;
+  // headings reuse Inter Bold/Black, see src/theme/index.ts).
+  // Picked weights only — keeps the bundle small (8 ttf files).
+  const [fontsLoaded] = useFonts({
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+    Inter_900Black,
+    JetBrainsMono_400Regular,
+    JetBrainsMono_500Medium,
+    JetBrainsMono_700Bold,
+  });
+
   // First paint is still gated on the onboarding store finishing
   // AsyncStorage rehydration so the persisted stores are ready
   // before MainTabs reads them.
@@ -273,9 +302,10 @@ export default function App() {
     return unsub;
   }, [setUser]);
 
-  // Gate first paint on BOTH store rehydration and Firebase auth
-  // resolution so we never flash the wrong initial route.
-  if (!hydrated || authState === 'loading') {
+  // Gate first paint on store rehydration, Firebase auth resolution,
+  // AND font load — flashing the wrong family on the first render
+  // would show the system fallback before snapping to Inter/JBM.
+  if (!hydrated || authState === 'loading' || !fontsLoaded) {
     return <SafeAreaProvider><LoadingSplash /></SafeAreaProvider>;
   }
 
