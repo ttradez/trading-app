@@ -55,6 +55,16 @@ export const chart = {
   referenceLine:   'rgba(255, 255, 255, 0.20)',
   crosshair:       'rgba(255, 255, 255, 0.80)',
   gridLine:        'rgba(59, 130, 246, 0.08)',
+  // Calendar-heatmap intensity tiers — opacity ramps on the brand
+  // green / red. Magnitude thresholds live in src/lib/dailyPnL.ts.
+  gainTier1: 'rgba(0, 211, 149, 0.10)',
+  gainTier2: 'rgba(0, 211, 149, 0.20)',
+  gainTier3: 'rgba(0, 211, 149, 0.30)',
+  gainTier4: 'rgba(0, 211, 149, 0.40)',
+  lossTier1: 'rgba(255, 71, 87, 0.10)',
+  lossTier2: 'rgba(255, 71, 87, 0.20)',
+  lossTier3: 'rgba(255, 71, 87, 0.30)',
+  lossTier4: 'rgba(255, 71, 87, 0.40)',
 } as const;
 
 export const colors = {
