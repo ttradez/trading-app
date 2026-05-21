@@ -21,7 +21,9 @@ const TILE_W   = 140;
 const TILE_H   = 140;
 const GOLD     = colors.gold;
 const GREEN    = colors.green;
-const CARD_BG  = '#0F0F0F';
+// Daily Challenge tiles are secondary surfaces — L1 in the layered
+// system. They sit alongside the Today's Mission hero (L2/L3).
+const CARD_BG  = '#0A0A0A';
 const BORDER   = '#1F1F1F';
 
 interface Props {

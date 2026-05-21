@@ -23,7 +23,9 @@ import NumericText from './NumericText';
  * 0% on day one.
  */
 
-const CARD_BG     = '#0F0F0F';
+// Secondary card — L1 in the layered surface system. Reads as a
+// supporting tile under the Account hero (L2).
+const CARD_BG     = '#0A0A0A';
 const CARD_BORDER = '#1F1F1F';
 const HAIRLINE    = '#1F1F1F';
 

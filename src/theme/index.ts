@@ -3,6 +3,36 @@
  * Match every value here against the mockup before changing.
  */
 
+/**
+ * Layered dark-surface system (DESIGN_AUDIT polish pass).
+ *
+ *   L0 — app background (true black)
+ *   L1 — secondary cards / tiles (slight lift off bg)
+ *   L2 — primary content cards (Account hero, Today's Mission)
+ *   L3 — elevated: modals, bottom sheets, pressed states
+ *
+ * Brand-safe — all four are neutral grays inside the existing
+ * palette, no new hue introduced. The point of the four-step ramp
+ * is hierarchy by *contrast*: when L1 cards drop below the
+ * existing card color, L2 hero cards read as primary without
+ * needing a louder background.
+ */
+export const surface = {
+  l0: '#000000',
+  l1: '#0A0A0A',
+  l2: '#0F0F0F',
+  l3: '#141414',
+} as const;
+
+/**
+ * Border / divider tokens. `hairline` is the 1px list-row divider;
+ * `card` is the optional faint outline on a card edge.
+ */
+export const borders = {
+  hairline: 'rgba(255, 255, 255, 0.06)',
+  card:     'rgba(255, 255, 255, 0.03)',
+} as const;
+
 export const colors = {
   // Backgrounds — pure black to match the logo's black square
   bg:        '#000000',  // app background — true black

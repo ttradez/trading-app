@@ -757,7 +757,8 @@ const styles = StyleSheet.create({
   bdCard: {
     width: '100%',
     maxWidth: 360,
-    backgroundColor: '#0F0F0F',
+    // Modal surface — L3 in the layered system.
+    backgroundColor: '#141414',
     borderColor: '#1F1F1F',
     borderWidth: 1,
     borderRadius: 18,

@@ -176,7 +176,8 @@ const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
   card: {
     width: '90%',
-    backgroundColor: colors.card,
+    // Modal surface — L3 in the layered system.
+    backgroundColor: '#141414',
     borderRadius: radius.xl,
     overflow: 'hidden',
     borderWidth: 1, borderColor: colors.border,

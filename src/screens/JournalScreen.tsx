@@ -533,7 +533,8 @@ const styles = StyleSheet.create({
 
   // Edit modal
   editBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  editSheet: { backgroundColor: colors.card, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, maxHeight: '90%' },
+  // Bottom-sheet modal surface — L3 in the layered system.
+  editSheet: { backgroundColor: '#141414', borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, maxHeight: '90%' },
   editHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md },
   editTitle: { flex: 1, color: colors.textPrimary, fontSize: fontSize.lg, fontWeight: fontWeight.bold },
   editLabel: { marginTop: spacing.md, marginBottom: spacing.xs },

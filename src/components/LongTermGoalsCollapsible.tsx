@@ -21,7 +21,8 @@ const GREEN = '#00D395';
 const RED   = '#FF4757';
 const GOLD  = '#FFB800';
 const WHITE = '#FFFFFF';
-const CARD_BG     = '#0F0F0F';
+// Long-term goals are secondary — L1 in the layered surface system.
+const CARD_BG     = '#0A0A0A';
 const CARD_BORDER = '#1F1F1F';
 
 interface Props {

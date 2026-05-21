@@ -25,7 +25,8 @@ import MoneyText from './MoneyText';
  */
 
 const BG_OVERLAY     = 'rgba(0,0,0,0.85)';
-const CARD_BG        = '#0F0F0F';
+// Modal surface — L3 in the layered system.
+const CARD_BG        = '#141414';
 const CARD_BORDER    = '#1F1F1F';
 const CHIP_BG        = '#1A1A1A';
 const CHIP_BORDER    = '#2A2A2A';

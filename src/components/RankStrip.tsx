@@ -22,7 +22,8 @@ import { colors as DT } from '../theme/tokens';
 
 const GOLD  = '#FFB800';
 const WHITE = '#FFFFFF';
-const CARD_BG     = '#0F0F0F';
+// Rank strip is a secondary tile — L1 in the layered surface system.
+const CARD_BG     = '#0A0A0A';
 const CARD_BORDER = '#1F1F1F';
 
 interface NextBadgeProgress {

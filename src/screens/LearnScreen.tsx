@@ -108,7 +108,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 16,
     gap: 14,
-    backgroundColor: '#0F0F0F',
+    backgroundColor: '#0A0A0A',
     borderColor: '#1F1F1F',
     borderWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.04)',
@@ -130,7 +130,7 @@ const styles = StyleSheet.create({
   libGlyph: { marginRight: 4 },
 
   placeholderCard: {
-    backgroundColor: '#0F0F0F',
+    backgroundColor: '#0A0A0A',
     borderColor: '#1F1F1F',
     borderWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.04)',

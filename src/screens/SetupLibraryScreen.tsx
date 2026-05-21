@@ -24,7 +24,10 @@ import FilterChip from '../components/ui/FilterChip';
  */
 
 const BG          = '#000000';
-const CARD_BG     = '#0F0F0F';
+// Setup list cards are secondary — L1 in the layered surface system.
+const CARD_BG     = '#0A0A0A';
+// Modal surface — L3 (separate from the list card color).
+const MODAL_BG    = '#141414';
 const CARD_BORDER = '#1F1F1F';
 const GOLD        = '#FFB800';
 const WHITE       = '#FFFFFF';
@@ -407,7 +410,7 @@ const styles = StyleSheet.create({
   modalCard: {
     width: '100%',
     maxWidth: 360,
-    backgroundColor: CARD_BG,
+    backgroundColor: MODAL_BG,
     borderColor: CARD_BORDER,
     borderWidth: 1,
     borderRadius: 16,

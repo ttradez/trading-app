@@ -74,7 +74,8 @@ const styles = StyleSheet.create({
   sectionGap: { marginTop: 24 },
 
   placeholderCard: {
-    backgroundColor: '#0F0F0F',
+    // Placeholder is a secondary surface — L1.
+    backgroundColor: '#0A0A0A',
     borderColor: '#1F1F1F',
     borderWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.04)',

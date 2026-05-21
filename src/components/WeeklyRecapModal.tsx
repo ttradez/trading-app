@@ -20,7 +20,8 @@ import { WeeklyRecap } from '../utils/weeklyRecap';
  */
 
 const BG    = '#000000';
-const CARD  = '#0F0F0F';
+// Modal surface — L3 in the layered system.
+const CARD  = '#141414';
 const BORDER = '#1F1F1F';
 const GOLD  = '#FFB800';
 const GREEN = '#00D395';

@@ -714,7 +714,10 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: 1,
-    backgroundColor: CARD_BORDER,
+    // Hairline divider — borders.hairline in the layered surface
+    // system. Lighter than the old card-border value so list rows
+    // feel grouped rather than fenced.
+    backgroundColor: 'rgba(255,255,255,0.06)',
     marginLeft: 16,
   },
 

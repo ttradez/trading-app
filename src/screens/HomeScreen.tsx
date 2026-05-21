@@ -49,7 +49,9 @@ import { colors as DT } from '../theme/tokens';
  */
 
 const BG          = '#000000';
-const CARD_BG     = '#0F0F0F';
+// Secondary cards on Home — L1 in the layered surface system.
+// Today's Mission overrides this back up to L3 via `missionElevated`.
+const CARD_BG     = '#0A0A0A';
 const CARD_BORDER = '#1F1F1F';
 const TRACK       = '#1F1F1F';
 const GOLD        = '#FFB800';
