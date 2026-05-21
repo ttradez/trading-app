@@ -9,6 +9,7 @@ import AccountPerformanceCard from '../components/AccountPerformanceCard';
 import MetricsCard from '../components/MetricsCard';
 import CalendarHeatmap from '../components/CalendarHeatmap';
 import SetupPerformanceBreakdown from '../components/SetupPerformanceBreakdown';
+import PnLDistributionHistogram from '../components/PnLDistributionHistogram';
 import { colors, borders, surface } from '../theme';
 
 /**
@@ -67,6 +68,15 @@ export default function StatsScreen({ navigation }: any) {
             // We're already inside the MainTabs navigator — jump
             // sideways to the Learn tab directly.
             onBrowseLibrary={() => navigation.navigate('Learn')}
+          />
+        </View>
+
+        {/* P&L distribution — symmetric histogram around $0, green
+            right side / red left side, "drawn not filled" bars. */}
+        <View style={[styles.sectionGap, styles.cardL1]}>
+          <Text style={styles.cardEyebrow}>P&amp;L DISTRIBUTION</Text>
+          <PnLDistributionHistogram
+            onStartSession={() => navigation.navigate('Chart')}
           />
         </View>
       </ScrollView>
