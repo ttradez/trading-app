@@ -38,6 +38,7 @@ import { useXpWatchers } from './src/hooks/useXpWatchers';
 import { useChallengeRotation } from './src/hooks/useChallengeRotation';
 import ChallengeToastHost from './src/components/ChallengeToastHost';
 import CelebrationHost from './src/components/CelebrationHost';
+import XpBurstHost from './src/components/XpBurstHost';
 import { useCelebrationTriggers } from './src/hooks/useCelebrationTriggers';
 import { colors } from './src/theme';
 
@@ -329,6 +330,10 @@ export default function App() {
           including onboarding. Host is a no-op until something
           enqueues; the modal handles its own visible state. */}
       <CelebrationHost />
+      {/* XP burst orchestrator — floats "+N XP" chips top-right on
+          every positive xpStore delta. Pointer-events: box-none so
+          it never blocks taps on the screen below. */}
+      <XpBurstHost />
       <NavigationContainer>
         {/* Remount on the Sign-Out edge (navEpoch) so the guard
             re-applies `initialRoute` and lands on the auth screen —
