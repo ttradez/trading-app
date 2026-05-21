@@ -572,7 +572,7 @@ export default function DashboardScreen({ navigation }: any) {
         <View style={[styles.sectionHeader, styles.sectionGap]}>
           <SectionHeader
             title="Next Badges"
-            icon={<MaterialCommunityIcons name="medal-outline" size={16} color={GOLD} />}
+            icon={<MaterialCommunityIcons name="medal-outline" size={16} color="rgba(255,255,255,0.5)" />}
             actionLabel="View all"
             actionCount={BADGE_COUNT}
             onActionPress={goToBadges}
@@ -668,7 +668,7 @@ export default function DashboardScreen({ navigation }: any) {
         <View style={styles.sectionHeaderTight}>
           <SectionHeader
             title="Recent Trades"
-            icon={<Ionicons name="time-outline" size={16} color={GOLD} />}
+            icon={<Ionicons name="time-outline" size={16} color="rgba(255,255,255,0.5)" />}
             actionLabel={stats.hasTrades ? 'View all' : undefined}
             onActionPress={() => navigation.navigate('Journal')}
           />
@@ -705,7 +705,7 @@ export default function DashboardScreen({ navigation }: any) {
             <View style={[styles.sectionHeader, styles.sectionGap]}>
               <SectionHeader
                 title="Saved Setups"
-                icon={<Ionicons name="bookmark-outline" size={16} color={GOLD} />}
+                icon={<Ionicons name="bookmark-outline" size={16} color="rgba(255,255,255,0.5)" />}
               />
               <Text style={styles.savedCount}>{savedSetups.length} saved</Text>
             </View>
@@ -809,9 +809,13 @@ function CompactChallengeCard({
   if (!t) return null;
   const pct = Math.min(1, inst.target > 0 ? inst.progress / inst.target : 0);
   // Left stripe colored by cadence so the type reads at a glance:
-  // daily gold · weekly green · monthly red.
+  // weekly green · monthly red · daily = neutral white@30% (was
+  // gold; demoted per DESIGN_AUDIT §2.2 — the stripe is decorative,
+  // not actionable, so it shouldn't compete with primary-CTA gold).
   const stripeColor =
-    tag === 'WEEKLY' ? GREEN : tag === 'MONTHLY' ? RED : GOLD;
+    tag === 'WEEKLY' ? GREEN
+      : tag === 'MONTHLY' ? RED
+        : 'rgba(255,255,255,0.3)';
   return (
     <View
       style={[
@@ -889,7 +893,7 @@ function ChallengesSection() {
     <View>
       <SectionHeader
         title="Daily Challenges"
-        icon={<MaterialCommunityIcons name="target" size={16} color={GOLD} />}
+        icon={<MaterialCommunityIcons name="target" size={16} color="rgba(255,255,255,0.5)" />}
       />
 
       {allComplete && (
@@ -1022,6 +1026,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  // KEPT GOLD — deliberate exception to the §2.2 demotion. This is
+  // the ONLY gold eyebrow on the dashboard and marks the singular
+  // "do this right now" hero card; demoting it would equalise the
+  // Today's Mission card with the rest of the page, which defeats
+  // its hero status. (Choice documented per spec: "Confirm with a
+  // comment which way you took it.")
   missionLabel: {
     color: GOLD,
     fontSize: 11,

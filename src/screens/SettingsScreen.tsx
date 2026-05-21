@@ -436,14 +436,18 @@ export default function SettingsScreen({ navigation }: any) {
             label="Reset Streak"
             onPress={resetStreak}
             leftIcon="warning-outline"
-            leftIconColor={GOLD}
+            // A warning should read as a warning, not decoration —
+            // match the loss-red used by Reset Everything (§2.2).
+            leftIconColor={RED}
           />
           <Separator />
           <Row
             label="Redo Onboarding"
             onPress={redoOnboarding}
             leftIcon="refresh-outline"
-            leftIconColor={GOLD}
+            // Non-action list row — demote from gold to white@60%
+            // per §2.2 so it doesn't compete with primary CTAs.
+            leftIconColor="rgba(255,255,255,0.6)"
           />
           <Separator />
           <Row

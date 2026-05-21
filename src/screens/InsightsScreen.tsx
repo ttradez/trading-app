@@ -133,10 +133,14 @@ export default function InsightsScreen({ navigation }: any) {
           <Text style={styles.subtitle}>Patterns from your trading data</Text>
         </View>
         <View style={styles.emptyWrap}>
+          {/* Empty-state glyph — "more is coming," not brand mascot,
+              so demoted from muted gold to neutral white@30% per
+              DESIGN_AUDIT §2.2 (the "Your Tendencies" Journal entry
+              card keeps the gold mascot treatment). */}
           <MaterialCommunityIcons
             name="brain"
             size={64}
-            color="rgba(255,184,0,0.3)"
+            color="rgba(255,255,255,0.3)"
           />
           <Text style={styles.emptyTitle}>Not enough data yet</Text>
           <Text style={styles.emptyBody}>

@@ -75,13 +75,16 @@ export function getSection(s: LibrarySetup): SetupSection {
 /** Category accent (mirrors the rank theme palette already in use
  *  so the app stays visually coherent). */
 export const CATEGORY_COLOR: Record<SetupCategory, string> = {
-  // Classic categories all use brand gold — no off-brand blues/pinks.
-  momentum: '#FFB800',
-  reversal: '#FFB800',
-  range:    '#FFB800',
-  news:     '#FFB800',
-  pattern:  '#FFB800',
-  // ICT categories all use the single violet accent.
+  // Classic categories: neutral white@60% eyebrow weight (was gold;
+  // demoted per DESIGN_AUDIT §2.2 — the card's "Learn & Practice →"
+  // link is the actionable gold; the category tag is metadata, so
+  // it should read as a quiet label, not compete for attention).
+  momentum: 'rgba(255,255,255,0.6)',
+  reversal: 'rgba(255,255,255,0.6)',
+  range:    'rgba(255,255,255,0.6)',
+  news:     'rgba(255,255,255,0.6)',
+  pattern:  'rgba(255,255,255,0.6)',
+  // ICT categories all use the single violet accent (unchanged).
   structure: ICT_ACCENT,
   entry:     ICT_ACCENT,
   liquidity: ICT_ACCENT,

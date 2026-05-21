@@ -89,7 +89,14 @@ export default function JournalScreen({ navigation }: any) {
           <MoneyText
             value={totalPnl}
             size={fontSize.lg}
-            style={[styles.summaryValue, totalPnl >= 0 ? styles.green : styles.red]}
+            // Zero P&L stays neutral white — green only for positive,
+            // red only for negative. Was painting $0.00 as a "win"
+            // by accident. (DESIGN_AUDIT §3.3)
+            style={[
+              styles.summaryValue,
+              totalPnl > 0 && styles.green,
+              totalPnl < 0 && styles.red,
+            ]}
           />
         </View>
         <View style={styles.summaryItem}>
