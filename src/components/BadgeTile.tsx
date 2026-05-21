@@ -154,8 +154,13 @@ export default function BadgeTile({
     <View style={styles.tile}>
       {emblem}
       {state === 'locked' ? (
+        // Locked tiles now show the real badge title (data was
+        // already populated in `src/data/badges.ts`); the lock
+        // glyph + dashed gold-dim ring + dimmer text color already
+        // signal the locked state. Falls back to category hint
+        // then "???" only if no name was passed.
         <Text style={styles.hint} numberOfLines={1}>
-          {categoryHint ?? '???'}
+          {name ?? categoryHint ?? '???'}
         </Text>
       ) : (
         <Text
@@ -182,7 +187,7 @@ export default function BadgeTile({
         accessibilityRole="button"
         accessibilityLabel={
           state === 'locked'
-            ? `Locked badge${categoryHint ? `, ${categoryHint}` : ''}`
+            ? `${name ?? 'Badge'}, locked${categoryHint ? `, ${categoryHint}` : ''}`
             : `${name ?? 'Badge'}, ${state}`
         }
       >
