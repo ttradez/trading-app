@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { colors, radius, spacing, fontSize, fontWeight, labelStyle } from '../theme';
+import { colors, radius, spacing, fontSize, fontWeight, labelStyle, typography } from '../theme';
 import { useJournalStore, JournalEntry, Emotion } from '../store/journalStore';
 import TradeCard from '../components/TradeCard';
 import SectionHeader from '../components/SectionHeader';
@@ -334,7 +334,8 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
 
   header: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xs },
-  headerTitle: { color: colors.textPrimary, fontSize: fontSize.xxl, fontWeight: fontWeight.black },
+  // Screen title — locked 6-step scale: `typography.display`.
+  headerTitle: { ...typography.display, color: colors.textPrimary },
   headerSub: { color: colors.textTertiary, fontSize: fontSize.xs, marginTop: 2 },
 
   searchBar: {

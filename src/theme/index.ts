@@ -104,6 +104,65 @@ export const labelStyle = {
   textTransform: 'uppercase' as const,
 };
 
+/**
+ * Locked 6-step typography scale (DESIGN_AUDIT §2.3).
+ *
+ * The single source of truth for font size + line height + weight
+ * + letter spacing. **Color is NOT baked in** — consumers apply
+ * `color` via the style array so type and color stay separate
+ * concerns:
+ *
+ *   <Text style={[typography.h1, { color: colors.textPrimary }]}>
+ *
+ * Steps (size / line-height / weight):
+ *  - display:  28 / 32 bold     — screen titles
+ *  - h1:       22 / 28 bold     — card titles
+ *  - h2:       17 / 22 semibold — row titles
+ *  - body:     15 / 22 regular  — paragraphs
+ *  - label:    13 / 18 medium   — sublabels, captions
+ *  - eyebrow:  11 / 14 medium, uppercase, letterSpacing 0.8 —
+ *              every tracked section header / eyebrow
+ *
+ * Don't invent a 7th step — surface the mismatch instead.
+ */
+export const typography = {
+  display: {
+    fontSize: 28,
+    lineHeight: 32,
+    fontWeight: fontWeight.bold,
+    letterSpacing: letterSpacing.tight,
+  },
+  h1: {
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: fontWeight.bold,
+    letterSpacing: -0.3,
+  },
+  h2: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: fontWeight.semibold,
+    letterSpacing: -0.2,
+  },
+  body: {
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: fontWeight.regular,
+  },
+  label: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: fontWeight.medium,
+  },
+  eyebrow: {
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: fontWeight.medium,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase' as const,
+  },
+} as const;
+
 // Reusable shadow recipes
 export const shadows = {
   card: {

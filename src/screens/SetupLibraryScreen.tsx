@@ -12,6 +12,7 @@ import {
 } from '../data/setupLibrary';
 import { useXpStore } from '../store/xpStore';
 import { RANK_BEATS, RankId } from '../data/rankConfig';
+import { typography } from '../theme';
 
 /**
  * SetupLibraryScreen — the pattern encyclopedia. A Classic/ICT
@@ -294,11 +295,10 @@ const styles = StyleSheet.create({
   },
   backBtn: { padding: 6 },
 
+  // Screen title — locked 6-step scale: `typography.display`.
   title: {
+    ...typography.display,
     color: WHITE,
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: -0.5,
   },
   subtitle: {
     marginTop: 6,

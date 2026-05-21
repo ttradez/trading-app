@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { PRIMARY_ACTION_LABEL } from '../theme/copy';
+import { typography } from '../theme';
 import { useJournalStore } from '../store/journalStore';
 import { useTradeJournalStore } from '../store/tradeJournalStore';
 import {
@@ -363,11 +364,10 @@ const styles = StyleSheet.create({
   backBtn: { padding: 6 },
 
   titleWrap: { paddingHorizontal: 20 },
+  // Screen title — locked 6-step scale: `typography.display`.
   title: {
+    ...typography.display,
     color: WHITE,
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: -0.5,
   },
   subtitle: {
     marginTop: 6,

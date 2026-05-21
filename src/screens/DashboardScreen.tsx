@@ -825,6 +825,10 @@ function CompactChallengeCard({
     >
       <View style={[styles.cAccent, { backgroundColor: stripeColor }]} />
       <View style={[styles.cInner, large && styles.cInnerLarge]}>
+        {/* Row 1: icon + (tag) + title + progress/check + swap.
+            `cName` takes flex so the title gets the full available
+            width and stops truncating mid-word (§3.8 fix). The +XP
+            reward and "1 swap left" hint move to row 2 below. */}
         <View style={styles.cRow}>
           <MaterialCommunityIcons
             name={challengeIcon(t.category) as any}
@@ -833,25 +837,16 @@ function CompactChallengeCard({
             style={styles.cIcon}
           />
           {tag && <Text style={styles.cTag}>{tag}</Text>}
-          <Text style={styles.cName} numberOfLines={1}>{t.name}</Text>
-          <View style={{ flex: 1 }} />
-          <View style={styles.cRight}>
-            {inst.completed ? (
-              <Ionicons name="checkmark-circle" size={18} color={GREEN} />
-            ) : (
-              <Text style={styles.cProg}>
-                {Math.floor(inst.progress)}/{inst.target}
-              </Text>
-            )}
-            <Text
-              style={[styles.cXp, inst.completed && styles.cXpDone]}
-              allowFontScaling={false}
-            >
-              {inst.completed
-                ? `✓ +${inst.xpReward} XP`
-                : `+${inst.xpReward} XP`}
+          <Text style={[styles.cName, { flex: 1 }]} numberOfLines={1}>
+            {t.name}
+          </Text>
+          {inst.completed ? (
+            <Ionicons name="checkmark-circle" size={18} color={GREEN} />
+          ) : (
+            <Text style={styles.cProg}>
+              {Math.floor(inst.progress)}/{inst.target}
             </Text>
-          </View>
+          )}
           {onSwap && !inst.completed && (
             <Pressable
               onPress={onSwap}
@@ -861,8 +856,21 @@ function CompactChallengeCard({
               accessibilityLabel={`Swap challenge ${t.name}`}
             >
               <Ionicons name="refresh" size={16} color={GOLD} />
-              {swapAvailable && <Text style={styles.cSwapBadge}>1 left</Text>}
             </Pressable>
+          )}
+        </View>
+        {/* Row 2: meta strip — +XP and (optional) "1 swap left". */}
+        <View style={styles.cMetaRow}>
+          <Text
+            style={[styles.cXp, inst.completed && styles.cXpDone]}
+            allowFontScaling={false}
+          >
+            {inst.completed
+              ? `✓ +${inst.xpReward} XP`
+              : `+${inst.xpReward} XP`}
+          </Text>
+          {onSwap && !inst.completed && swapAvailable && (
+            <Text style={styles.cSwapBadge}>1 swap left</Text>
           )}
         </View>
         <View style={styles.cBarTrack}>
@@ -1459,13 +1467,19 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   cProg: {
+    marginLeft: 8,
     color: WHITE,
     fontSize: 13,
     fontWeight: '800',
     fontVariant: ['tabular-nums'],
   },
+  cMetaRow: {
+    marginTop: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
   cXp: {
-    marginTop: 2,
     color: GOLD,
     fontSize: 12,
     fontWeight: '800',
@@ -1476,7 +1490,6 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
   },
   cSwapBadge: {
     color: GOLD,

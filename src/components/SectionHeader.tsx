@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, type as typo } from '../theme/tokens';
+import { typography } from '../theme';
 
 /**
  * SectionHeader — the one section title for the whole app. Created
@@ -110,7 +111,12 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   titleEyebrow: {
+    // Locked eyebrow style from the 6-step scale (§2.3) so every
+    // tracked uppercase label across the app has the same size,
+    // weight, and tracking. Color is applied by the consumer (or
+    // inherits from tokens.eyebrow's default).
     ...typo.eyebrow,
+    ...typography.eyebrow,
     flexShrink: 1,
   },
   action: {

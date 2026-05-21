@@ -9,6 +9,7 @@ import {
   getLibrarySetup, CATEGORY_COLOR, CATEGORY_LABEL, DIFFICULTY_COLOR,
 } from '../data/setupLibrary';
 import { savedSetupStartUnixSeconds } from '../store/watchlistStore';
+import { typography } from '../theme';
 
 /**
  * SetupDetailScreen — full detail for one library setup. Reads
@@ -163,11 +164,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
 
+  // Screen title — locked 6-step scale: `typography.display`.
   title: {
+    ...typography.display,
     color: WHITE,
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: -0.5,
   },
   metaRow: {
     marginTop: 12,

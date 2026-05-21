@@ -11,6 +11,7 @@ import { auth } from '../services/firebase';
 import { useAuthStore } from '../store/authStore';
 import DSSectionHeader from '../components/SectionHeader';
 import { colors as ST } from '../theme/tokens';
+import { typography, spacing } from '../theme';
 import { useOnboardingStore, Archetype, DailyCommitment } from '../store/onboardingStore';
 import { useStreakStore } from '../store/streakStore';
 import { useSettingsStore } from '../store/settingsStore';
@@ -286,7 +287,9 @@ export default function SettingsScreen({ navigation }: any) {
     <SafeAreaView edges={['top']} style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={BG} />
 
-      {/* Header */}
+      {/* Header — back button only; the title now sits left-aligned
+          at the top of the scroll content so it matches every other
+          screen (Setup Library, Insights, Journal etc.) per §3.8. */}
       <View style={styles.header}>
         <Pressable
           onPress={() => navigation.goBack()}
@@ -296,14 +299,15 @@ export default function SettingsScreen({ navigation }: any) {
         >
           <Ionicons name="arrow-back" size={24} color={WHITE} />
         </Pressable>
-        <Text style={styles.headerTitle}>Settings</Text>
-        <View style={{ width: 24 }} />
       </View>
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        <Text style={[typography.display, { color: WHITE, marginBottom: spacing.lg }]}>
+          Settings
+        </Text>
         {/* PROFILE */}
         <SectionHeader title="Profile" />
         <View style={styles.group}>
