@@ -22,7 +22,9 @@ import CelebrationHost from './src/components/CelebrationHost';
 import { useCelebrationTriggers } from './src/hooks/useCelebrationTriggers';
 import { colors } from './src/theme';
 
-import DashboardScreen    from './src/screens/DashboardScreen';
+import HomeScreen         from './src/screens/HomeScreen';
+import StatsScreen        from './src/screens/StatsScreen';
+import LearnScreen        from './src/screens/LearnScreen';
 import TradingScreen      from './src/screens/TradingScreen';
 import LeaderboardScreen  from './src/screens/LeaderboardScreen';
 import JournalScreen      from './src/screens/JournalScreen';
@@ -92,7 +94,7 @@ function MainTabs() {
   return (
     <>
     <Tab.Navigator
-      initialRouteName="Dashboard"
+      initialRouteName="Home"
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarStyle: {
@@ -105,10 +107,9 @@ function MainTabs() {
         },
         tabBarActiveTintColor: colors.gold,
         tabBarInactiveTintColor: colors.textSecondary,
-        // With 4 tabs (was 5), the labels (DASHBOARD / CHART /
-        // JOURNAL / LEADERBOARD) fit without truncation at 10 px.
-        // The CHALLENGES tab was retired — its content lives as
-        // a placeholder section inside the dashboard.
+        // 5 tabs at 10pt label — fits without truncation. Chart was
+        // removed from the bottom nav (now a stack screen reached
+        // from Today's Mission / saved setups / empty-state CTAs).
         tabBarLabelStyle: {
           fontSize: 10,
           fontWeight: '700',
@@ -118,19 +119,23 @@ function MainTabs() {
         },
         tabBarIconStyle: { marginTop: 0 },
         tabBarIcon: ({ color, focused }) => {
-          // Filled when active, line when inactive — a standard
-          // premium-app pattern (§3.1 PART C). Inactive keeps the
-          // quieter outline silhouette.
+          // Filled when active, line when inactive. Lucide names
+          // mapped to Ionicons (lucide-react-native isn't a dep).
+          //   Home  → home          Stats → stats-chart
+          //   Journal → journal     Learn → school (≈ GraduationCap)
+          //   Leaderboard (label "RANKS") → trophy
           const filled: Record<string, keyof typeof Ionicons.glyphMap> = {
-            Dashboard:   'home',
-            Chart:       'analytics',
+            Home:        'home',
+            Stats:       'stats-chart',
             Journal:     'journal',
+            Learn:       'school',
             Leaderboard: 'trophy',
           };
           const outline: Record<string, keyof typeof Ionicons.glyphMap> = {
-            Dashboard:   'home-outline',
-            Chart:       'analytics-outline',
+            Home:        'home-outline',
+            Stats:       'stats-chart-outline',
             Journal:     'journal-outline',
+            Learn:       'school-outline',
             Leaderboard: 'trophy-outline',
           };
           const name = (focused ? filled : outline)[route.name] ?? 'help';
@@ -145,9 +150,13 @@ function MainTabs() {
         // — a physical "selected" cue beyond color alone.
         tabBarLabel: ({ focused }) => {
           const labelMap: Record<string, string> = {
-            Dashboard:   'DASHBOARD',
-            Chart:       'CHART',
+            Home:        'HOME',
+            Stats:       'STATS',
             Journal:     'JOURNAL',
+            Learn:       'LEARN',
+            // Internal route name stayed "Leaderboard" to avoid a
+            // ripple of nav-call renames; the visible tab label is
+            // RANKS per spec.
             Leaderboard: 'RANKS',
           };
           return (
@@ -172,9 +181,10 @@ function MainTabs() {
         },
       })}
     >
-      <Tab.Screen name="Dashboard"   component={DashboardScreen} />
-      <Tab.Screen name="Chart"       component={TradingScreen} />
+      <Tab.Screen name="Home"        component={HomeScreen} />
+      <Tab.Screen name="Stats"       component={StatsScreen} />
       <Tab.Screen name="Journal"     component={JournalScreen} />
+      <Tab.Screen name="Learn"       component={LearnScreen} />
       <Tab.Screen name="Leaderboard" component={LeaderboardScreen} />
     </Tab.Navigator>
     <WeeklyRecapModal
@@ -313,6 +323,12 @@ export default function App() {
           {/* Hand-off destination: screen 12 (or Settings → Redo
               Onboarding) navigation.reset's between these. */}
           <Stack.Screen name="Main"                  component={MainTabs}                    options={{ gestureEnabled: false }} />
+          {/* Chart — was a bottom-tab screen until the 5-tab restructure;
+              now lives at the stack level so "Trade this setup" and
+              other deep-link CTAs push it full-screen over the tabs.
+              navigation.navigate('Chart', ...) from any tab screen
+              still finds it via React Navigation's parent search. */}
+          <Stack.Screen name="Chart"                 component={TradingScreen} />
           {/* Pushed from the dashboard gear icon — slides in over
               the tab navigator with its own in-screen back button. */}
           <Stack.Screen name="Settings"              component={SettingsScreen} />

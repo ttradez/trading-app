@@ -15,10 +15,9 @@ import { typography } from '../theme';
  * SetupDetailScreen — full detail for one library setup. Reads
  * `route.params.setupId`. The practice examples deep-link into a
  * replay session via the same `dailySetup` route param Daily
- * Mission / Saved Setups use. Because this is a root-stack screen
- * (over the tab navigator), it navigates to the nested Chart tab
- * with `navigate('Main', { screen: 'Chart', params })`, which also
- * unwinds the library screens off the stack.
+ * Mission / Saved Setups use. Chart now lives at the root stack
+ * level (5-tab restructure removed it from the bottom nav), so a
+ * direct `navigate('Chart', params)` reaches it from anywhere.
  */
 
 const BG          = '#000000';
@@ -54,16 +53,13 @@ export default function SetupDetailScreen({ route, navigation }: any) {
   const diffColor = DIFFICULTY_COLOR[setup.difficulty];
 
   const tradeThis = (ex: { symbol: string; date: string; timeframe: string }) => {
-    navigation.navigate('Main', {
-      screen: 'Chart',
-      params: {
-        dailySetup: {
-          symbol: ex.symbol,
-          timeframe: ex.timeframe,
-          startTs: savedSetupStartUnixSeconds(ex.date),
-          date: ex.date,
-          key: `lib-${setup.id}-${ex.date}-${Date.now()}`,
-        },
+    navigation.navigate('Chart', {
+      dailySetup: {
+        symbol: ex.symbol,
+        timeframe: ex.timeframe,
+        startTs: savedSetupStartUnixSeconds(ex.date),
+        date: ex.date,
+        key: `lib-${setup.id}-${ex.date}-${Date.now()}`,
       },
     });
   };

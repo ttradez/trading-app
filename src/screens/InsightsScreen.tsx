@@ -152,7 +152,7 @@ export default function InsightsScreen({ navigation }: any) {
           <Button
             label={PRIMARY_ACTION_LABEL}
             variant="primary"
-            onPress={() => navigation.navigate('Main', { screen: 'Chart' })}
+            onPress={() => navigation.navigate('Chart')}
             style={styles.cta}
           />
         </View>
