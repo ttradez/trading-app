@@ -28,6 +28,9 @@ import SectionHeader from '../components/SectionHeader';
 import Button from './../components/ui/Button';
 import NumericText from '../components/NumericText';
 import DailyChallengeTile from '../components/DailyChallengeTile';
+import {
+  AtRiskChip, FreezeConsumedToast,
+} from '../components/HomeStreakSignals';
 import LongTermGoalsCollapsible from '../components/LongTermGoalsCollapsible';
 import RankStrip from '../components/RankStrip';
 import DashboardHeader from '../components/DashboardHeader';
@@ -211,6 +214,11 @@ export default function HomeScreen({ navigation }: any) {
           onSettingsPress={() => navigation.navigate('Settings')}
         />
 
+        {/* Quiet at-risk chip — only renders after 18:00 local when
+            the user hasn't trained today and has a streak going.
+            Tap dismisses for the session. */}
+        <AtRiskChip />
+
         {/* ── Today's Mission ─────────────────────────────────── */}
         <View style={styles.sectionGap}>
           <TodaysMissionCard
@@ -325,6 +333,10 @@ export default function HomeScreen({ navigation }: any) {
           </>
         )}
       </ScrollView>
+      {/* Freeze-consumed toast — bottom of the SafeAreaView, sibling
+          of the ScrollView so it sits above content but inside the
+          screen safe area. Auto-fades after ~4s. */}
+      <FreezeConsumedToast />
     </SafeAreaView>
   );
 }

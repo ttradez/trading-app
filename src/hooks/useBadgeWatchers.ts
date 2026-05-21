@@ -14,10 +14,10 @@ import { checkStreakBadges, evaluateBadges } from '../utils/badgeChecker';
  *  2. Subscribe to the streak store and react to changes the
  *     trade/journal/watchlist call-site triggers don't cover:
  *       - `currentStreak` increased → re-evaluate (streak badges).
- *       - `freezesRemaining` decreased → a freeze was consumed;
+ *       - `freezesAvailable` decreased → a freeze was consumed;
  *         add the delta to the lifetime `freezesUsedTotal` (drives
  *         Freeze Saver / Unbreakable) then re-evaluate.
- *     `freezesRemaining` can also *increase* (a freeze is earned
+ *     `freezesAvailable` can also *increase* (a freeze is earned
  *     every 7 streak days) — only a strict decrease counts as
  *     usage.
  *
@@ -32,17 +32,17 @@ export function useBadgeWatchers() {
 
     const s0 = useStreakStore.getState();
     let prevStreak = s0.currentStreak;
-    let prevFreezes = s0.freezesRemaining;
+    let prevFreezes = s0.freezesAvailable;
 
     const unsub = useStreakStore.subscribe((s) => {
       let touched = false;
-      if (s.freezesRemaining < prevFreezes) {
-        useBadgeStore.getState().addFreezesUsed(prevFreezes - s.freezesRemaining);
+      if (s.freezesAvailable < prevFreezes) {
+        useBadgeStore.getState().addFreezesUsed(prevFreezes - s.freezesAvailable);
         touched = true;
       }
       if (s.currentStreak > prevStreak) touched = true;
       prevStreak = s.currentStreak;
-      prevFreezes = s.freezesRemaining;
+      prevFreezes = s.freezesAvailable;
       if (touched) checkStreakBadges();
     });
 

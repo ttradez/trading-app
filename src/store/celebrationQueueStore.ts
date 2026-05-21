@@ -42,15 +42,25 @@ export interface StreakCelebration {
   nextMilestone: number | null;
 }
 
+/** Freeze-earned moment (every 7-day streak step). Positive
+ *  framing only — "you have a tool" not "you might lose progress". */
+export interface FreezeCelebration {
+  kind: 'freeze';
+  /** The streak day count at which the freeze was earned. */
+  atStreak: number;
+}
+
 export type CelebrationEvent =
   | BadgeCelebration
   | RankCelebration
-  | StreakCelebration;
+  | StreakCelebration
+  | FreezeCelebration;
 
 interface QueueState {
   badge: BadgeCelebration[];
   rank: RankCelebration[];
   streak: StreakCelebration[];
+  freeze: FreezeCelebration[];
   /** Bumped on every enqueue so subscribers can re-read by ref. */
   version: number;
 
@@ -63,12 +73,14 @@ export const useCelebrationQueueStore = create<QueueState>((set, get) => ({
   badge: [],
   rank: [],
   streak: [],
+  freeze: [],
   version: 0,
 
   enqueue: (e) =>
     set((s) => {
-      // Per-kind FIFO append, plus a dedup guard for badge IDs so a
-      // re-evaluate that re-unlocks the same id can't double-fire.
+      // Per-kind FIFO append, plus dedup guards: badge IDs (a
+      // re-evaluate can't double-fire the same unlock) and
+      // freeze atStreak (same streak crossing can't double-grant).
       if (e.kind === 'badge') {
         if (s.badge.some((b) => b.badgeId === e.badgeId)) return s;
         return { badge: [...s.badge, e], version: s.version + 1 };
@@ -76,12 +88,18 @@ export const useCelebrationQueueStore = create<QueueState>((set, get) => ({
       if (e.kind === 'rank') {
         return { rank: [...s.rank, e], version: s.version + 1 };
       }
-      return { streak: [...s.streak, e], version: s.version + 1 };
+      if (e.kind === 'streak') {
+        return { streak: [...s.streak, e], version: s.version + 1 };
+      }
+      if (s.freeze.some((f) => f.atStreak === e.atStreak)) return s;
+      return { freeze: [...s.freeze, e], version: s.version + 1 };
     }),
 
   dequeue: () => {
     const s = get();
-    // Priority: badge → rank → streak.
+    // Priority: badge → rank → streak → freeze. Freeze sits at the
+    // bottom so a streak-milestone celebration plays first when both
+    // fire from the same 7-day step.
     if (s.badge.length) {
       const [first, ...rest] = s.badge;
       set({ badge: rest });
@@ -97,16 +115,21 @@ export const useCelebrationQueueStore = create<QueueState>((set, get) => ({
       set({ streak: rest });
       return first;
     }
+    if (s.freeze.length) {
+      const [first, ...rest] = s.freeze;
+      set({ freeze: rest });
+      return first;
+    }
     return undefined;
   },
 
-  clear: () => set({ badge: [], rank: [], streak: [] }),
+  clear: () => set({ badge: [], rank: [], streak: [], freeze: [] }),
 }));
 
 /** Total pending length across all kinds — convenient for subscribers
  *  that just need to know "is there something to drain?". */
 export function useCelebrationQueueLength(): number {
   return useCelebrationQueueStore(
-    (s) => s.badge.length + s.rank.length + s.streak.length,
+    (s) => s.badge.length + s.rank.length + s.streak.length + s.freeze.length,
   );
 }

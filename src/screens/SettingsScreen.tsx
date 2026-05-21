@@ -175,20 +175,10 @@ export default function SettingsScreen({ navigation }: any) {
     }
   };
 
-  const resetStreak = () => {
-    Alert.alert(
-      'Reset streak?',
-      "Reset your streak to 0? Your freezes will also reset. This can't be undone.",
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reset',
-          style: 'destructive',
-          onPress: () => useStreakStore.getState().reset(),
-        },
-      ],
-    );
-  };
+  // "Reset Streak" was removed from the main Settings list — bad
+  // quick-access UX (CRAFT_RESEARCH Topic 6 audit). The streak
+  // store's `reset()` action still exists for QA / "Reset
+  // Everything"; just no first-class shortcut.
 
   const redoOnboarding = () => {
     Alert.alert(
@@ -435,15 +425,6 @@ export default function SettingsScreen({ navigation }: any) {
             label="Export Trades (CSV)"
             onPress={exportCsv}
             leftIcon="download-outline"
-          />
-          <Separator />
-          <Row
-            label="Reset Streak"
-            onPress={resetStreak}
-            leftIcon="warning-outline"
-            // A warning should read as a warning, not decoration —
-            // match the loss-red used by Reset Everything (§2.2).
-            leftIconColor={RED}
           />
           <Separator />
           <Row

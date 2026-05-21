@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useCelebrationQueueStore } from './celebrationQueueStore';
 
 /**
  * Streak system — local state only. Persists via `zustand/middleware`
@@ -34,18 +35,30 @@ export type StreakStatus =
 // Streak-day counts that earn a "milestone" visual treatment.
 const MILESTONE_DAYS: ReadonlyArray<number> = [3, 7, 14, 30, 60, 100, 365];
 
-// Freeze inventory cap. Every 7 streak days earns one (up to 3).
-const FREEZE_CAP = 3;
-const DEFAULT_FREEZES = 2;
+// Freeze inventory — cap at 1, no banking (CRAFT_RESEARCH Topic 6
+// "earnable freezes, not punitive"). New users start at 0. The
+// user has to earn it through cadence, can hold at most one, and
+// has to spend it before another can be granted.
+const FREEZE_CAP = 1;
+const DEFAULT_FREEZES = 0;
 
 interface StreakState {
   /** Consecutive days the user has hit their daily training goal.
    *  Resets to 0 when missed-day accounting exhausts freezes. */
   currentStreak: number;
-  /** Streak freezes the user has banked. Seeded to 2; consumed by
-   *  `performDailyCheck()` to preserve the streak across a missed
-   *  day. Earned back every 7 streak days up to FREEZE_CAP. */
-  freezesRemaining: number;
+  /** Streak freeze available to consume. Cap is 1, no banking.
+   *  Earned every 7 streak days if `freezesAvailable === 0` at the
+   *  time of the step. Auto-consumed by `performDailyCheck()` to
+   *  preserve the streak across a missed day. */
+  freezesAvailable: number;
+  /** Streak count at which the most recent freeze was earned —
+   *  prevents a single 7-day step from granting twice if the daily
+   *  check fires more than once on the same boundary. */
+  lastFreezeEarnedAtStreak: number;
+  /** Set to true when `performDailyCheck()` auto-consumed a freeze.
+   *  Home reads this on next mount, shows a quiet "your streak was
+   *  saved" toast, then clears the flag via `acknowledgeFreezeUsed`. */
+  freezeConsumedNotice: boolean;
   /** ISO date (YYYY-MM-DD, device-local) of the most recent day the
    *  user hit their goal. `null` for a brand-new user. */
   lastCompletedDate: string | null;
@@ -76,6 +89,9 @@ interface StreakState {
   /** Grant one freeze, capped at FREEZE_CAP. Used by the
    *  `streak_freeze` challenge bonus reward. */
   grantFreeze: () => void;
+  /** Clear the "freeze was used yesterday" notice flag after Home
+   *  has rendered the toast. */
+  acknowledgeFreezeUsed: () => void;
   /** Manual streak reset to 0 (kept for dev/QA). */
   resetStreak: () => void;
   /** Full reset to defaults (used on onboarding wipe / sign-out). */
@@ -140,7 +156,9 @@ export function computeDisplayStatus(s: {
 
 const initialState = {
   currentStreak: 0,
-  freezesRemaining: DEFAULT_FREEZES,
+  freezesAvailable: DEFAULT_FREEZES,
+  lastFreezeEarnedAtStreak: 0,
+  freezeConsumedNotice: false,
   lastCompletedDate: null as string | null,
   todayDate: getTodayYMD(),
   todayTrainingMinutes: 0,
@@ -184,19 +202,41 @@ export const useStreakStore = create<StreakState>()(
         if (state.lastCompletedDate === today) return; // idempotent
 
         const nextStreak = state.currentStreak + 1;
-        let nextFreezes = state.freezesRemaining;
-        // Earn one freeze every 7 streak days, capped.
-        if (nextStreak % 7 === 0 && nextFreezes < FREEZE_CAP) {
-          nextFreezes++;
-        }
+
+        // Earn a freeze every 7 streak days, but ONLY if the user
+        // doesn't already hold one (cap is 1, no banking — Topic 6
+        // / Duolingo). `lastFreezeEarnedAtStreak` guards against a
+        // double-grant on the same boundary if completeDaily ever
+        // fires twice for the same day.
+        const earnsFreeze =
+          nextStreak > 0 &&
+          nextStreak % 7 === 0 &&
+          state.freezesAvailable < FREEZE_CAP &&
+          state.lastFreezeEarnedAtStreak !== nextStreak;
+
         set({
           currentStreak: nextStreak,
           lastCompletedDate: today,
-          freezesRemaining: nextFreezes,
+          freezesAvailable: earnsFreeze
+            ? Math.min(FREEZE_CAP, state.freezesAvailable + 1)
+            : state.freezesAvailable,
+          lastFreezeEarnedAtStreak: earnsFreeze
+            ? nextStreak
+            : state.lastFreezeEarnedAtStreak,
           // Completing today clears any earlier "freeze saved you"
           // signal — the badge now reads 'active'/'milestone'.
           frozenToday: false,
         });
+
+        if (earnsFreeze) {
+          // Positive-framing celebration: "you have a tool" not
+          // "you might lose progress." Renders via CelebrationModal
+          // mode="freeze" with the snowflake-over-flame visual.
+          useCelebrationQueueStore.getState().enqueue({
+            kind: 'freeze',
+            atStreak: nextStreak,
+          });
+        }
       },
 
       performDailyCheck: () => {
@@ -230,7 +270,7 @@ export const useStreakStore = create<StreakState>()(
           return;
         }
 
-        let freezes = state.freezesRemaining;
+        let freezes = state.freezesAvailable;
         let streak = state.currentStreak;
         let freezeUsed = false;
         for (let i = 0; i < missed; i++) {
@@ -246,24 +286,30 @@ export const useStreakStore = create<StreakState>()(
         set({
           ...baseTodayPatch,
           currentStreak: streak,
-          freezesRemaining: freezes,
+          freezesAvailable: freezes,
           // Only show 'frozen' if the streak actually survived. If
           // freezes ran out and the streak reset, the badge reads
           // 'broken' regardless of whether any freezes were used in
           // the partial-loop.
           frozenToday: freezeUsed && streak > 0,
+          // Surface a quiet, positive-framing toast on next Home
+          // mount — only when the streak actually survived. Cleared
+          // by Home via acknowledgeFreezeUsed().
+          freezeConsumedNotice: freezeUsed && streak > 0,
         });
       },
 
       consumeFreeze: () =>
         set((s) => ({
-          freezesRemaining: Math.max(0, s.freezesRemaining - 1),
+          freezesAvailable: Math.max(0, s.freezesAvailable - 1),
         })),
 
       grantFreeze: () =>
         set((s) => ({
-          freezesRemaining: Math.min(FREEZE_CAP, s.freezesRemaining + 1),
+          freezesAvailable: Math.min(FREEZE_CAP, s.freezesAvailable + 1),
         })),
+
+      acknowledgeFreezeUsed: () => set({ freezeConsumedNotice: false }),
 
       resetStreak: () => set({ currentStreak: 0 }),
 
@@ -271,9 +317,28 @@ export const useStreakStore = create<StreakState>()(
     }),
     {
       name: 'streak-storage-v1',
+      version: 2,
       storage: createJSONStorage(() => AsyncStorage),
       // Function fields are dropped automatically; persist serializes
-      // only the data fields above.
+      // only the data fields above. Migration handles the v1→v2
+      // rename of `freezesRemaining` → `freezesAvailable` (and the
+      // cap drop from 3 → 1) so existing users don't lose their
+      // streak data on update.
+      migrate: (raw, fromVersion) => {
+        const persisted = (raw ?? {}) as Partial<StreakState> & {
+          freezesRemaining?: number;
+        };
+        if (fromVersion < 2) {
+          const legacy = persisted.freezesRemaining ?? 0;
+          return {
+            ...persisted,
+            freezesAvailable: Math.min(FREEZE_CAP, legacy),
+            lastFreezeEarnedAtStreak: 0,
+            freezeConsumedNotice: false,
+          } as StreakState;
+        }
+        return persisted as StreakState;
+      },
     }
   )
 );

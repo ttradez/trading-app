@@ -7,6 +7,7 @@ import { useOnboardingStore, Archetype } from '../store/onboardingStore';
 import { useXpStore } from '../store/xpStore';
 import { getRankForXP } from '../data/rankConfig';
 import StreakBadge from './StreakBadge';
+import { HeaderFreezeIndicator } from './HomeStreakSignals';
 
 /**
  * Shared identity header (DESIGN_AUDIT §3.1 — 5-tab restructure).
@@ -87,8 +88,12 @@ export default function DashboardHeader({ onSettingsPress }: Props) {
               ? 'No streak yet — train today to start'
               : `${streakCount}-day streak`
           }
+          style={styles.streakWrap}
         >
           <StreakBadge count={streakCount} status={streakStatus} size="small" />
+          {/* Snowflake sits to the right of the flame when the user
+              holds a freeze. No count needed — cap is 1. */}
+          <HeaderFreezeIndicator />
         </Pressable>
         <Pressable
           onPress={onSettingsPress}
@@ -123,6 +128,7 @@ const styles = StyleSheet.create({
     paddingRight: 12,
   },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  streakWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   gearBtn: { padding: 2 },
   archetypeIcon: { marginRight: 6 },
   identityText: {

@@ -3,6 +3,7 @@ import {
   View, Text, Modal, Animated, Easing, StyleSheet,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { SnowflakeIcon, FlameIcon } from 'phosphor-react-native';
 import * as Haptics from 'expo-haptics';
 
 import RankBanner from './RankBanner';
@@ -73,6 +74,7 @@ export default function CelebrationModal({ event, onDismiss }: Props) {
             {event.kind === 'badge' && <BadgeContent event={event} />}
             {event.kind === 'rank' && <RankContent event={event} />}
             {event.kind === 'streak' && <StreakContent event={event} />}
+            {event.kind === 'freeze' && <FreezeContent />}
           </Animated.View>
         </View>
 
@@ -125,6 +127,32 @@ function RankContent({
           +{event.xpEarned} XP earned
         </Text>
       )}
+    </>
+  );
+}
+
+function FreezeContent() {
+  // Snowflake-over-flame layered glyph. Flame sits beneath as the
+  // existing streak metaphor; snowflake-fill in white@90% lands on
+  // top to convey "this protects the flame." Positive framing only
+  // — the body copy never references missing days as a threat.
+  return (
+    <>
+      <Text style={styles.eyebrow}>STREAK FREEZE EARNED</Text>
+      <View style={styles.layerRing}>
+        <View style={StyleSheet.absoluteFill as any}>
+          <View style={styles.layerFlame}>
+            <FlameIcon size={56} weight="fill" color="rgba(255,184,0,0.9)" />
+          </View>
+        </View>
+        <View style={styles.layerSnowflake}>
+          <SnowflakeIcon size={36} weight="fill" color="rgba(255,255,255,0.95)" />
+        </View>
+      </View>
+      <Text style={[typography.display, styles.title]}>Freeze ready</Text>
+      <Text style={[typography.body, styles.body]}>
+        Use it to protect a missed day.
+      </Text>
     </>
   );
 }
@@ -219,6 +247,30 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.45,
     shadowRadius: 18,
     elevation: 6,
+  },
+  // Freeze layered glyph — flame beneath, snowflake on top.
+  layerRing: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    borderWidth: 2,
+    borderColor: GOLD,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.45,
+    shadowRadius: 18,
+    elevation: 6,
+  },
+  layerFlame: {
+    width: '100%', height: '100%',
+    alignItems: 'center', justifyContent: 'center',
+    opacity: 0.55, // dimmer underlay so the snowflake reads on top
+  },
+  layerSnowflake: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   ctaWrap: {},
 });
