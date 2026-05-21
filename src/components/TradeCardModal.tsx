@@ -84,6 +84,11 @@ export default function TradeCardModal({ trade, onClose }: Props) {
       // auto-journal at close (TradingScreen). See §3.1 metrics TODO.
       rrAchieved:      prev?.rrAchieved ?? rMultiple ?? null,
       riskAmount:      prev?.riskAmount ?? null,
+      // TODO(setup-attribution): same as TradingScreen — populate
+      // from the launching Setup Library context once that flows
+      // through. Carry-forward preserves any setupId the
+      // auto-journal stored at close.
+      setupId:         prev?.setupId ?? null,
       notes: '',
       mistakes: '',
       wentWell: '',

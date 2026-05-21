@@ -8,6 +8,7 @@ import DashboardHeader from '../components/DashboardHeader';
 import AccountPerformanceCard from '../components/AccountPerformanceCard';
 import MetricsCard from '../components/MetricsCard';
 import CalendarHeatmap from '../components/CalendarHeatmap';
+import SetupPerformanceBreakdown from '../components/SetupPerformanceBreakdown';
 import { colors, borders, surface } from '../theme';
 
 /**
@@ -53,9 +54,20 @@ export default function StatsScreen({ navigation }: any) {
         {/* Trading-day heatmap — replaces the old "Detailed insights
             coming soon" placeholder. Each day cell tinted by net
             P&L magnitude (4 tiers green / red). */}
-        <View style={[styles.sectionGap, styles.heatmapCard]}>
+        <View style={[styles.sectionGap, styles.cardL1]}>
           <Text style={styles.cardEyebrow}>TRADING DAYS</Text>
           <CalendarHeatmap />
+        </View>
+
+        {/* Per-setup performance — gold-bar magnitude + colored P&L
+            number. Sort by net P&L descending. */}
+        <View style={[styles.sectionGap, styles.cardL1]}>
+          <Text style={styles.cardEyebrow}>BY SETUP</Text>
+          <SetupPerformanceBreakdown
+            // We're already inside the MainTabs navigator — jump
+            // sideways to the Learn tab directly.
+            onBrowseLibrary={() => navigation.navigate('Learn')}
+          />
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -72,8 +84,9 @@ const styles = StyleSheet.create({
   },
   sectionGap: { marginTop: 24 },
 
-  heatmapCard: {
-    // L1 surface + faint card border per the layered system.
+  // Shared L1 card shell — hosts both the heatmap and the per-setup
+  // breakdown.
+  cardL1: {
     backgroundColor: surface.l1,
     borderColor: borders.card,
     borderWidth: 1,

@@ -38,6 +38,12 @@ export interface JournalEntry {
   planStopPrice: number | null;
   planTargetPrice: number | null;
   planSkipped: boolean;
+  /** Setup Library id (e.g. "pin_bar", "fvg") this trade was
+   *  taken on — drives the Stats "by setup" breakdown. Null when
+   *  the trade wasn't tied to a library setup (manual trades, or
+   *  pre-feature legacy entries). NOT the same as planSetupType,
+   *  which is just a coarse intent category. */
+  setupId: string | null;
   // user-editable
   notes: string;
   mistakes: string;
@@ -131,6 +137,7 @@ export const useJournalStore = create<JournalState>((set, get) => ({
           // these explicitly at the execution site.
           rrAchieved: e.rrAchieved ?? e.rMultiple ?? null,
           riskAmount: e.riskAmount ?? null,
+          setupId:    e.setupId ?? null,
         };
       });
       set({ entries: migrated });

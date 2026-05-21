@@ -362,6 +362,13 @@ export default function TradingScreen({ route, navigation }: any) {
       // r_multiple isn't emitted by the backend.
       rrAchieved: typeof t.r_multiple === 'number' ? t.r_multiple : null,
       riskAmount: null,
+      // TODO(setup-attribution): populate from the Setup Library
+      // context that launched this session (dailySetup.libraryId or
+      // saved-setup origin) so Stats "By setup" can attribute the
+      // trade to a specific pattern. For now this stays null, which
+      // excludes the trade from the per-setup breakdown but keeps
+      // it counted in every other aggregate.
+      setupId:    null,
       openedAt:   toEpochMs(t.opened_at),
       closedAt:   toEpochMs(t.closed_at),
       planSetupType:   t.planSetupType ?? null,
