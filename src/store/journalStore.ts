@@ -44,6 +44,9 @@ export interface JournalEntry {
    *  pre-feature legacy entries). NOT the same as planSetupType,
    *  which is just a coarse intent category. */
   setupId: string | null;
+  /** Quick post-trade rating captured by PostTradeSummaryModal.
+   *  Optional — user can dismiss the modal without rating. */
+  rating: 'good' | 'ok' | 'bad' | null;
   // user-editable
   notes: string;
   mistakes: string;
@@ -138,6 +141,7 @@ export const useJournalStore = create<JournalState>((set, get) => ({
           rrAchieved: e.rrAchieved ?? e.rMultiple ?? null,
           riskAmount: e.riskAmount ?? null,
           setupId:    e.setupId ?? null,
+          rating:     e.rating ?? null,
         };
       });
       set({ entries: migrated });

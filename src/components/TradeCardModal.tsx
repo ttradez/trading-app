@@ -89,6 +89,8 @@ export default function TradeCardModal({ trade, onClose }: Props) {
       // through. Carry-forward preserves any setupId the
       // auto-journal stored at close.
       setupId:         prev?.setupId ?? null,
+      // Carry forward the post-trade rating if one already exists.
+      rating:          prev?.rating ?? null,
       notes: '',
       mistakes: '',
       wentWell: '',

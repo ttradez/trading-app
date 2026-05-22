@@ -63,10 +63,20 @@ interface QueueState {
   freeze: FreezeCelebration[];
   /** Bumped on every enqueue so subscribers can re-read by ref. */
   version: number;
+  /** When true, CelebrationHost holds dequeues — used by
+   *  PostTradeSummaryModal so its in-flight summary isn't
+   *  interrupted by a queued badge/rank/streak celebration. */
+  paused: boolean;
 
   enqueue: (e: CelebrationEvent) => void;
   dequeue: () => CelebrationEvent | undefined;
   clear: () => void;
+  /** Mark the queue paused (CelebrationHost holds presentation
+   *  until `resume` is called). Idempotent. */
+  pause: () => void;
+  /** Unpause — CelebrationHost picks up whatever has queued
+   *  while paused and presents in priority order. */
+  resume: () => void;
 }
 
 export const useCelebrationQueueStore = create<QueueState>((set, get) => ({
@@ -75,6 +85,7 @@ export const useCelebrationQueueStore = create<QueueState>((set, get) => ({
   streak: [],
   freeze: [],
   version: 0,
+  paused: false,
 
   enqueue: (e) =>
     set((s) => {
@@ -124,6 +135,8 @@ export const useCelebrationQueueStore = create<QueueState>((set, get) => ({
   },
 
   clear: () => set({ badge: [], rank: [], streak: [], freeze: [] }),
+  pause:  () => set({ paused: true }),
+  resume: () => set({ paused: false }),
 }));
 
 /** Total pending length across all kinds — convenient for subscribers

@@ -17,15 +17,19 @@ import {
 
 export default function CelebrationHost() {
   const queueLen = useCelebrationQueueLength();
+  const paused = useCelebrationQueueStore((s) => s.paused);
   const [active, setActive] = useState<CelebrationEvent | null>(null);
   const activeRef = useRef<CelebrationEvent | null>(null);
   activeRef.current = active;
 
   useEffect(() => {
-    if (active || queueLen === 0) return;
+    // Hold while another modal owns the screen (PostTradeSummary).
+    // Re-fires on `paused` flipping back to false → the queue drains
+    // anything that landed while paused.
+    if (active || queueLen === 0 || paused) return;
     const next = useCelebrationQueueStore.getState().dequeue();
     if (next) setActive(next);
-  }, [queueLen, active]);
+  }, [queueLen, active, paused]);
 
   if (!active) return null;
   return (

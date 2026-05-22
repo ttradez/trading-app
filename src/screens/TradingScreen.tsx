@@ -12,9 +12,13 @@ import DrawingToolbar from '../components/chart/DrawingToolbar';
 import DrawingSettingsModal from '../components/chart/DrawingSettingsModal';
 import DrawingFavoritesBar from '../components/chart/DrawingFavoritesBar';
 import MagnetToggle from '../components/chart/MagnetToggle';
-import TradeJournalModal, { TradeSummary } from '../components/TradeJournalModal';
+import PostTradeSummaryModal, { StatsSnapshot } from '../components/PostTradeSummaryModal';
 import PreTradeModal, { TradePlanInput } from '../components/PreTradeModal';
 import { useTradeJournalStore } from '../store/tradeJournalStore';
+import { useCelebrationQueueStore } from '../store/celebrationQueueStore';
+import {
+  winRate as winRateFn, profitFactor as profitFactorFn,
+} from '../lib/tradeMetrics';
 import type { JournalEntry } from '../store/journalStore';
 import { useTradePlanStore, TradePlan } from '../store/tradePlanStore';
 import { useDailySetupStore } from '../store/dailySetupStore';
@@ -311,7 +315,17 @@ export default function TradingScreen({ route, navigation }: any) {
   const [tfWheelOpen, setTfWheelOpen] = useState(false);
   const [marketWheelOpen, setMarketWheelOpen] = useState(false);
   const [recentClosedTrade, setRecentClosedTrade] = useState<any | null>(null);
+  // Open-summary state for PostTradeSummaryModal — captured AFTER
+  // the close handler commits the JournalEntry so we can pass the
+  // committed shape + pre/post stats snapshots.
+  const [postTradeSummary, setPostTradeSummary] = useState<{
+    trade: JournalEntry;
+    preStats: StatsSnapshot;
+    postStats: StatsSnapshot;
+    xpEarned: number;
+  } | null>(null);
   const saveTradeJournalEntry = useTradeJournalStore((s) => s.saveEntry);
+  const updateJournalEntry    = useJournalStore((s) => s.updateEntry);
   const addJournalEntry       = useJournalStore((s) => s.addEntry);
 
   // Pre-trade checklist ("Plan your trade" card). When enabled,
@@ -369,6 +383,9 @@ export default function TradingScreen({ route, navigation }: any) {
       // excludes the trade from the per-setup breakdown but keeps
       // it counted in every other aggregate.
       setupId:    null,
+      // Rating is captured by PostTradeSummaryModal on dismiss;
+      // initialised null on close.
+      rating:     null,
       openedAt:   toEpochMs(t.opened_at),
       closedAt:   toEpochMs(t.closed_at),
       planSetupType:   t.planSetupType ?? null,
@@ -380,6 +397,15 @@ export default function TradingScreen({ route, navigation }: any) {
       strategy: '', tags: [],
       savedAt: Date.now(),
     };
+    // Snapshot stats BEFORE the new entry lands — so the
+    // PostTradeSummaryModal can report Δwin-rate / Δprofit-factor
+    // against the user's pre-trade baseline.
+    const tradesBefore = useJournalStore.getState().entries;
+    const preStats: StatsSnapshot = {
+      winRate: winRateFn(tradesBefore),
+      profitFactor: profitFactorFn(tradesBefore),
+    };
+
     addJournalEntry(entry);
 
     // Grant the core trade XP HERE (once per close) rather than on
@@ -387,15 +413,35 @@ export default function TradingScreen({ route, navigation }: any) {
     // switches tabs, the modal unmounts and the dismiss handlers
     // never run, so XP would never flow. This is the #1
     // progression path; it must not depend on UI interaction.
-    // (The journal +15 and journaled-loss +5 still happen on Save.)
+    // (The journal +15 and journaled-loss +5 still happen on Done.)
+    let xpThisClose = 0;
     if (!xpProcessedRef.current.has(id)) {
       xpProcessedRef.current.add(id);
       const xp = useXpStore.getState();
       const { base, isFirstOfDay } = xp.registerTrade();
       xp.addXP(base, 'trade');
-      if (isFirstOfDay) xp.addXP(15, 'first trade of day');
-      if (entry.pnl > 0) xp.addXP(5, 'win');
+      xpThisClose += base;
+      if (isFirstOfDay) { xp.addXP(15, 'first trade of day'); xpThisClose += 15; }
+      if (entry.pnl > 0) { xp.addXP(5, 'win'); xpThisClose += 5; }
     }
+
+    // Post-trade stats snapshot for the modal's delta caption.
+    const tradesAfter = useJournalStore.getState().entries;
+    const postStats: StatsSnapshot = {
+      winRate: winRateFn(tradesAfter),
+      profitFactor: profitFactorFn(tradesAfter),
+    };
+
+    // Pause CelebrationHost so any badges / rank-ups queued by the
+    // close don't interrupt the summary. Resumed in onDone.
+    useCelebrationQueueStore.getState().pause();
+
+    setPostTradeSummary({
+      trade: entry,
+      preStats,
+      postStats,
+      xpEarned: xpThisClose,
+    });
 
     // Mark the daily mission complete if this trade is on the
     // curated scenario's symbol AND its NY-time calendar date.
@@ -428,24 +474,9 @@ export default function TradingScreen({ route, navigation }: any) {
     }
   }, [recentClosedTrade, addJournalEntry, todaySetup, markDailySetupComplete]);
 
-  // Adapt the snake_case backend close payload into the journal
-  // modal's `TradeSummary` shape. Defensive defaults because the
-  // auto-close path can omit fields if the backend skipped them
-  // (legacy quirk — mirrored from `TradeCardModal`).
-  const tradeJournalSummary: TradeSummary | null = useMemo(() => {
-    if (!recentClosedTrade) return null;
-    return {
-      id:        String(recentClosedTrade.id ?? ''),
-      symbol:    recentClosedTrade.symbol ?? '',
-      direction: recentClosedTrade.side === 'sell' ? 'short' : 'long',
-      pnl:       typeof recentClosedTrade.pnl === 'number' ? recentClosedTrade.pnl : 0,
-      planSetupType:   recentClosedTrade.planSetupType ?? null,
-      planStopPrice:   typeof recentClosedTrade.planStopPrice === 'number'
-        ? recentClosedTrade.planStopPrice : null,
-      planTargetPrice: typeof recentClosedTrade.planTargetPrice === 'number'
-        ? recentClosedTrade.planTargetPrice : null,
-    };
-  }, [recentClosedTrade]);
+  // PostTradeSummaryModal is driven off the `postTradeSummary`
+  // state above — no separate adapter needed since we pass the
+  // already-committed JournalEntry directly.
   const [newsOpen, setNewsOpen] = useState(false);
   const [closeConfirmId, setCloseConfirmId] = useState<string | null>(null);
 
@@ -1381,46 +1412,65 @@ export default function TradingScreen({ route, navigation }: any) {
         }}
       />
 
-      {/* Trade journal — auto-pops after every closed trade (manual
-          close or SL/TP hit). Pressing Save persists the grade /
-          emotions / note into `tradeJournalStore` keyed by trade id;
-          Skip just dismisses. Onboarding screen 9's first-trade
-          flow does NOT route through this screen, so the journal
-          popup deliberately never fires there. */}
-      <TradeJournalModal
-        visible={!!recentClosedTrade}
-        trade={tradeJournalSummary}
-        onSave={(data) => {
-          const closedPnl =
-            typeof recentClosedTrade?.pnl === 'number' ? recentClosedTrade.pnl : 0;
-          if (recentClosedTrade?.id) {
-            saveTradeJournalEntry(recentClosedTrade.id, data);
+      {/* Post-trade summary — auto-opens after every closed trade
+          (manual close or SL/TP hit). Replaces the older grade +
+          emotions popup with a richer summary (outcome pill, P&L
+          hero, stats delta, XP earned, rating + note). On Done,
+          rating + note land on the JournalEntry; if the user
+          rated or wrote a note, the +15 journal XP fires and the
+          journal badge checks run. CelebrationHost is paused
+          while this modal is up and resumed on dismiss so
+          unlocked badges / ranks / streaks play after. */}
+      <PostTradeSummaryModal
+        visible={postTradeSummary !== null}
+        trade={postTradeSummary?.trade ?? null}
+        preStats={postTradeSummary?.preStats ?? null}
+        postStats={postTradeSummary?.postStats ?? null}
+        xpEarned={postTradeSummary?.xpEarned ?? 0}
+        onDone={({ rating, note }) => {
+          const summary = postTradeSummary;
+          if (!summary) return;
+          const entry = summary.trade;
+          const closedPnl = entry.pnl;
+
+          // Persist rating + note onto the JournalEntry.
+          updateJournalEntry(entry.id, {
+            rating,
+            ...(note.length > 0 ? { notes: note } : {}),
+          });
+
+          // If the user engaged at all (rated OR wrote a note),
+          // treat as journaled — write a stub TradeJournalStore
+          // entry (drives journal badges) and award journal XP.
+          const journaled = rating !== null || note.length > 0;
+          if (journaled) {
+            saveTradeJournalEntry(entry.id, {
+              grade: rating === 'good' ? 'A' : rating === 'bad' ? 'C' : 'B',
+              emotions: [],
+              note: note.length > 0 ? note : null,
+            });
+            const xp = useXpStore.getState();
+            xp.addXP(15, 'journal');
+            if (closedPnl <= 0) xp.addXP(5, 'journaled loss');
           }
-          setRecentClosedTrade(null);
-          // Base/win/first-of-day XP was already granted at close
-          // (see the close effect). Here only the journal-specific
-          // XP: +15 for journaling, and the "journaled loss == win"
-          // bonus (+5) — a win already got its +5 at close.
-          const xp = useXpStore.getState();
-          xp.addXP(15, 'journal');
-          if (closedPnl <= 0) xp.addXP(5, 'journaled loss');
-          // Badge checks AFTER the modal is dismissed so the toast
-          // isn't hidden behind it; a grade was saved → journal badges.
+
+          // Always-run side-effects from the old flow — these run
+          // whether or not the user journaled.
           checkTradeCloseBadges(closedPnl);
-          checkJournalBadges();
-          // Challenge progress (after badges so consecutiveWins is
-          // current).
+          if (journaled) checkJournalBadges();
           detectAfterTradeClose(recentClosedTrade ?? {}, timeframe);
-          detectAfterJournalSave(data.grade, data.emotions ?? []);
-        }}
-        onSkip={() => {
-          const closedPnl =
-            typeof recentClosedTrade?.pnl === 'number' ? recentClosedTrade.pnl : 0;
+          if (journaled) {
+            detectAfterJournalSave(
+              rating === 'good' ? 'A' : rating === 'bad' ? 'C' : 'B',
+              [],
+            );
+          }
+
+          // Close the summary, clear the recent-close signal,
+          // resume the celebration queue so any unlocks play next.
+          setPostTradeSummary(null);
           setRecentClosedTrade(null);
-          // Base/win/first-of-day XP already granted at close; an
-          // unjournaled trade earns no journal bonus.
-          checkTradeCloseBadges(closedPnl);
-          detectAfterTradeClose(recentClosedTrade ?? {}, timeframe);
+          useCelebrationQueueStore.getState().resume();
         }}
       />
 
