@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet,
 } from 'react-native';
@@ -10,7 +10,26 @@ import MetricsCard from '../components/MetricsCard';
 import CalendarHeatmap from '../components/CalendarHeatmap';
 import SetupPerformanceBreakdown from '../components/SetupPerformanceBreakdown';
 import PnLDistributionHistogram from '../components/PnLDistributionHistogram';
+import DayDetailSheet from '../components/DayDetailSheet';
+import { useJournalStore, JournalEntry } from '../store/journalStore';
 import { colors, borders, surface } from '../theme';
+
+/** Filter a trade list to a single local-tz calendar day. */
+function tradesForDay(
+  trades: ReadonlyArray<JournalEntry>,
+  date: Date | null,
+): JournalEntry[] {
+  if (!date) return [];
+  const y = date.getFullYear();
+  const m = date.getMonth();
+  const d = date.getDate();
+  return trades
+    .filter((t) => {
+      const c = new Date(t.closedAt);
+      return c.getFullYear() === y && c.getMonth() === m && c.getDate() === d;
+    })
+    .sort((a, b) => a.closedAt - b.closedAt);
+}
 
 /**
  * Stats — the "how am I doing" surface (5-tab restructure).
@@ -28,6 +47,14 @@ const BG    = colors.bg;
 const WHITE = colors.textPrimary;
 
 export default function StatsScreen({ navigation }: any) {
+  // Day drill-down state for the heatmap → DayDetailSheet flow.
+  const allTrades = useJournalStore((s) => s.entries);
+  const [openDay, setOpenDay] = useState<Date | null>(null);
+  const dayTrades = useMemo(
+    () => tradesForDay(allTrades, openDay),
+    [allTrades, openDay],
+  );
+
   return (
     <SafeAreaView edges={['top']} style={styles.root}>
       <ScrollView
@@ -57,7 +84,7 @@ export default function StatsScreen({ navigation }: any) {
             P&L magnitude (4 tiers green / red). */}
         <View style={[styles.sectionGap, styles.cardL1]}>
           <Text style={styles.cardEyebrow}>TRADING DAYS</Text>
-          <CalendarHeatmap />
+          <CalendarHeatmap onDayPress={(d) => setOpenDay(d)} />
         </View>
 
         {/* Per-setup performance — gold-bar magnitude + colored P&L
@@ -86,6 +113,20 @@ export default function StatsScreen({ navigation }: any) {
           />
         </View>
       </ScrollView>
+
+      {/* Day drill-down sheet — opens when a heatmap cell with
+          trades is tapped. Routes per-trade taps to Journal with
+          the entry id pre-selected. */}
+      <DayDetailSheet
+        isVisible={openDay !== null}
+        date={openDay}
+        trades={dayTrades}
+        onClose={() => setOpenDay(null)}
+        onTradePress={(entryId) => {
+          setOpenDay(null);
+          navigation.navigate('Journal', { openEntryId: entryId });
+        }}
+      />
     </SafeAreaView>
   );
 }

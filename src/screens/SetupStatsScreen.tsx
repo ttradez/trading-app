@@ -10,7 +10,8 @@ import NumericText from '../components/NumericText';
 import EquityCurveSparkline from '../components/EquityCurveSparkline';
 import CalendarHeatmap from '../components/CalendarHeatmap';
 import PnLDistributionHistogram from '../components/PnLDistributionHistogram';
-import { useJournalStore } from '../store/journalStore';
+import DayDetailSheet from '../components/DayDetailSheet';
+import { useJournalStore, JournalEntry } from '../store/journalStore';
 import {
   getLibrarySetup, CATEGORY_LABEL,
 } from '../data/setupLibrary';
@@ -56,6 +57,23 @@ export default function SetupStatsScreen({ route, navigation }: any) {
     const w = e.nativeEvent.layout.width;
     if (w && w !== cardWidth) setCardWidth(w);
   };
+
+  // Day drill-down for the filtered heatmap. The day filter sits
+  // ON TOP of the setupId filter, so the sheet only shows trades
+  // for this setup on the tapped day — that's exactly what we want.
+  const [openDay, setOpenDay] = useState<Date | null>(null);
+  const dayTrades = useMemo(() => {
+    if (!openDay) return [] as JournalEntry[];
+    const y = openDay.getFullYear();
+    const m = openDay.getMonth();
+    const d = openDay.getDate();
+    return setupTrades
+      .filter((t) => {
+        const c = new Date(t.closedAt);
+        return c.getFullYear() === y && c.getMonth() === m && c.getDate() === d;
+      })
+      .sort((a, b) => a.closedAt - b.closedAt);
+  }, [setupTrades, openDay]);
 
   if (!setup) {
     return (
@@ -169,7 +187,10 @@ export default function SetupStatsScreen({ route, navigation }: any) {
         {/* Calendar heatmap, filtered. */}
         <View style={[styles.chartCard, styles.sectionGap]}>
           <Text style={styles.cardEyebrow}>TRADING DAYS</Text>
-          <CalendarHeatmap trades={setupTrades} />
+          <CalendarHeatmap
+            trades={setupTrades}
+            onDayPress={(d) => setOpenDay(d)}
+          />
         </View>
 
         {/* P&L distribution histogram, filtered. */}
@@ -187,6 +208,27 @@ export default function SetupStatsScreen({ route, navigation }: any) {
           />
         </View>
       </ScrollView>
+
+      {/* Day drill-down sheet — opens when a heatmap cell with
+          trades is tapped. The list shows ONLY this setup's trades
+          for that day since `setupTrades` is already filtered
+          upstream. */}
+      <DayDetailSheet
+        isVisible={openDay !== null}
+        date={openDay}
+        trades={dayTrades}
+        onClose={() => setOpenDay(null)}
+        onTradePress={(entryId) => {
+          setOpenDay(null);
+          // SetupStats is a root-stack screen; Journal is a tab
+          // inside Main — bridge via nested navigation so the
+          // openEntryId param threads through to JournalScreen.
+          navigation.navigate('Main', {
+            screen: 'Journal',
+            params: { openEntryId: entryId },
+          });
+        }}
+      />
     </SafeAreaView>
   );
 }

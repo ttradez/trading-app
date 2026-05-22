@@ -32,12 +32,27 @@ const EMOTIONS: { id: Emotion; label: string; icon: string; color: string }[] = 
 
 type Filter = 'all' | 'wins' | 'losses';
 
-export default function JournalScreen({ navigation }: any) {
+export default function JournalScreen({ navigation, route }: any) {
   const { entries } = useJournalStore();
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const [openRecap, setOpenRecap] = useState<WeeklyRecap | null>(null);
   const [editing, setEditing] = useState<JournalEntry | null>(null);
+
+  // Optional `openEntryId` route param — drilled in from the
+  // DayDetailSheet on the calendar heatmap. When supplied (and the
+  // entry exists), open the EntryEditModal on mount so the user
+  // lands right on the trade they tapped. Clears the param after
+  // consumption so subsequent visits don't re-open it.
+  const openEntryId = route?.params?.openEntryId as string | undefined;
+  React.useEffect(() => {
+    if (!openEntryId) return;
+    const target = entries.find((e) => e.id === openEntryId);
+    if (target) setEditing(target);
+    // Consume the param so a back-and-forth nav doesn't re-trigger.
+    navigation.setParams?.({ openEntryId: undefined });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openEntryId]);
 
   const filtered = useMemo(() => {
     let out = entries;

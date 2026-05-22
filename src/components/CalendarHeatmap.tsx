@@ -1,5 +1,7 @@
-import React, { useMemo, useState } from 'react';
-import { View, Text, Pressable, StyleSheet, LayoutChangeEvent } from 'react-native';
+import React, { useMemo, useRef, useState } from 'react';
+import {
+  View, Text, Pressable, StyleSheet, LayoutChangeEvent, Animated, Easing,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import NumericText from './NumericText';
@@ -34,9 +36,14 @@ interface Props {
   /** Optional override — accepts a snapshot for tests / Storybook.
    *  Real callers read from useJournalStore. */
   trades?: ReadonlyArray<{ closedAt: number; pnl: number }>;
+  /** Tap-to-detail handler. When supplied, cells WITH trades become
+   *  tappable (95% press scale, 100ms ease-out). Callers wire this
+   *  to open a day-detail sheet. Cells without trades stay inert
+   *  regardless. */
+  onDayPress?: (date: Date) => void;
 }
 
-export default function CalendarHeatmap({ trades: tradesProp }: Props) {
+export default function CalendarHeatmap({ trades: tradesProp, onDayPress }: Props) {
   const storeTrades = useJournalStore((s) => s.entries);
   const trades = tradesProp ?? storeTrades;
 
@@ -156,6 +163,11 @@ export default function CalendarHeatmap({ trades: tradesProp }: Props) {
                 pnl={c.day != null ? dailyPnL[c.day] : undefined}
                 size={cellSize}
                 isToday={c.day != null && c.day === todayDay}
+                onPress={
+                  onDayPress && c.day != null && dailyPnL[c.day] != null
+                    ? () => onDayPress(new Date(view.year, view.month, c.day!))
+                    : undefined
+                }
               />
             ))}
           </View>
@@ -175,12 +187,13 @@ export default function CalendarHeatmap({ trades: tradesProp }: Props) {
 // ── DayCell ────────────────────────────────────────────────────────
 
 function DayCell({
-  day, pnl, size, isToday,
+  day, pnl, size, isToday, onPress,
 }: {
   day: number | null;
   pnl: number | undefined;
   size: number;
   isToday: boolean;
+  onPress?: () => void;
 }) {
   // Outside the displayed month — pure spacing placeholder.
   if (day == null) {
@@ -204,7 +217,20 @@ function DayCell({
     ? GREEN
     : pnl != null && pnl < 0 ? RED : undefined;
 
-  return (
+  // Press feedback for tappable cells — 95% scale, 100ms ease-out
+  // (matches the PressableCard pattern from Home polish, but
+  // locally inlined since cells are tiny and want a sharper
+  // animation than the larger cards). Non-tappable cells skip the
+  // Animated wrapper entirely.
+  const scale = useRef(new Animated.Value(1)).current;
+  const animate = (toValue: number, ms: number) => {
+    Animated.timing(scale, {
+      toValue, duration: ms, easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const inner = (
     <View
       style={[
         styles.cell,
@@ -232,6 +258,22 @@ function DayCell({
         </NumericText>
       )}
     </View>
+  );
+
+  if (!onPress) return inner;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={() => animate(0.95, 100)}
+      onPressOut={() => animate(1, 150)}
+      accessibilityRole="button"
+      accessibilityLabel={`Day ${day}, view trades`}
+    >
+      <Animated.View style={{ transform: [{ scale }] }}>
+        {inner}
+      </Animated.View>
+    </Pressable>
   );
 }
 
