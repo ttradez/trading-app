@@ -23,8 +23,15 @@ export interface TradePlan {
   setupType: PlanSetupType | null;
   stopPrice: number | null;
   targetPrice: number | null;
-  /** true when the user tapped "Skip planning". */
+  /** true when the user tapped "Skip planning". Legacy field —
+   *  retained for compat with old stashed plans (older modal). */
   skipped: boolean;
+  /** PreTradeChecklistModal — every item in the 5-item discipline
+   *  checklist was checked before placing the trade. */
+  checklistPassed: boolean;
+  /** User tapped "Skip checklist this time" instead of completing
+   *  the discipline checklist. */
+  checklistSkipped: boolean;
 }
 
 interface TradePlanState {

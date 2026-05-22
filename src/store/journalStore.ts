@@ -47,6 +47,14 @@ export interface JournalEntry {
   /** Quick post-trade rating captured by PostTradeSummaryModal.
    *  Optional — user can dismiss the modal without rating. */
   rating: 'good' | 'ok' | 'bad' | null;
+  /** PreTradeChecklistModal — true when the user completed every
+   *  item in the 5-item discipline checklist before placing this
+   *  trade. False when items were left unchecked or the user
+   *  skipped the checklist entirely. */
+  checklistPassed: boolean;
+  /** True when the user tapped "Skip checklist this time" instead
+   *  of completing the 5-item discipline checklist. */
+  checklistSkipped: boolean;
   // user-editable
   notes: string;
   mistakes: string;
@@ -142,6 +150,8 @@ export const useJournalStore = create<JournalState>((set, get) => ({
           riskAmount: e.riskAmount ?? null,
           setupId:    e.setupId ?? null,
           rating:     e.rating ?? null,
+          checklistPassed:  e.checklistPassed ?? false,
+          checklistSkipped: e.checklistSkipped ?? false,
         };
       });
       set({ entries: migrated });

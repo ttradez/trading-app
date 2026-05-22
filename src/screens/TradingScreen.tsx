@@ -13,7 +13,7 @@ import DrawingSettingsModal from '../components/chart/DrawingSettingsModal';
 import DrawingFavoritesBar from '../components/chart/DrawingFavoritesBar';
 import MagnetToggle from '../components/chart/MagnetToggle';
 import PostTradeSummaryModal, { StatsSnapshot } from '../components/PostTradeSummaryModal';
-import PreTradeModal, { TradePlanInput } from '../components/PreTradeModal';
+import PreTradeChecklistModal from '../components/PreTradeChecklistModal';
 import { useTradeJournalStore } from '../store/tradeJournalStore';
 import { useCelebrationQueueStore } from '../store/celebrationQueueStore';
 import {
@@ -392,6 +392,8 @@ export default function TradingScreen({ route, navigation }: any) {
       planStopPrice:   typeof t.planStopPrice === 'number' ? t.planStopPrice : null,
       planTargetPrice: typeof t.planTargetPrice === 'number' ? t.planTargetPrice : null,
       planSkipped:     t.planSkipped === true,
+      checklistPassed:  t.checklistPassed === true,
+      checklistSkipped: t.checklistSkipped === true,
       notes: '', mistakes: '', wentWell: '',
       emotion: null, confidence: null,
       strategy: '', tags: [],
@@ -1032,6 +1034,8 @@ export default function TradingScreen({ route, navigation }: any) {
       planStopPrice: plan.stopPrice,
       planTargetPrice: plan.targetPrice,
       planSkipped: plan.skipped,
+      checklistPassed: plan.checklistPassed,
+      checklistSkipped: plan.checklistSkipped,
     };
   };
 
@@ -1373,34 +1377,40 @@ export default function TradingScreen({ route, navigation }: any) {
       {/* Per-drawing settings — appears whenever a drawing on the chart is selected. */}
       <DrawingSettingsModal />
 
-      {/* Pre-trade checklist — "Plan your trade" card, shown before
-          the order is staged when the setting is on. Place →
-          continue into the existing TP/SL drag + CONFIRM flow with
-          the plan attached; Skip → same, plan marked skipped;
-          Cancel (backdrop / back) → abort, no trade. Onboarding
-          screen 9 never mounts this screen so it can't appear there. */}
-      <PreTradeModal
+      {/* Pre-trade discipline checklist — shown before the order is
+          staged when the checklist setting is on. Place trade →
+          continue into the TP/SL drag + CONFIRM flow with the
+          checklist flags attached; Skip checklist this time → same,
+          checklistSkipped=true; Cancel (X / back) → abort. */}
+      <PreTradeChecklistModal
         visible={preTradePrompt !== null}
         direction={preTradePrompt === 'sell' ? 'short' : 'long'}
-        currentPrice={currentPrice}
-        pricePrecision={market.pip < 0.01 ? 5 : 2}
-        onPlace={(plan: TradePlanInput) => {
-          pendingPlanRef.current = {
-            setupType: plan.setupType,
-            stopPrice: plan.stopPrice,
-            targetPrice: plan.targetPrice,
-            skipped: false,
-          };
-          const side = preTradePrompt;
+        // TODO(setup-attribution): when the Chart route params carry
+        // a library setup id (Today's Mission / Setup detail launch),
+        // look it up via getLibrarySetup and pass here so the
+        // context header auto-fills. For now the modal renders the
+        // "Untagged trade" + Tag-a-setup → fallback.
+        setup={null}
+        onTagSetup={() => {
+          // Defer picker UI — route to the Setup Library for now.
+          // The trade attempt is abandoned; user can re-tap BUY/SELL
+          // after browsing.
+          pendingPlanRef.current = null;
           setPreTradePrompt(null);
-          if (side) beginPending(side);
+          navigation.navigate('SetupLibrary' as never);
         }}
-        onSkip={() => {
+        onConfirm={({ checklistPassed, checklistSkipped }) => {
+          // Plan stash carries the new flags forward to close-time.
+          // Legacy setup/stop/target stay null — the new modal
+          // doesn't capture them (handled by the order-staging
+          // TP/SL drag flow instead).
           pendingPlanRef.current = {
             setupType: null,
             stopPrice: null,
             targetPrice: null,
-            skipped: true,
+            skipped: checklistSkipped, // legacy mirror
+            checklistPassed,
+            checklistSkipped,
           };
           const side = preTradePrompt;
           setPreTradePrompt(null);

@@ -91,6 +91,10 @@ export default function TradeCardModal({ trade, onClose }: Props) {
       setupId:         prev?.setupId ?? null,
       // Carry forward the post-trade rating if one already exists.
       rating:          prev?.rating ?? null,
+      // Pre-trade discipline checklist flags — carried from the
+      // earlier journal write so re-journaling doesn't reset them.
+      checklistPassed:  prev?.checklistPassed ?? false,
+      checklistSkipped: prev?.checklistSkipped ?? false,
       notes: '',
       mistakes: '',
       wentWell: '',
