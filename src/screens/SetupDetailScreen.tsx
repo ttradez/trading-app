@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
 } from 'react-native';
@@ -9,6 +9,7 @@ import {
   getLibrarySetup, CATEGORY_COLOR, CATEGORY_LABEL, DIFFICULTY_COLOR,
 } from '../data/setupLibrary';
 import { savedSetupStartUnixSeconds } from '../store/watchlistStore';
+import { useLearnProgressStore } from '../store/learnProgressStore';
 import { typography } from '../theme';
 
 /**
@@ -29,6 +30,15 @@ const WHITE       = '#FFFFFF';
 export default function SetupDetailScreen({ route, navigation }: any) {
   const setupId = route?.params?.setupId as string | undefined;
   const setup = setupId ? getLibrarySetup(setupId) : undefined;
+
+  // Mark the setup as opened — drives the Learn screen's Next Up
+  // recommendation and per-path "N / Total opened" progress. Idempotent
+  // in the store, so repeat opens of the same setup are no-ops.
+  useEffect(() => {
+    if (setup?.id) {
+      useLearnProgressStore.getState().openSetup(setup.id);
+    }
+  }, [setup?.id]);
 
   if (!setup) {
     return (

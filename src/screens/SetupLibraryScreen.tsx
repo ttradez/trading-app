@@ -59,9 +59,17 @@ function DifficultyBadge({ difficulty }: { difficulty: LibrarySetup['difficulty'
   );
 }
 
-export default function SetupLibraryScreen({ navigation }: any) {
-  const [section, setSection] = useState<SetupSection>('classic');
-  const [filter, setFilter] = useState<Filter>('all');
+export default function SetupLibraryScreen({ navigation, route }: any) {
+  // Optional route-param pre-selection — the Learn screen's path
+  // cards pass these in so a tap lands on the right tab + filter
+  // chip without the user having to re-click them. Absent params
+  // fall through to the existing default (Classic / All).
+  const initialTab: SetupSection =
+    route?.params?.tab === 'ict' ? 'ict' : 'classic';
+  const initialFilter: Filter = route?.params?.filter ?? 'all';
+
+  const [section, setSection] = useState<SetupSection>(initialTab);
+  const [filter, setFilter] = useState<Filter>(initialFilter);
   const [lock, setLock] = useState<LockInfo | null>(null);
 
   const currentXP = useXpStore((s) => s.currentXP);
