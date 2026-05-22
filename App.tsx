@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -76,6 +76,10 @@ const Stack = createNativeStackNavigator();
 const Tab   = createBottomTabNavigator();
 
 function MainTabs() {
+  // Sunday Wrap deep-links: the modal hands setup ids / trade ids
+  // back up — we route them out via this navigator's parent stack.
+  const navigation = useNavigation<any>();
+
   // Streak daily-check runs when the user enters the main app
   // (post-onboarding) and on every background → foreground.
   useStreakManager();
@@ -208,6 +212,17 @@ function MainTabs() {
       visible={weeklyRecap !== null}
       recap={weeklyRecap}
       onClose={dismissRecap}
+      onOpenTrade={(tradeId) => {
+        dismissRecap();
+        navigation.navigate('Main', {
+          screen: 'Journal',
+          params: { openEntryId: tradeId },
+        });
+      }}
+      onOpenLesson={(setupId) =>
+        navigation.navigate('SetupDetail', { setupId })
+      }
+      onStartSession={() => navigation.navigate('Chart')}
     />
     <ChallengeToastHost />
     </>

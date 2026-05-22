@@ -6,7 +6,10 @@ import { useRecapStore } from '../store/recapStore';
 import { useXpStore } from '../store/xpStore';
 import {
   generateWeeklyRecap, isoWeekId, weekBounds, WeeklyRecap, RecapTrade,
+  SetupCatalog,
 } from '../utils/weeklyRecap';
+import { SETUP_LIBRARY, CATEGORY_LABEL } from '../data/setupLibrary';
+import { useLearnProgressStore } from '../store/learnProgressStore';
 
 /**
  * useWeeklyRecapTrigger — decides whether to auto-show the Sunday
@@ -97,8 +100,29 @@ export function useWeeklyRecapTrigger() {
             pnl: e.pnl,
             openedAt: e.openedAt,
             closedAt: e.closedAt,
+            setupId: e.setupId,
+            checklistPassed: e.checklistPassed,
+            rrAchieved: e.rrAchieved,
+            intendedRR: e.intendedRR,
+            // Journaled signal — the auto-journal at close only writes
+            // notes when the user filled them in PostTradeSummaryModal,
+            // so non-empty notes are a usable proxy until a dedicated
+            // flag lands. Same proxy for grade existence in tjEntries.
+            journaled: !!tj[e.tradeId] || (e.notes ?? '').length > 0,
+            // firstOfDay — not tracked per trade today; left undefined
+            // so the XP estimate stays conservative.
           };
         });
+        // Setup name + category catalog for the recap roll-ups.
+        const setupCatalog: SetupCatalog = {};
+        for (const s of SETUP_LIBRARY) {
+          setupCatalog[s.id] = {
+            name: s.name,
+            category: CATEGORY_LABEL[s.category] ?? s.category,
+          };
+        }
+        const openedSetupIds =
+          useLearnProgressStore.getState().openedSetupIds;
         const streak = useStreakStore.getState();
         toShow = generateWeeklyRecap(
           ref,
@@ -111,6 +135,8 @@ export function useWeeklyRecapTrigger() {
             totalTrainingMinutes: streak.todayTrainingMinutes,
           },
           grades,
+          setupCatalog,
+          openedSetupIds,
         );
         useRecapStore.getState().saveRecap(toShow);
       }

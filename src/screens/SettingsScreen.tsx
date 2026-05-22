@@ -23,6 +23,9 @@ import { useWatchlistStore } from '../store/watchlistStore';
 import { useBadgeStore } from '../store/badgeStore';
 import { useXpStore } from '../store/xpStore';
 import { useChallengeStore } from '../store/challengeStore';
+import { useRecapList } from '../store/recapStore';
+import WeeklyRecapModal from '../components/WeeklyRecapModal';
+import { WeeklyRecap } from '../utils/weeklyRecap';
 
 /**
  * SettingsScreen — pushed onto the stack from the dashboard gear
@@ -120,6 +123,12 @@ export default function SettingsScreen({ navigation }: any) {
   const setPreTradeChecklist = useSettingsStore((s) => s.setPreTradeChecklistEnabled);
 
   const journalEntries = useJournalStore((s) => s.entries);
+
+  // Recap list — sorted newest-first by `useRecapList`. The
+  // "Weekly recap" row opens the most-recent saved week.
+  const recapList = useRecapList();
+  const latestRecap = recapList[0]?.recap ?? null;
+  const [openRecap, setOpenRecap] = useState<WeeklyRecap | null>(null);
 
   const [editingName, setEditingName] = useState(false);
   const [nameBuffer, setNameBuffer]   = useState(displayName);
@@ -421,6 +430,25 @@ export default function SettingsScreen({ navigation }: any) {
         {/* DATA */}
         <SectionHeader title="Data" />
         <View style={styles.group}>
+          {/* Re-entry to the most-recent Sunday Wrap. Disabled when
+              no recap has been generated yet — a faint caption
+              explains why instead of just dimming the row. */}
+          <Row
+            label="Weekly recap"
+            leftIcon="calendar-outline"
+            leftIconColor="rgba(255,255,255,0.6)"
+            onPress={
+              latestRecap
+                ? () => setOpenRecap(latestRecap)
+                : undefined
+            }
+            value={
+              latestRecap
+                ? latestRecap.dateRange
+                : 'No recap yet'
+            }
+          />
+          <Separator />
           <Row
             label="Export Trades (CSV)"
             onPress={exportCsv}
@@ -485,6 +513,31 @@ export default function SettingsScreen({ navigation }: any) {
           />
         </View>
       </ScrollView>
+
+      {/* Weekly recap re-entry modal — opened from the "Weekly
+          recap" row above. Wired identically to the Home banner
+          modal so deep-link CTAs (best/worst trade, open lesson,
+          start session) route back through this navigator. */}
+      <WeeklyRecapModal
+        visible={openRecap !== null}
+        recap={openRecap}
+        onClose={() => setOpenRecap(null)}
+        onOpenTrade={(tradeId) => {
+          setOpenRecap(null);
+          navigation.navigate('Main', {
+            screen: 'Journal',
+            params: { openEntryId: tradeId },
+          });
+        }}
+        onOpenLesson={(setupId) => {
+          setOpenRecap(null);
+          navigation.navigate('SetupDetail', { setupId });
+        }}
+        onStartSession={() => {
+          setOpenRecap(null);
+          navigation.navigate('Chart');
+        }}
+      />
 
       {/* Select modals */}
       <SelectModal

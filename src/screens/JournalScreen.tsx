@@ -221,6 +221,14 @@ export default function JournalScreen({ navigation, route }: any) {
         visible={openRecap !== null}
         recap={openRecap}
         onClose={() => setOpenRecap(null)}
+        onOpenTrade={(tradeId) => {
+          setOpenRecap(null);
+          navigation.navigate('Journal', { openEntryId: tradeId });
+        }}
+        onOpenLesson={(setupId) =>
+          navigation.navigate('SetupDetail', { setupId })
+        }
+        onStartSession={() => navigation.navigate('Chart')}
       />
     </SafeAreaView>
   );

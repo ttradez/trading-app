@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
 } from 'react-native';
@@ -30,6 +30,10 @@ import DailyChallengeTile from '../components/DailyChallengeTile';
 import {
   AtRiskChip, FreezeConsumedToast,
 } from '../components/HomeStreakSignals';
+import SundayWrapBanner from '../components/SundayWrapBanner';
+import WeeklyRecapModal from '../components/WeeklyRecapModal';
+import { useRecapStore } from '../store/recapStore';
+import { isoWeekId, WeeklyRecap } from '../utils/weeklyRecap';
 import LongTermGoalsCollapsible from '../components/LongTermGoalsCollapsible';
 import RankStrip from '../components/RankStrip';
 import DashboardHeader from '../components/DashboardHeader';
@@ -153,6 +157,26 @@ export default function HomeScreen({ navigation }: any) {
   const goToBadges = () =>
     navigation.navigate('Leaderboard', { initialSegment: 'badges' });
 
+  // Sunday Wrap banner → modal. The banner only renders during the
+  // Sun-Tue window and self-hides when viewedAt / bannerDismissedAt
+  // is set. Tap → look up the same target-week recap and open the
+  // shared modal locally (the app's auto-trigger modal mounted in
+  // MainTabs is a one-shot; this gives the banner a re-entry path).
+  const [bannerRecap, setBannerRecap] = useState<WeeklyRecap | null>(null);
+  const openBannerRecap = useCallback(() => {
+    const now = new Date();
+    const dow = now.getDay();
+    const ref = dow === 0 ? now : new Date(now.getTime() - 7 * 86_400_000);
+    const stored = useRecapStore.getState().getRecap(isoWeekId(ref));
+    if (stored) setBannerRecap(stored.recap);
+  }, []);
+  const dismissBannerRecap = useCallback(() => {
+    setBannerRecap((cur) => {
+      if (cur) useRecapStore.getState().markViewed(cur.weekId);
+      return null;
+    });
+  }, []);
+
   return (
     <SafeAreaView edges={['top']} style={styles.root}>
       <ScrollView
@@ -168,6 +192,12 @@ export default function HomeScreen({ navigation }: any) {
             the user hasn't trained today and has a streak going.
             Tap dismisses for the session. */}
         <AtRiskChip />
+
+        {/* Sunday Wrap banner — only renders Sun-Tue local when an
+            unviewed, undismissed recap is stored for the target
+            week (≥1 trade). Self-hides (returns null) otherwise so
+            its absence costs zero layout. */}
+        <SundayWrapBanner onOpen={openBannerRecap} />
 
         {/* ── Today's Mission ─────────────────────────────────── */}
         <View style={styles.firstSectionGap}>
@@ -263,6 +293,24 @@ export default function HomeScreen({ navigation }: any) {
           of the ScrollView so it sits above content but inside the
           screen safe area. Auto-fades after ~4s. */}
       <FreezeConsumedToast />
+
+      {/* Sunday Wrap re-entry modal — opened from the banner above.
+          Independent of the app's auto-trigger modal (App.tsx /
+          MainTabs) so the banner has a guaranteed open path even
+          after the auto-trigger has fired this session. */}
+      <WeeklyRecapModal
+        visible={bannerRecap !== null}
+        recap={bannerRecap}
+        onClose={dismissBannerRecap}
+        onOpenTrade={(tradeId) => {
+          dismissBannerRecap();
+          navigation.navigate('Journal', { openEntryId: tradeId });
+        }}
+        onOpenLesson={(setupId) =>
+          navigation.navigate('SetupDetail', { setupId })
+        }
+        onStartSession={() => navigation.navigate('Chart')}
+      />
     </SafeAreaView>
   );
 }

@@ -18,6 +18,11 @@ import { WeeklyRecap } from '../utils/weeklyRecap';
 export interface StoredRecap {
   recap: WeeklyRecap;
   viewedAt: string | null;
+  /** ISO timestamp when the Home Sunday-Wrap banner was dismissed
+   *  for this week. Independent of `viewedAt` — the banner is a
+   *  secondary surface; the user may dismiss the banner without
+   *  ever opening the modal, or vice versa. */
+  bannerDismissedAt?: string | null;
 }
 
 const MAX_RECAPS = 12;
@@ -31,6 +36,8 @@ interface RecapState {
   saveRecap: (recap: WeeklyRecap) => void;
   /** Stamp `viewedAt = now` for a week (called on modal dismiss). */
   markViewed: (weekId: string) => void;
+  /** Stamp `bannerDismissedAt = now` for a week (Home banner X). */
+  markBannerDismissed: (weekId: string) => void;
   getRecap: (weekId: string) => StoredRecap | undefined;
   reset: () => void;
 }
@@ -62,6 +69,20 @@ export const useRecapStore = create<RecapState>()(
           recaps: {
             ...s.recaps,
             [weekId]: { ...existing, viewedAt: new Date().toISOString() },
+          },
+        }));
+      },
+
+      markBannerDismissed: (weekId) => {
+        const existing = get().recaps[weekId];
+        if (!existing) return;
+        set((s) => ({
+          recaps: {
+            ...s.recaps,
+            [weekId]: {
+              ...existing,
+              bannerDismissedAt: new Date().toISOString(),
+            },
           },
         }));
       },
