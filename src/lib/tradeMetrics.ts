@@ -44,12 +44,15 @@ export function profitFactor(trades: JournalEntry[]): number | 'inf' | null {
   return gp / gl;
 }
 
-/** Mean of trade.rrAchieved across trades that have it. Falls back
- *  to rMultiple (the existing realized-R field) for trades pre-
- *  rrAchieved so the metric has data on day one. */
+/** Mean of trade.rrAchieved across trades that have it. Reads the
+ *  discipline-signal field directly — `rrAchieved = pnl /
+ *  intendedRisk` computed at close from the user's pre-trade
+ *  plan. Trades without a captured plan (no intendedRisk → null
+ *  rrAchieved) are filtered out so we don't read backend r_multiple
+ *  as a proxy. Returns null when the sample is below the floor. */
 export function avgRR(trades: JournalEntry[]): number | null {
   const withR = trades
-    .map((t) => (t.rrAchieved ?? t.rMultiple))
+    .map((t) => t.rrAchieved)
     .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
   if (withR.length < MIN_AVG_RR_SAMPLE) return null;
   const sum = withR.reduce((a, b) => a + b, 0);

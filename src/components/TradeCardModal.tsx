@@ -95,6 +95,12 @@ export default function TradeCardModal({ trade, onClose }: Props) {
       // earlier journal write so re-journaling doesn't reset them.
       checklistPassed:  prev?.checklistPassed ?? false,
       checklistSkipped: prev?.checklistSkipped ?? false,
+      // Plan-capture fields — same carry-forward semantics.
+      intendedStop:    prev?.intendedStop ?? 0,
+      intendedTarget:  prev?.intendedTarget ?? 0,
+      positionSize:    prev?.positionSize ?? lots,
+      intendedRisk:    prev?.intendedRisk ?? 0,
+      intendedRR:      prev?.intendedRR ?? 0,
       notes: '',
       mistakes: '',
       wentWell: '',

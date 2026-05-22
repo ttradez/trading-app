@@ -28,6 +28,9 @@ export interface SetupStats {
   /** grossProfit / grossLoss. `'inf'` when there are winners and
    *  zero losers. `null` when below the 2-trade sample floor. */
   profitFactor: number | 'inf' | null;
+  /** Mean of `rrAchieved` across this setup's trades. Null when
+   *  no trade carried a captured plan (rrAchieved required). */
+  avgRR: number | null;
 }
 
 const MIN_PF_SAMPLE = 2;
@@ -72,6 +75,17 @@ export function getSetupPerformance(
     else if (grossLoss === 0) profitFactor = grossProfit > 0 ? 'inf' : null;
     else profitFactor = grossProfit / grossLoss;
 
+    // Mean of `rrAchieved` over the group's trades. Trades without
+    // a captured plan (no intendedRisk → null rrAchieved) are
+    // filtered out — no rMultiple fallback so the metric reads as
+    // pure discipline-signal rather than mixed with backend R.
+    const rs = group
+      .map((t) => t.rrAchieved)
+      .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+    const avgRR = rs.length > 0
+      ? rs.reduce((a, b) => a + b, 0) / rs.length
+      : null;
+
     out.push({
       setupId,
       name: setup.name,
@@ -80,6 +94,7 @@ export function getSetupPerformance(
       netPnl,
       winRate,
       profitFactor,
+      avgRR,
     });
   }
 

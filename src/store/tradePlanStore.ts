@@ -32,6 +32,18 @@ export interface TradePlan {
   /** User tapped "Skip checklist this time" instead of completing
    *  the discipline checklist. */
   checklistSkipped: boolean;
+  /** Setup Library id the user tagged at placement (or auto-filled
+   *  from the launching context). Null when untagged. */
+  setupId: string | null;
+  /** Captured plan numbers — these survive the open→close bridge
+   *  so the trade-close handler can write rrAchieved on the
+   *  resulting JournalEntry without re-computing risk from
+   *  scratch. All defaults are 0 / null for legacy stashes. */
+  intendedStop: number;
+  intendedTarget: number;
+  positionSize: number;
+  intendedRisk: number;
+  intendedRR: number;
 }
 
 interface TradePlanState {

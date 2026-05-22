@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, Modal, Pressable, ScrollView, StyleSheet,
+  View, Text, Modal, Pressable, ScrollView, TextInput,
+  KeyboardAvoidingView, Platform, StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
@@ -9,30 +10,29 @@ import {
 } from 'phosphor-react-native';
 
 import Button from './ui/Button';
-import { LibrarySetup, CATEGORY_LABEL } from '../data/setupLibrary';
+import NumericText from './NumericText';
+import {
+  LibrarySetup, CATEGORY_LABEL,
+  CLASSIC_SETUPS, ICT_SETUPS, getLibrarySetup,
+} from '../data/setupLibrary';
 import { colors, typography, borders, surface } from '../theme';
 
 /**
- * Pre-trade discipline checklist — symmetric counterpart to
- * PostTradeSummaryModal. Same surface.l0 background, same
- * full-screen slide-up presentation, same bottom-pinned Primary
- * CTA so pre/post bracket the trade with one visual language.
+ * Pre-trade discipline checklist + plan capture. Symmetric
+ * counterpart to PostTradeSummaryModal — same surface.l0
+ * background, same slide-up presentation, same bottom-pinned
+ * Primary CTA so pre/post bracket the trade in one language.
  *
- * Flow: 5-item checklist gates "Place trade". Each row is a
- * Pressable that toggles the item; the CTA stays disabled until
- * every item is checked. A "Skip checklist this time" tertiary
- * link below the CTA lets the user out without completing —
- * the resulting trade carries `checklistSkipped: true`.
- *
- * Setup context (top of screen) is auto-filled when the trade
- * was launched from Today's Mission / Setup detail. When the
- * user entered the Chart directly without a setup context, a
- * small Tertiary "Tag a setup →" link routes to Setup Library
- * (picker UI deferred).
+ * Capture surface: setup picker (if untagged), STOP / TARGET /
+ * SIZE numeric inputs, live-computed RISK / REWARD / R:R, and
+ * the 5-item discipline checklist. Place gates on plan + setup
+ * + every item checked. Skip Checklist still requires the plan
+ * — the discipline checks are skippable, the plan numbers aren't.
  */
 
 const GOLD  = colors.gold;
 const WHITE = colors.textPrimary;
+const GREEN = colors.green;
 
 const CHECKLIST_ITEMS: ReadonlyArray<string> = [
   "I've confirmed the setup is valid right now",
@@ -43,54 +43,112 @@ const CHECKLIST_ITEMS: ReadonlyArray<string> = [
 ];
 
 export interface PreTradeChecklistResult {
-  /** Every item checked. */
   checklistPassed: boolean;
-  /** User tapped "Skip checklist this time" instead of completing. */
   checklistSkipped: boolean;
+  setupId: string;
+  intendedStop: number;
+  intendedTarget: number;
+  positionSize: number;
+  intendedRisk: number;
+  intendedRR: number;
 }
 
 interface Props {
   visible: boolean;
-  /** Direction the user is about to take — drives the CTA label
-   *  ("Place buy" / "Place sell"). Closing implicitly cancels. */
   direction: 'long' | 'short';
-  /** Optional setup context — populated when the trade was
-   *  launched from Today's Mission / Setup detail / a saved
-   *  setup. Hidden when null. */
-  setup: LibrarySetup | null;
-  /** Tap on "Tag a setup →" when `setup` is null — routes to the
-   *  Setup Library. Provided by the caller. */
-  onTagSetup?: () => void;
-  /** Trade proceeds. Caller stages the actual order. */
+  /** Current price — used to seed numeric placeholders and as
+   *  the entry-price reference for risk/reward calc. */
+  currentPrice: number;
+  /** $ per point for this symbol (market.contractSize). NQ = 20,
+   *  ES = 50, etc. Drives the live risk/reward display. */
+  pointValue: number;
+  /** Decimal places for the symbol. */
+  pricePrecision: number;
+  /** Pre-set setup id when the trade was launched from Today's
+   *  Mission / Setup detail / Saved Setups. Null when entered
+   *  directly from the Chart. */
+  initialSetupId?: string | null;
+  /** Initial contract size — from the parent's `lots` state. */
+  initialSize?: number;
   onConfirm: (result: PreTradeChecklistResult) => void;
-  /** Backdrop / hardware-back / X close — abort, no trade placed. */
   onCancel: () => void;
 }
 
 export default function PreTradeChecklistModal({
-  visible, direction, setup, onTagSetup, onConfirm, onCancel,
+  visible, direction, currentPrice, pointValue, pricePrecision,
+  initialSetupId, initialSize = 1,
+  onConfirm, onCancel,
 }: Props) {
   const [checked, setChecked] = useState<boolean[]>(
     () => CHECKLIST_ITEMS.map(() => false),
   );
+  const [setupId, setSetupId] = useState<string | null>(initialSetupId ?? null);
+  const [stopStr, setStopStr] = useState('');
+  const [targetStr, setTargetStr] = useState('');
+  const [sizeStr, setSizeStr] = useState(() => String(initialSize));
+  const [pickerOpen, setPickerOpen] = useState(false);
 
-  // Fresh state every open — state persists per-modal-instance
-  // only, never bleeds across trades.
+  // Reset every open — checklist + plan inputs never bleed
+  // between trades. Setup pre-fill comes from the prop.
   useEffect(() => {
-    if (visible) setChecked(CHECKLIST_ITEMS.map(() => false));
-  }, [visible]);
+    if (!visible) return;
+    setChecked(CHECKLIST_ITEMS.map(() => false));
+    setSetupId(initialSetupId ?? null);
+    setStopStr('');
+    setTargetStr('');
+    setSizeStr(String(initialSize));
+    setPickerOpen(false);
+  }, [visible, initialSetupId, initialSize]);
+
+  const setup = setupId ? getLibrarySetup(setupId) ?? null : null;
+  const directionLabel = direction === 'short' ? 'sell' : 'buy';
+
+  // Parse the plan numbers — empty / non-numeric → 0.
+  const stop = parseNum(stopStr);
+  const target = parseNum(targetStr);
+  const size = parseNum(sizeStr);
+
+  // Computed risk / reward / RR. All require a non-zero entry,
+  // stop, target, and size to read sensibly.
+  const risk = currentPrice > 0 && stop > 0 && size > 0
+    ? Math.abs(currentPrice - stop) * size * pointValue
+    : 0;
+  const reward = currentPrice > 0 && target > 0 && size > 0
+    ? Math.abs(target - currentPrice) * size * pointValue
+    : 0;
+  const rr = risk > 0 && reward > 0 ? reward / risk : 0;
 
   const allChecked = checked.every(Boolean);
-  const directionLabel = direction === 'short' ? 'sell' : 'buy';
+  const planFilled = stop > 0 && target > 0 && size > 0;
+  const canPlace = allChecked && planFilled && setupId !== null;
+  const canSkip  = planFilled && setupId !== null;
+
+  // Helper text — explains why CTAs are disabled.
+  const helperText = (() => {
+    if (canPlace) return '';
+    const missing: string[] = [];
+    if (setupId === null) missing.push('tag a setup');
+    if (!planFilled) missing.push('fill the plan');
+    if (!allChecked) missing.push('complete the checklist');
+    return `Need to ${missing.join(' + ')} to continue`;
+  })();
 
   const toggle = (i: number) =>
     setChecked((prev) => prev.map((v, idx) => (idx === i ? !v : v)));
 
-  const handlePlace = () =>
-    onConfirm({ checklistPassed: true, checklistSkipped: false });
+  const buildResult = (skipped: boolean): PreTradeChecklistResult => ({
+    checklistPassed: !skipped && allChecked,
+    checklistSkipped: skipped,
+    setupId: setupId!,
+    intendedStop: stop,
+    intendedTarget: target,
+    positionSize: size,
+    intendedRisk: risk,
+    intendedRR: rr,
+  });
 
-  const handleSkip = () =>
-    onConfirm({ checklistPassed: false, checklistSkipped: true });
+  const handlePlace = () => onConfirm(buildResult(false));
+  const handleSkip  = () => onConfirm(buildResult(true));
 
   return (
     <Modal
@@ -99,107 +157,186 @@ export default function PreTradeChecklistModal({
       onRequestClose={onCancel}
     >
       <SafeAreaView edges={['top', 'bottom']} style={styles.root}>
-        {/* Close X (top-right). */}
-        <View style={styles.headerBar}>
-          <View style={{ flex: 1 }} />
-          <Pressable
-            onPress={onCancel}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            style={({ pressed }) => [styles.closeBtn, pressed && { opacity: 0.5 }]}
-            accessibilityRole="button"
-            accessibilityLabel="Cancel"
-          >
-            <XIcon size={22} weight="bold" color="rgba(255,255,255,0.7)" />
-          </Pressable>
-        </View>
-
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          {/* Setup context — auto-filled or "Tag a setup →" link. */}
-          <View style={styles.contextWrap}>
-            <Text style={styles.contextEyebrow}>TRADING SETUP</Text>
-            {setup ? (
-              <>
-                <Text style={[typography.h1, styles.contextTitle]} numberOfLines={2}>
-                  {setup.name}
-                </Text>
-                <Text style={styles.contextSubline}>
-                  {(CATEGORY_LABEL[setup.category] ?? setup.category).toUpperCase()}
-                  {' · '}
-                  {setup.difficulty.toUpperCase()}
-                </Text>
-              </>
-            ) : (
-              <>
-                <Text style={[typography.h1, styles.contextTitle]} numberOfLines={2}>
-                  Untagged trade
-                </Text>
-                {onTagSetup && (
+          {/* Close X */}
+          <View style={styles.headerBar}>
+            <View style={{ flex: 1 }} />
+            <Pressable
+              onPress={onCancel}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={({ pressed }) => [styles.closeBtn, pressed && { opacity: 0.5 }]}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel"
+            >
+              <XIcon size={22} weight="bold" color="rgba(255,255,255,0.7)" />
+            </Pressable>
+          </View>
+
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Setup context — when set, shows centered name + subline.
+                When null, shows a centered "Untagged trade" + Pick a
+                setup link that opens the bottom-sheet picker. */}
+            <View style={styles.contextWrap}>
+              <Text style={styles.contextEyebrow}>TRADING SETUP</Text>
+              {setup ? (
+                <>
+                  <Text style={[typography.h1, styles.contextTitle]} numberOfLines={2}>
+                    {setup.name}
+                  </Text>
+                  <Text style={styles.contextSubline}>
+                    {(CATEGORY_LABEL[setup.category] ?? setup.category).toUpperCase()}
+                    {' · '}
+                    {setup.difficulty.toUpperCase()}
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={[typography.h1, styles.contextTitle]} numberOfLines={2}>
+                    Untagged trade
+                  </Text>
                   <View style={styles.tagSetupWrap}>
                     <Button
-                      label="Tag a setup"
+                      label="Pick a setup"
                       variant="tertiary"
-                      onPress={onTagSetup}
+                      onPress={() => setPickerOpen(true)}
                     />
                   </View>
+                </>
+              )}
+            </View>
+
+            {/* One-line rule tip card — pulls the setup's how-to-trade
+                hint when a setup is attached. */}
+            {setup?.howToTrade && (
+              <TipCard text={setup.howToTrade.split('\n')[0]} />
+            )}
+
+            {/* YOUR PLAN — capture stop / target / size + live risk /
+                reward / R:R. */}
+            <View style={[styles.card, styles.sectionGap]}>
+              <View style={styles.planHeaderRow}>
+                <Text style={styles.cardEyebrow}>YOUR PLAN</Text>
+                {setup && (
+                  <Pressable
+                    onPress={() => setPickerOpen(true)}
+                    hitSlop={6}
+                    style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Change setup"
+                  >
+                    <Text style={styles.changeLink}>Change</Text>
+                  </Pressable>
                 )}
-              </>
+              </View>
+
+              <View style={styles.inputsRow}>
+                <PlanInput
+                  label="STOP"
+                  value={stopStr}
+                  onChange={setStopStr}
+                  placeholder={currentPrice > 0 ? currentPrice.toFixed(pricePrecision) : 'Price'}
+                />
+                <View style={styles.inputDivider} />
+                <PlanInput
+                  label="TARGET"
+                  value={targetStr}
+                  onChange={setTargetStr}
+                  placeholder={currentPrice > 0 ? currentPrice.toFixed(pricePrecision) : 'Price'}
+                />
+                <View style={styles.inputDivider} />
+                <PlanInput
+                  label="SIZE"
+                  value={sizeStr}
+                  onChange={setSizeStr}
+                  placeholder="1"
+                />
+              </View>
+
+              <View style={styles.computedRow}>
+                <ComputedCell
+                  label="RISK"
+                  value={risk > 0 ? `$${formatAbsShort(risk)}` : '—'}
+                />
+                <ComputedCell
+                  label="REWARD"
+                  value={reward > 0 ? `$${formatAbsShort(reward)}` : '—'}
+                />
+                <ComputedCell
+                  label="R:R"
+                  value={rr > 0 ? rr.toFixed(2) : '—'}
+                  valueColor={rr >= 1 ? GREEN : undefined}
+                />
+              </View>
+            </View>
+
+            {/* BEFORE YOU CLICK — 5-item discipline checklist. */}
+            <View style={[styles.card, styles.sectionGap]}>
+              <Text style={styles.cardEyebrow}>BEFORE YOU CLICK</Text>
+              {CHECKLIST_ITEMS.map((text, i) => (
+                <ChecklistRow
+                  key={i}
+                  text={text}
+                  checked={checked[i]}
+                  onToggle={() => toggle(i)}
+                  showDivider={i < CHECKLIST_ITEMS.length - 1}
+                />
+              ))}
+            </View>
+          </ScrollView>
+
+          {/* Bottom CTA + skip link. */}
+          <View style={styles.bottomCta}>
+            <Button
+              label={canPlace ? `Place ${directionLabel}` : 'Complete the plan to continue'}
+              variant="primary"
+              hero={canPlace}
+              disabled={!canPlace}
+              onPress={handlePlace}
+            />
+            {!canPlace && helperText.length > 0 && (
+              <Text style={styles.helperText}>{helperText}</Text>
+            )}
+            {canSkip && !canPlace && (
+              <Pressable
+                onPress={handleSkip}
+                hitSlop={6}
+                style={({ pressed }) => [
+                  styles.skipLinkWrap,
+                  pressed && { opacity: 0.5 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Skip checklist this time"
+              >
+                <Text style={styles.skipLinkText}>Skip checklist this time</Text>
+              </Pressable>
             )}
           </View>
 
-          {/* Setup's one-line rule — same gold-on-gold tip card
-              the Today's Mission card uses. */}
-          {setup?.howToTrade && (
-            <TipCard text={setup.howToTrade.split('\n')[0]} />
-          )}
-
-          {/* Discipline checklist — 5 yes/no items. */}
-          <View style={[styles.card, styles.sectionGap]}>
-            <Text style={styles.cardEyebrow}>BEFORE YOU CLICK</Text>
-            {CHECKLIST_ITEMS.map((text, i) => (
-              <ChecklistRow
-                key={i}
-                text={text}
-                checked={checked[i]}
-                onToggle={() => toggle(i)}
-                showDivider={i < CHECKLIST_ITEMS.length - 1}
-              />
-            ))}
-          </View>
-        </ScrollView>
-
-        {/* Bottom CTA + skip link. */}
-        <View style={styles.bottomCta}>
-          <Button
-            label={allChecked ? `Place ${directionLabel}` : 'Complete checklist to continue'}
-            variant="primary"
-            hero={allChecked}
-            disabled={!allChecked}
-            onPress={handlePlace}
+          {/* Setup picker — nested Modal. */}
+          <SetupPickerSheet
+            visible={pickerOpen}
+            onClose={() => setPickerOpen(false)}
+            onPick={(id) => {
+              setSetupId(id);
+              setPickerOpen(false);
+            }}
+            selectedId={setupId}
           />
-          <Pressable
-            onPress={handleSkip}
-            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-            style={({ pressed }) => [
-              styles.skipLinkWrap,
-              pressed && { opacity: 0.5 },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Skip checklist this time"
-          >
-            <Text style={styles.skipLinkText}>Skip checklist this time</Text>
-          </Pressable>
-        </View>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
   );
 }
 
-// ── Tip card (mirrors the Today's Mission gold tip card) ────────
+// ── Tip card ───────────────────────────────────────────────────────
 
 function TipCard({ text }: { text: string }) {
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -211,7 +348,6 @@ function TipCard({ text }: { text: string }) {
         setSize({ w: width, h: height });
       }}
     >
-      {/* Subtle radial gold ambient — same recipe used elsewhere. */}
       {size.w > 0 && (
         <Svg
           width={size.w}
@@ -235,8 +371,52 @@ function TipCard({ text }: { text: string }) {
           color="rgba(255,184,0,0.9)"
           style={styles.tipIcon}
         />
-        <Text style={[styles.tipText]}>{text}</Text>
+        <Text style={styles.tipText}>{text}</Text>
       </View>
+    </View>
+  );
+}
+
+// ── Plan input / computed cells ───────────────────────────────────
+
+function PlanInput({
+  label, value, onChange, placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <View style={styles.inputCell}>
+      <Text style={styles.inputLabel}>{label}</Text>
+      <TextInput
+        value={value}
+        onChangeText={onChange}
+        placeholder={placeholder}
+        placeholderTextColor="rgba(255,255,255,0.25)"
+        keyboardType="decimal-pad"
+        selectionColor={GOLD}
+        style={styles.input}
+        returnKeyType="done"
+      />
+    </View>
+  );
+}
+
+function ComputedCell({
+  label, value, valueColor,
+}: { label: string; value: string; valueColor?: string }) {
+  return (
+    <View style={styles.computedCell}>
+      <Text style={styles.computedLabel}>{label}</Text>
+      <NumericText
+        bold
+        style={[styles.computedValue, valueColor ? { color: valueColor } : null]}
+        allowFontScaling={false}
+      >
+        {value}
+      </NumericText>
     </View>
   );
 }
@@ -284,6 +464,100 @@ function ChecklistRow({
   );
 }
 
+// ── Setup picker (nested Modal) ──────────────────────────────────
+
+function SetupPickerSheet({
+  visible, onClose, onPick, selectedId,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onPick: (setupId: string) => void;
+  selectedId: string | null;
+}) {
+  const sections = useMemo(() => [
+    { title: 'CLASSIC', items: CLASSIC_SETUPS },
+    { title: 'ICT',     items: ICT_SETUPS },
+  ], []);
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent={Platform.OS !== 'ios'}
+      presentationStyle={Platform.OS === 'ios' ? 'pageSheet' : undefined}
+      onRequestClose={onClose}
+    >
+      <SafeAreaView edges={['top', 'bottom']} style={pickerStyles.root}>
+        <View style={pickerStyles.headerBar}>
+          <Text style={[typography.h1, pickerStyles.title]}>Pick a setup</Text>
+          <Pressable
+            onPress={onClose}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={({ pressed }) => [pickerStyles.closeBtn, pressed && { opacity: 0.5 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+          >
+            <XIcon size={22} weight="bold" color="rgba(255,255,255,0.7)" />
+          </Pressable>
+        </View>
+
+        <ScrollView contentContainerStyle={pickerStyles.scrollContent}>
+          {sections.map((sec) => (
+            <View key={sec.title} style={pickerStyles.section}>
+              <Text style={pickerStyles.sectionEyebrow}>{sec.title}</Text>
+              <View style={pickerStyles.sectionCard}>
+                {sec.items.map((s, i) => {
+                  const isSelected = selectedId === s.id;
+                  return (
+                    <React.Fragment key={s.id}>
+                      <Pressable
+                        onPress={() => onPick(s.id)}
+                        style={({ pressed }) => [
+                          pickerStyles.row,
+                          pressed && { opacity: 0.6 },
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: isSelected }}
+                        accessibilityLabel={s.name}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={pickerStyles.rowName} numberOfLines={1}>
+                            {s.name}
+                          </Text>
+                          <Text style={pickerStyles.rowCategory}>
+                            {(CATEGORY_LABEL[s.category] ?? s.category).toUpperCase()}
+                          </Text>
+                        </View>
+                        {isSelected && (
+                          <CheckCircleIcon size={20} weight="fill" color={GOLD} />
+                        )}
+                      </Pressable>
+                      {i < sec.items.length - 1 && <View style={pickerStyles.divider} />}
+                    </React.Fragment>
+                  );
+                })}
+              </View>
+            </View>
+          ))}
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+// ── Helpers ────────────────────────────────────────────────────────
+
+function parseNum(s: string): number {
+  const t = s.trim();
+  if (!t) return 0;
+  const n = Number(t);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function formatAbsShort(n: number): string {
+  return Math.round(n).toLocaleString('en-US');
+}
+
 // ── Styles ─────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
@@ -303,11 +577,7 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
 
-  // Setup context
-  contextWrap: {
-    marginTop: 8,
-    alignItems: 'center',
-  },
+  contextWrap: { marginTop: 8, alignItems: 'center' },
   contextEyebrow: {
     color: GOLD,
     fontSize: 11,
@@ -315,11 +585,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     marginBottom: 8,
   },
-  contextTitle: {
-    color: WHITE,
-    textAlign: 'center',
-    maxWidth: 320,
-  },
+  contextTitle: { color: WHITE, textAlign: 'center', maxWidth: 320 },
   contextSubline: {
     marginTop: 6,
     color: 'rgba(255,255,255,0.6)',
@@ -327,13 +593,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 1.5,
   },
-  tagSetupWrap: {
-    marginTop: 8,
-  },
+  tagSetupWrap: { marginTop: 8 },
 
   sectionGap: { marginTop: 20 },
 
-  // Gold tip card — same treatment as Today's Mission.
+  // Gold tip card (same recipe as Today's Mission tip).
   tipCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -358,7 +622,7 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
 
-  // Checklist card
+  // Generic L1 card
   card: {
     backgroundColor: surface.l1,
     borderColor: borders.card,
@@ -372,8 +636,72 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1.5,
+  },
+
+  // Plan card — header row + inputs row + computed row
+  planHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 12,
   },
+  changeLink: {
+    color: GOLD,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  inputsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  inputCell: { flex: 1, paddingHorizontal: 4 },
+  inputDivider: {
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    marginVertical: 4,
+  },
+  inputLabel: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    marginBottom: 4,
+  },
+  input: {
+    color: WHITE,
+    fontSize: 16,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+    paddingVertical: 4,
+    paddingHorizontal: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.10)',
+  },
+
+  computedRow: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.06)',
+    flexDirection: 'row',
+  },
+  computedCell: { flex: 1, alignItems: 'center' },
+  computedLabel: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    marginBottom: 4,
+  },
+  computedValue: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 16,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+
+  // Checklist
   checkRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -399,8 +727,17 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 8,
   },
+  helperText: {
+    marginTop: 8,
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 1,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
   skipLinkWrap: {
-    marginTop: 12,
+    marginTop: 8,
     alignSelf: 'center',
     paddingVertical: 6,
   },
@@ -409,5 +746,61 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
     letterSpacing: 0.2,
+  },
+});
+
+const pickerStyles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: surface.l0 },
+  headerBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 4,
+    paddingBottom: 16,
+  },
+  title: { flex: 1, color: WHITE },
+  closeBtn: { padding: 4 },
+
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 40 },
+  section: { marginTop: 8 },
+  sectionEyebrow: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    marginBottom: 8,
+    marginTop: 8,
+  },
+  sectionCard: {
+    backgroundColor: surface.l1,
+    borderColor: borders.card,
+    borderWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+  },
+  rowName: {
+    color: WHITE,
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: -0.1,
+  },
+  rowCategory: {
+    marginTop: 3,
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    marginLeft: 14,
   },
 });

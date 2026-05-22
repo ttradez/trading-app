@@ -255,9 +255,12 @@ function HeroCell({
 
 // ── Helpers ────────────────────────────────────────────────────────
 
-function avgRRDisplay(trades: ReadonlyArray<{ rrAchieved: number | null; rMultiple: number | null }>): string {
+function avgRRDisplay(trades: ReadonlyArray<{ rrAchieved: number | null }>): string {
+  // rrAchieved only — no rMultiple fallback. Trades pre-plan-
+  // capture (no intendedRisk) cleanly read as "no signal" rather
+  // than mixing backend R with discipline-signal R.
   const xs = trades
-    .map((t) => t.rrAchieved ?? t.rMultiple)
+    .map((t) => t.rrAchieved)
     .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
   if (xs.length === 0) return '—';
   const avg = xs.reduce((a, b) => a + b, 0) / xs.length;

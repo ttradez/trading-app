@@ -367,22 +367,22 @@ export default function TradingScreen({ route, navigation }: any) {
       takeProfit: t.take_profit ?? null,
       pnl:        typeof t.pnl === 'number' ? t.pnl : 0,
       rMultiple:  typeof t.r_multiple === 'number' ? t.r_multiple : null,
-      // TODO(metrics): the execution engine returns r_multiple (the
-      // realized R) but no explicit risk$ amount, so rrAchieved is
-      // currently aliased to r_multiple and riskAmount stays null.
-      // A future pass should compute risk$ from planStopPrice ×
-      // contract spec and divide realized $ P&L by it for a true
-      // rrAchieved — needed for accurate Dashboard Avg R:R when
-      // r_multiple isn't emitted by the backend.
-      rrAchieved: typeof t.r_multiple === 'number' ? t.r_multiple : null,
-      riskAmount: null,
-      // TODO(setup-attribution): populate from the Setup Library
-      // context that launched this session (dailySetup.libraryId or
-      // saved-setup origin) so Stats "By setup" can attribute the
-      // trade to a specific pattern. For now this stays null, which
-      // excludes the trade from the per-setup breakdown but keeps
-      // it counted in every other aggregate.
-      setupId:    null,
+      // rrAchieved = realised pnl / planned risk$ — the discipline
+      // signal. A trade that stops out at the planned stop reads
+      // ≈ -1.0R; hitting the planned target reads ≈ intendedRR;
+      // exiting early at half-target reads fractional. Null when
+      // the trade pre-dates plan capture (no intendedRisk recorded).
+      rrAchieved: (() => {
+        const _pnl  = typeof t.pnl === 'number' ? t.pnl : 0;
+        const _risk = typeof t.intendedRisk === 'number' ? t.intendedRisk : 0;
+        return _risk > 0 ? _pnl / _risk : null;
+      })(),
+      riskAmount: typeof t.intendedRisk === 'number' && t.intendedRisk > 0
+        ? t.intendedRisk
+        : null,
+      setupId:    typeof t.setupId === 'string' && t.setupId.length > 0
+        ? t.setupId
+        : null,
       // Rating is captured by PostTradeSummaryModal on dismiss;
       // initialised null on close.
       rating:     null,
@@ -394,6 +394,15 @@ export default function TradingScreen({ route, navigation }: any) {
       planSkipped:     t.planSkipped === true,
       checklistPassed:  t.checklistPassed === true,
       checklistSkipped: t.checklistSkipped === true,
+      // Plan-capture numerics from the pre-trade modal. Default 0
+      // (= "unset") when the trade pre-dates plan capture or the
+      // checklist was off.
+      intendedStop:    typeof t.intendedStop === 'number' ? t.intendedStop : 0,
+      intendedTarget:  typeof t.intendedTarget === 'number' ? t.intendedTarget : 0,
+      positionSize:    typeof t.positionSize === 'number' ? t.positionSize
+        : typeof t.lots === 'number' ? t.lots : 0,
+      intendedRisk:    typeof t.intendedRisk === 'number' ? t.intendedRisk : 0,
+      intendedRR:      typeof t.intendedRR === 'number' ? t.intendedRR : 0,
       notes: '', mistakes: '', wentWell: '',
       emotion: null, confidence: null,
       strategy: '', tags: [],
@@ -1036,6 +1045,14 @@ export default function TradingScreen({ route, navigation }: any) {
       planSkipped: plan.skipped,
       checklistPassed: plan.checklistPassed,
       checklistSkipped: plan.checklistSkipped,
+      // New plan-capture fields — flow through to the JournalEntry
+      // built at close-time. intendedRisk anchors rrAchieved.
+      setupId:        plan.setupId,
+      intendedStop:   plan.intendedStop,
+      intendedTarget: plan.intendedTarget,
+      positionSize:   plan.positionSize,
+      intendedRisk:   plan.intendedRisk,
+      intendedRR:     plan.intendedRR,
     };
   };
 
@@ -1377,44 +1394,64 @@ export default function TradingScreen({ route, navigation }: any) {
       {/* Per-drawing settings — appears whenever a drawing on the chart is selected. */}
       <DrawingSettingsModal />
 
-      {/* Pre-trade discipline checklist — shown before the order is
-          staged when the checklist setting is on. Place trade →
-          continue into the TP/SL drag + CONFIRM flow with the
-          checklist flags attached; Skip checklist this time → same,
-          checklistSkipped=true; Cancel (X / back) → abort. */}
+      {/* Pre-trade discipline checklist + plan capture — shown before
+          the order is staged when the checklist setting is on. The
+          captured plan numbers seed the staged order's stop / target
+          / size; checklist + plan flags ride along to close-time
+          via tradePlanStore so the resulting JournalEntry carries
+          intendedStop / intendedTarget / intendedRisk / intendedRR
+          (and rrAchieved = pnl / intendedRisk gets computed on
+          close). Skip checklist this time → checklistSkipped=true
+          but the plan numbers are still required. Cancel → abort. */}
       <PreTradeChecklistModal
         visible={preTradePrompt !== null}
         direction={preTradePrompt === 'sell' ? 'short' : 'long'}
-        // TODO(setup-attribution): when the Chart route params carry
-        // a library setup id (Today's Mission / Setup detail launch),
-        // look it up via getLibrarySetup and pass here so the
-        // context header auto-fills. For now the modal renders the
-        // "Untagged trade" + Tag-a-setup → fallback.
-        setup={null}
-        onTagSetup={() => {
-          // Defer picker UI — route to the Setup Library for now.
-          // The trade attempt is abandoned; user can re-tap BUY/SELL
-          // after browsing.
-          pendingPlanRef.current = null;
-          setPreTradePrompt(null);
-          navigation.navigate('SetupLibrary' as never);
-        }}
-        onConfirm={({ checklistPassed, checklistSkipped }) => {
-          // Plan stash carries the new flags forward to close-time.
-          // Legacy setup/stop/target stay null — the new modal
-          // doesn't capture them (handled by the order-staging
-          // TP/SL drag flow instead).
+        currentPrice={currentPrice}
+        pointValue={market.contractSize}
+        pricePrecision={market.pip < 0.01 ? 5 : 2}
+        // TODO(setup-attribution): when dailySetup carries a library
+        // id, pre-fill via `initialSetupId={dailySetup.libraryId}`.
+        // For now the modal opens with no pre-fill and the user
+        // picks via the bottom-sheet on first trade attempt.
+        initialSetupId={null}
+        initialSize={parseFloat(lots) || 1}
+        onConfirm={(plan) => {
           pendingPlanRef.current = {
             setupType: null,
-            stopPrice: null,
-            targetPrice: null,
-            skipped: checklistSkipped, // legacy mirror
-            checklistPassed,
-            checklistSkipped,
+            stopPrice: plan.intendedStop,
+            targetPrice: plan.intendedTarget,
+            skipped: plan.checklistSkipped, // legacy mirror
+            checklistPassed: plan.checklistPassed,
+            checklistSkipped: plan.checklistSkipped,
+            setupId: plan.setupId,
+            intendedStop: plan.intendedStop,
+            intendedTarget: plan.intendedTarget,
+            positionSize: plan.positionSize,
+            intendedRisk: plan.intendedRisk,
+            intendedRR: plan.intendedRR,
           };
+          // Keep the parent's lots state in sync with the size the
+          // user typed in the modal (so the chart's order-bar reads
+          // match the captured plan).
+          setLots(String(plan.positionSize));
           const side = preTradePrompt;
           setPreTradePrompt(null);
-          if (side) beginPending(side);
+          if (side) {
+            // Seed the staged order with the planned stop + target
+            // so the user lands in CONFIRM with the levels already
+            // set. They can still drag to fine-tune.
+            const px = side === 'buy' ? buyPrice : sellPrice;
+            if (px && isFinite(px)) {
+              setPendingPosition({
+                side, entry: px,
+                tp: plan.intendedTarget,
+                sl: plan.intendedStop,
+                dollarPerPoint: market.contractSize * plan.positionSize,
+              });
+            } else {
+              beginPending(side);
+            }
+          }
         }}
         onCancel={() => {
           pendingPlanRef.current = null;

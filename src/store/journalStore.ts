@@ -55,6 +55,24 @@ export interface JournalEntry {
   /** True when the user tapped "Skip checklist this time" instead
    *  of completing the 5-item discipline checklist. */
   checklistSkipped: boolean;
+  /** Planned stop-loss price level (captured pre-trade). 0 when
+   *  unset / legacy. */
+  intendedStop: number;
+  /** Planned profit-target price level (captured pre-trade). 0
+   *  when unset / legacy. */
+  intendedTarget: number;
+  /** Contracts/units the user committed at placement. Mirrors
+   *  `lots` for new trades; preserved on its own so Stats can
+   *  distinguish "planned size" from any future partial-fill
+   *  semantics. */
+  positionSize: number;
+  /** $ risk if the planned stop hits (|entry - stop| × size ×
+   *  pointValue). Drives `rrAchieved = pnl / intendedRisk` on
+   *  close. 0 when unset. */
+  intendedRisk: number;
+  /** Planned reward-to-risk ratio: |target - entry| / |entry -
+   *  stop|. 0 when unset / legacy. */
+  intendedRR: number;
   // user-editable
   notes: string;
   mistakes: string;
@@ -152,6 +170,11 @@ export const useJournalStore = create<JournalState>((set, get) => ({
           rating:     e.rating ?? null,
           checklistPassed:  e.checklistPassed ?? false,
           checklistSkipped: e.checklistSkipped ?? false,
+          intendedStop:    e.intendedStop ?? 0,
+          intendedTarget:  e.intendedTarget ?? 0,
+          positionSize:    e.positionSize ?? e.lots ?? 0,
+          intendedRisk:    e.intendedRisk ?? 0,
+          intendedRR:      e.intendedRR ?? 0,
         };
       });
       set({ entries: migrated });
