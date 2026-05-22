@@ -14,14 +14,19 @@ import {
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 import Button from '../components/ui/Button';
+import NumericText from '../components/NumericText';
 import PressableCard from '../components/PressableCard';
 import {
   SETUP_LIBRARY_COUNT, CATEGORY_LABEL, LibrarySetup,
 } from '../data/setupLibrary';
 import { useLearnProgressStore } from '../store/learnProgressStore';
+import { useJournalStore, JournalEntry } from '../store/journalStore';
 import {
   PATH_ORDER, pickNextSetup, setupsInPath, NextUpReason,
 } from '../lib/nextSetup';
+import {
+  getMasteredCountForPath, getInProgressCountForPath,
+} from '../lib/setupMastery';
 import { colors, typography, borders, surface } from '../theme';
 
 /**
@@ -80,10 +85,11 @@ const PATHS: ReadonlyArray<PathMeta> = [
 
 export default function LearnScreen({ navigation }: any) {
   const openedSetupIds = useLearnProgressStore((s) => s.openedSetupIds);
+  const trades = useJournalStore((s) => s.entries);
 
   const nextUp = useMemo(
-    () => pickNextSetup(openedSetupIds),
-    [openedSetupIds],
+    () => pickNextSetup(openedSetupIds, trades),
+    [openedSetupIds, trades],
   );
 
   const goToSetupDetail = (setupId: string) =>
@@ -123,6 +129,7 @@ export default function LearnScreen({ navigation }: any) {
               key={p.key}
               meta={p}
               opened={openedSetupIds}
+              trades={trades}
               onPress={() => goToLibraryWith(p.routeParams)}
             />
           ))}
@@ -164,6 +171,20 @@ export default function LearnScreen({ navigation }: any) {
 
 // ── Next Up hero ─────────────────────────────────────────────────
 
+function heroCtaLabel(reason: NextUpReason): string {
+  switch (reason) {
+    case 'NEEDS PRACTICE':
+    case 'KEEP GOING':
+      // User has opened the lesson already — frame the CTA as
+      // returning to the page they know.
+      return 'Open lesson';
+    case 'NEXT UP':
+      return 'Start learning';
+    case 'REVISIT':
+      return 'Refresh on this setup';
+  }
+}
+
 function NextUpHero({
   setup, reason, onStart,
 }: { setup: LibrarySetup; reason: NextUpReason; onStart: () => void }) {
@@ -188,7 +209,7 @@ function NextUpHero({
         </Text>
         <View style={styles.heroCtaWrap}>
           <Button
-            label="Start learning"
+            label={heroCtaLabel(reason)}
             variant="primary"
             onPress={onStart}
           />
@@ -223,16 +244,22 @@ function HeroGlow({ width, height }: { width: number; height: number }) {
 // ── Path card ─────────────────────────────────────────────────────
 
 function PathCard({
-  meta, opened, onPress,
+  meta, opened, trades, onPress,
 }: {
   meta: PathMeta;
   opened: ReadonlySet<string>;
+  trades: ReadonlyArray<JournalEntry>;
   onPress: () => void;
 }) {
   const setups = useMemo(() => setupsInPath(meta.path), [meta.path]);
-  const openedCount = useMemo(
-    () => setups.reduce((n, s) => (opened.has(s.id) ? n + 1 : n), 0),
-    [setups, opened],
+  const setupIds = useMemo(() => setups.map((s) => s.id), [setups]);
+  const masteredCount = useMemo(
+    () => getMasteredCountForPath(setupIds, opened, trades),
+    [setupIds, opened, trades],
+  );
+  const inProgressCount = useMemo(
+    () => getInProgressCountForPath(setupIds, opened, trades),
+    [setupIds, opened, trades],
   );
   const total = setups.length;
 
@@ -242,14 +269,26 @@ function PathCard({
       baseBg={surface.l1}
       style={styles.pathCard}
       accessibilityLabel={
-        `${meta.name} path, ${openedCount} of ${total} opened`
+        `${meta.name} path, ${masteredCount} of ${total} mastered` +
+        (inProgressCount > 0 ? `, ${inProgressCount} in progress` : '')
       }
     >
       <meta.Icon size={28} weight="bold" color="rgba(255,255,255,0.8)" />
       <Text style={[typography.h2, styles.pathName]}>{meta.name}</Text>
       <Text style={styles.pathProgress}>
-        {openedCount} / {total} opened
+        <NumericText style={styles.pathProgress}>{masteredCount}</NumericText>
+        {' / '}
+        <NumericText style={styles.pathProgress}>{total}</NumericText>
+        {' mastered'}
       </Text>
+      {inProgressCount > 0 && (
+        <Text style={styles.pathProgressSecondary}>
+          <NumericText style={styles.pathProgressSecondary}>
+            {inProgressCount}
+          </NumericText>
+          {' in progress'}
+        </Text>
+      )}
     </PressableCard>
   );
 }
@@ -337,6 +376,19 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.6)',
     fontSize: 11,
     fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    fontVariant: ['tabular-nums'],
+  },
+  // Secondary line — "N in progress". Same eyebrow type, lighter
+  // weight + white@50% so it reads as a subordinate stat under the
+  // primary "X / Y mastered" line. Hidden when there are 0
+  // in-progress setups (see render guard).
+  pathProgressSecondary: {
+    marginTop: 2,
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 11,
+    fontWeight: '600',
     letterSpacing: 0.8,
     textTransform: 'uppercase',
     fontVariant: ['tabular-nums'],

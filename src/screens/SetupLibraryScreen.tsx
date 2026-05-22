@@ -12,6 +12,7 @@ import {
 } from '../data/setupLibrary';
 import { useXpStore } from '../store/xpStore';
 import { useJournalStore } from '../store/journalStore';
+import { useLearnProgressStore } from '../store/learnProgressStore';
 import { RANK_BEATS, RankId } from '../data/rankConfig';
 import { typography } from '../theme';
 import Button from '../components/ui/Button';
@@ -20,6 +21,8 @@ import NumericText from '../components/NumericText';
 import {
   getSetupStatsMap, SetupStats,
 } from '../lib/setupPerformance';
+import { isMastered } from '../lib/setupMastery';
+import { CheckCircleIcon } from 'phosphor-react-native';
 
 /**
  * SetupLibraryScreen — the pattern encyclopedia. A Classic/ICT
@@ -64,15 +67,39 @@ function DifficultyBadge({ difficulty }: { difficulty: LibrarySetup['difficulty'
   );
 }
 
+/** Mastered pill — replaces DifficultyBadge once the user has
+ *  hit the mastery threshold (≥ 3 trades on the setup AND
+ *  profit-factor ≥ 1). The difficulty rating becomes irrelevant
+ *  once the user owns the pattern, so this swap is total. */
+function MasteredPill() {
+  return (
+    <View style={styles.masteredPill}>
+      <CheckCircleIcon size={12} weight="fill" color={GOLD} />
+      <Text style={styles.masteredPillText}>MASTERED</Text>
+    </View>
+  );
+}
+
 // ── Per-card user stats ────────────────────────────────────────────
 
 const GREEN = '#00D395';
 const RED   = '#FF4757';
 
-/** Directional tint applied only at sample ≥ 3 (avoid one-trade
- *  noise). Profit factor ≥ 1 reads green; < 1 reads red. Null /
- *  small sample → no tint. */
-function pickTint(stats: SetupStats | null): { bg: string; border: string } | null {
+/** Card tint picker. Mastered cards get a stronger gold wash
+ *  regardless of PF (the user owns the pattern — the green/red
+ *  P&L signal becomes secondary). Otherwise the directional tint
+ *  from the per-user stats prompt kicks in: green at PF ≥ 1, red
+ *  at PF < 1, only after sample ≥ 3 to avoid one-trade noise. */
+function pickTint(
+  stats: SetupStats | null,
+  mastered: boolean,
+): { bg: string; border: string } | null {
+  if (mastered) {
+    return {
+      bg: 'rgba(255, 184, 0, 0.06)',
+      border: 'rgba(255, 184, 0, 0.20)',
+    };
+  }
   if (!stats || stats.tradeCount < 3) return null;
   if (stats.profitFactor === null) return null;
   const positive = stats.profitFactor === 'inf' || stats.profitFactor >= 1;
@@ -136,6 +163,11 @@ export default function SetupLibraryScreen({ navigation, route }: any) {
   // out internally.
   const trades = useJournalStore((s) => s.entries);
   const statsById = useMemo(() => getSetupStatsMap(trades), [trades]);
+
+  // Opened-lesson set drives the mastery check (lesson opened + ≥3
+  // trades + PF ≥ 1). Read once here so each card row is a cheap
+  // map lookup, not a store subscription.
+  const openedSetupIds = useLearnProgressStore((s) => s.openedSetupIds);
 
   const filters: { id: Filter; label: string }[] = useMemo(() => {
     const order: SetupCategory[] =
@@ -255,7 +287,9 @@ export default function SetupLibraryScreen({ navigation, route }: any) {
             const locked =
               !!s.unlock && currentXP < unlockThreshold(s.unlock);
             const stats = statsById[s.id] ?? null;
-            const tint = pickTint(stats);
+            const mastered =
+              !locked && isMastered(s.id, openedSetupIds, trades);
+            const tint = pickTint(stats, mastered);
             return (
               <Pressable
                 key={s.id}
@@ -273,7 +307,9 @@ export default function SetupLibraryScreen({ navigation, route }: any) {
                 accessibilityLabel={
                   locked
                     ? `${s.name}, locked, unlock at ${RANK_LABEL[s.unlock!]}`
-                    : `${s.name}, ${s.difficulty}`
+                    : mastered
+                      ? `${s.name}, mastered`
+                      : `${s.name}, ${s.difficulty}`
                 }
               >
                 {locked && (
@@ -286,7 +322,9 @@ export default function SetupLibraryScreen({ navigation, route }: any) {
                 )}
                 <View style={styles.cardTopRow}>
                   <Text style={styles.cardName}>{s.name}</Text>
-                  <DifficultyBadge difficulty={s.difficulty} />
+                  {mastered
+                    ? <MasteredPill />
+                    : <DifficultyBadge difficulty={s.difficulty} />}
                 </View>
                 <Text
                   style={[
@@ -496,6 +534,27 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+
+  // Mastered pill — replaces the difficulty pill on mastered cards.
+  // Gold@16% bg + gold@60% border, eyebrow text in solid gold, with
+  // a Phosphor CheckCircle glyph on the leading edge.
+  masteredPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 184, 0, 0.16)',
+    borderColor: 'rgba(255, 184, 0, 0.60)',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    gap: 4,
+  },
+  masteredPillText: {
+    color: GOLD,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
   },
 
   // Lock modal

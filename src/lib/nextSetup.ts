@@ -1,23 +1,40 @@
 import {
   SETUP_LIBRARY, LibrarySetup, getSection,
 } from '../data/setupLibrary';
+import { JournalEntry } from '../store/journalStore';
+import { getMasteryLevel } from './setupMastery';
 
 /**
  * Next-Up recommendation engine for the Learn screen.
  *
- * Walks the four paths in priority order (Momentum → Reversal →
- * Range → ICT) and returns the first setup the user hasn't opened
- * yet. When everything's been opened, falls back to a curated
- * default (Opening Range Breakout) flagged as "REVISIT" rather
- * than "NEXT UP" so the eyebrow reads honestly.
+ * Priority — surface the setup the user can most usefully act on
+ * right now:
  *
- * TODO(archetype-aware): layer archetype on top of the path
- * ordering — a Scalper might bias toward Momentum + News, a
- * Position Trader toward Range + ICT. Stub'd out so the engine
- * can be extended without touching the Learn screen.
+ *   1. NEEDS PRACTICE   any setup in `practicing` state (≥ 3 trades,
+ *                       PF < 1). The user has the lesson AND enough
+ *                       reps to know they don't have edge yet — the
+ *                       fix is more reps, not more reading.
+ *   2. KEEP GOING       any setup in `learning` state (opened, < 3
+ *                       trades). The user started — give them a
+ *                       nudge to finish gathering data.
+ *   3. NEXT UP          any setup in `untouched` state. New lesson.
+ *   4. REVISIT          all 28 setups mastered. Fall back to the
+ *                       curated default (Opening Range Breakout) so
+ *                       there's always SOMETHING in the hero slot.
+ *
+ * Within each tier we walk PATH_ORDER (Momentum → Reversal → Range
+ * → ICT) so the hero feels purposeful rather than random.
+ *
+ * TODO(archetype-aware): bias path order by archetype — Scalpers
+ * toward Momentum, Position Traders toward Range/ICT. Stub'd so
+ * the engine can be swapped without touching LearnScreen.
  */
 
-export type NextUpReason = 'NEXT UP' | 'REVISIT';
+export type NextUpReason =
+  | 'NEEDS PRACTICE'
+  | 'KEEP GOING'
+  | 'NEXT UP'
+  | 'REVISIT';
 
 export interface NextUpResult {
   setup: LibrarySetup;
@@ -50,17 +67,45 @@ export function setupsInPath(
 
 const DEFAULT_REVISIT_ID = 'opening_range_breakout';
 
+/** All setups walked in PATH_ORDER, flattened — the per-tier scan
+ *  filters this once instead of looping the four paths each time. */
+function setupsInPriorityOrder(): LibrarySetup[] {
+  const out: LibrarySetup[] = [];
+  for (const path of PATH_ORDER) {
+    for (const s of setupsInPath(path)) out.push(s);
+  }
+  return out;
+}
+
 export function pickNextSetup(
   openedSetupIds: ReadonlySet<string>,
+  trades: ReadonlyArray<JournalEntry> = [],
 ): NextUpResult {
-  for (const path of PATH_ORDER) {
-    const candidates = setupsInPath(path);
-    const unopened = candidates.find((s) => !openedSetupIds.has(s.id));
-    if (unopened) return { setup: unopened, reason: 'NEXT UP' };
+  const ordered = setupsInPriorityOrder();
+
+  // Tier 1: practicing — opened, traded, but not yet profitable.
+  for (const s of ordered) {
+    if (getMasteryLevel(s.id, openedSetupIds, trades) === 'practicing') {
+      return { setup: s, reason: 'NEEDS PRACTICE' };
+    }
   }
-  // Everything opened — surface the curated default with the
-  // "REVISIT" eyebrow. Fallback to the first library setup if
-  // the curated id was ever removed from the catalog.
+
+  // Tier 2: learning — opened, fewer than 3 reps.
+  for (const s of ordered) {
+    if (getMasteryLevel(s.id, openedSetupIds, trades) === 'learning') {
+      return { setup: s, reason: 'KEEP GOING' };
+    }
+  }
+
+  // Tier 3: untouched — the original "open the next lesson" path.
+  for (const s of ordered) {
+    if (getMasteryLevel(s.id, openedSetupIds, trades) === 'untouched') {
+      return { setup: s, reason: 'NEXT UP' };
+    }
+  }
+
+  // Tier 4: everything mastered → curated revisit. Fall back to the
+  // first library entry if the curated id was ever removed.
   const revisit =
     SETUP_LIBRARY.find((s) => s.id === DEFAULT_REVISIT_ID) ??
     SETUP_LIBRARY[0];
