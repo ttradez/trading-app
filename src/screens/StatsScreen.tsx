@@ -12,6 +12,7 @@ import SetupPerformanceBreakdown from '../components/SetupPerformanceBreakdown';
 import PnLDistributionHistogram from '../components/PnLDistributionHistogram';
 import DisciplineRateCard from '../components/DisciplineRateCard';
 import PlanAdherenceCard from '../components/PlanAdherenceCard';
+import SymbolPerformanceBreakdown from '../components/SymbolPerformanceBreakdown';
 import DayDetailSheet from '../components/DayDetailSheet';
 import { useJournalStore, JournalEntry } from '../store/journalStore';
 import { colors, borders, surface } from '../theme';
@@ -117,6 +118,14 @@ export default function StatsScreen({ navigation }: any) {
             stopped). Trades without a captured plan are excluded. */}
         <View style={styles.sectionGap}>
           <PlanAdherenceCard />
+        </View>
+
+        {/* Per-symbol performance — same visual treatment as the
+            per-setup breakdown above. Rows static for now; symbol
+            drill-down is a future task. */}
+        <View style={[styles.sectionGap, styles.cardL1]}>
+          <Text style={styles.cardEyebrow}>BY SYMBOL</Text>
+          <SymbolPerformanceBreakdown />
         </View>
 
         {/* P&L distribution — symmetric histogram around $0, green
