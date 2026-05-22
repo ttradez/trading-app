@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, Pressable, Animated, Easing, LayoutChangeEvent,
 } from 'react-native';
@@ -6,16 +6,24 @@ import {
 import Button from './ui/Button';
 import NumericText from './NumericText';
 import EquityCurveSparkline from './EquityCurveSparkline';
+import TimeframeSelector from './TimeframeSelector';
 import { PRIMARY_ACTION_LABEL } from '../theme/copy';
 import { useJournalStore } from '../store/journalStore';
 import { useOnboardingStore } from '../store/onboardingStore';
-import { computeEquitySeries } from '../lib/equitySeries';
+import {
+  computeEquitySeries, filterEquitySeriesByTimeframe, Timeframe,
+} from '../lib/equitySeries';
 import { colors } from '../theme';
 
 /**
  * Stats hero — equity, delta-since-start, equity-curve sparkline.
  * The line is always gold; the gain/loss signal lives in the
  * gradient fill underneath (CRAFT_RESEARCH chart pass).
+ *
+ * Timeframe row (1D / 1W / 1M / 3M / 1Y / ALL) clips the chart to
+ * a trailing window and rebases the delta number to that window's
+ * starting equity. The big equity number stays the current total
+ * across all timeframes — only the delta + chart change.
  *
  * Empty state: equity displays as `startingBalance`, no delta row,
  * the sparkline renders its own dashed placeholder, and a Secondary
@@ -41,6 +49,38 @@ const COUNTUP_MS  = 600;
 const ANIMATED_THIS_SESSION = new Set<string>();
 const ANIM_KEY = 'stats-account-equity';
 
+const TIMEFRAME_LABEL: Record<Timeframe, string> = {
+  '1D':  'today',
+  '1W':  'this week',
+  '1M':  'this month',
+  '3M':  'this quarter',
+  '1Y':  'this year',
+  'ALL': 'since you started',
+};
+
+/** 1D shows time-of-day on the crosshair date label; longer windows
+ *  read better with date-only. */
+function makeTimestampFormatter(tf: Timeframe): (t: number) => string {
+  const MONTHS = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  if (tf === '1D') {
+    return (t: number) => {
+      const d = new Date(t);
+      let h = d.getHours();
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      h = h % 12 || 12;
+      const m = d.getMinutes().toString().padStart(2, '0');
+      return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${h}:${m} ${ampm}`;
+    };
+  }
+  return (t: number) => {
+    const d = new Date(t);
+    return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+  };
+}
+
 interface Props {
   onPress?: () => void;
   onStartSession?: () => void;
@@ -50,16 +90,36 @@ export default function AccountPerformanceCard({ onPress, onStartSession }: Prop
   const entries = useJournalStore((s) => s.entries);
   const startBalance = useOnboardingStore((s) => s.accountSize);
 
-  const equitySeries = React.useMemo(
+  const [timeframe, setTimeframe] = useState<Timeframe>('ALL');
+
+  const fullSeries = useMemo(
     () => computeEquitySeries(entries, startBalance),
     [entries, startBalance],
   );
-  const hasTrades = equitySeries.length > 0;
+  const filteredSeries = useMemo(
+    () => filterEquitySeriesByTimeframe(fullSeries, timeframe),
+    [fullSeries, timeframe],
+  );
+  const hasTrades = fullSeries.length > 0;
+
+  // Equity hero is ALWAYS the current total (last point of the full
+  // series) — the window only shapes the delta + chart context.
   const equity = hasTrades
-    ? equitySeries[equitySeries.length - 1].equity
+    ? fullSeries[fullSeries.length - 1].equity
     : startBalance;
-  const realizedPnl = equity - startBalance;
-  const pctChange = startBalance > 0 ? (realizedPnl / startBalance) * 100 : 0;
+
+  // Window-relative delta. `refEquity` is the equity at the start of
+  // the active window; `currentEquity` is the most recent equity
+  // value within the window (could equal the global equity, or could
+  // sit on a flat anchor pair when the user didn't trade in-window).
+  const refEquity = filteredSeries.length > 0
+    ? filteredSeries[0].equity
+    : startBalance;
+  const currentEquity = filteredSeries.length > 0
+    ? filteredSeries[filteredSeries.length - 1].equity
+    : startBalance;
+  const delta = currentEquity - refEquity;
+  const deltaPct = refEquity > 0 ? (delta / refEquity) * 100 : 0;
 
   // ── Equity count-up — first mount per session only ──────────
   const shouldAnimate = !ANIMATED_THIS_SESSION.has(ANIM_KEY);
@@ -105,10 +165,15 @@ export default function AccountPerformanceCard({ onPress, onStartSession }: Prop
   };
   const chartWidth = Math.max(0, cardWidth - CARD_PAD_X * 2);
 
-  // ── Delta row colors / signs ────────────────────────────────
-  const deltaColor = realizedPnl > 0 ? GREEN : realizedPnl < 0 ? RED : WHITE;
-  const deltaSign  = realizedPnl > 0 ? '+' : realizedPnl < 0 ? '-' : '';
-  const pctSign    = pctChange > 0 ? '+' : pctChange < 0 ? '-' : '';
+  // ── Delta row colors / signs — driven by the WINDOW delta ──
+  const deltaColor = delta > 0 ? GREEN : delta < 0 ? RED : WHITE;
+  const deltaSign  = delta > 0 ? '+' : delta < 0 ? '-' : '';
+  const pctSign    = deltaPct > 0 ? '+' : deltaPct < 0 ? '-' : '';
+
+  const timestampFormatter = useMemo(
+    () => makeTimestampFormatter(timeframe),
+    [timeframe],
+  );
 
   return (
     <Pressable
@@ -121,7 +186,7 @@ export default function AccountPerformanceCard({ onPress, onStartSession }: Prop
       accessibilityRole={onPress ? 'button' : undefined}
       accessibilityLabel={
         hasTrades
-          ? `Account equity ${formatMoney(equity)}, ${pctSign}${Math.abs(pctChange).toFixed(2)}% since you started`
+          ? `Account equity ${formatMoney(equity)}, ${pctSign}${Math.abs(deltaPct).toFixed(2)}% ${TIMEFRAME_LABEL[timeframe]}`
           : `Account equity ${formatMoney(startBalance)}, no trades yet`
       }
     >
@@ -134,13 +199,13 @@ export default function AccountPerformanceCard({ onPress, onStartSession }: Prop
         {hasTrades && (
           <View style={styles.deltaRow}>
             <NumericText bold style={[styles.deltaMoney, { color: deltaColor }]} allowFontScaling={false}>
-              {deltaSign}${formatAbs(Math.abs(realizedPnl))}
+              {deltaSign}${formatAbs(Math.abs(delta))}
             </NumericText>
             <Text style={styles.deltaDot}>·</Text>
             <NumericText bold style={[styles.deltaPct, { color: deltaColor }]} allowFontScaling={false}>
-              {pctSign}{Math.abs(pctChange).toFixed(2)}%
+              {pctSign}{Math.abs(deltaPct).toFixed(2)}%
             </NumericText>
-            <Text style={styles.deltaSuffix}>· since you started</Text>
+            <Text style={styles.deltaSuffix}>· {TIMEFRAME_LABEL[timeframe]}</Text>
           </View>
         )}
 
@@ -152,17 +217,26 @@ export default function AccountPerformanceCard({ onPress, onStartSession }: Prop
       </View>
 
       {/* Sparkline — chart palette tokens, gold stroke, direction
-          fill, baseline at startingBalance. Renders a dashed
-          placeholder itself when data is empty. */}
+          fill, baseline at refEquity (start-of-window). Renders a
+          dashed placeholder itself when data is empty. */}
       <View style={styles.chartWrap}>
         <EquityCurveSparkline
-          data={equitySeries}
-          startingBalance={startBalance}
+          data={filteredSeries}
+          startingBalance={refEquity}
           width={chartWidth}
           height={SPARK_H}
           animateOnMount={shouldAnimate}
+          formatTimestamp={timestampFormatter}
         />
       </View>
+
+      {/* Timeframe pill row — hidden in the empty state so the
+          empty card stays uncluttered. */}
+      {hasTrades && (
+        <View style={styles.timeframeWrap}>
+          <TimeframeSelector value={timeframe} onChange={setTimeframe} />
+        </View>
+      )}
 
       {!hasTrades && onStartSession && (
         <View style={styles.emptyCtaWrap}>
@@ -251,7 +325,15 @@ const styles = StyleSheet.create({
   chartWrap: {
     paddingHorizontal: CARD_PAD_X,
     paddingTop: 10,
-    paddingBottom: 10,
+    paddingBottom: 6,
+  },
+  // Timeframe pills sit immediately under the chart, in the same
+  // horizontal gutter. The chartWrap's reduced bottom padding tightens
+  // the visual coupling between chart and pill row.
+  timeframeWrap: {
+    paddingHorizontal: CARD_PAD_X,
+    paddingTop: 6,
+    paddingBottom: 16,
   },
   emptyBody: {
     marginTop: 8,
