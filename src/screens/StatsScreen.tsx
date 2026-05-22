@@ -10,6 +10,8 @@ import MetricsCard from '../components/MetricsCard';
 import CalendarHeatmap from '../components/CalendarHeatmap';
 import SetupPerformanceBreakdown from '../components/SetupPerformanceBreakdown';
 import PnLDistributionHistogram from '../components/PnLDistributionHistogram';
+import DisciplineRateCard from '../components/DisciplineRateCard';
+import PlanAdherenceCard from '../components/PlanAdherenceCard';
 import DayDetailSheet from '../components/DayDetailSheet';
 import { useJournalStore, JournalEntry } from '../store/journalStore';
 import { colors, borders, surface } from '../theme';
@@ -102,6 +104,19 @@ export default function StatsScreen({ navigation }: any) {
               navigation.navigate('SetupStats', { setupId })
             }
           />
+        </View>
+
+        {/* Discipline rate — % of trades with full checklist
+            completed. Rings + number, process-not-outcome. */}
+        <View style={styles.sectionGap}>
+          <DisciplineRateCard />
+        </View>
+
+        {/* Plan adherence — stacked bar of how each trade played
+            out vs its own plan (hit-target / partial / early /
+            stopped). Trades without a captured plan are excluded. */}
+        <View style={styles.sectionGap}>
+          <PlanAdherenceCard />
         </View>
 
         {/* P&L distribution — symmetric histogram around $0, green
