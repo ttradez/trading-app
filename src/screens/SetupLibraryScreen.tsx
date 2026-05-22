@@ -11,10 +11,15 @@ import {
   CLASSIC_CATEGORY_ORDER, ICT_CATEGORY_ORDER,
 } from '../data/setupLibrary';
 import { useXpStore } from '../store/xpStore';
+import { useJournalStore } from '../store/journalStore';
 import { RANK_BEATS, RankId } from '../data/rankConfig';
 import { typography } from '../theme';
 import Button from '../components/ui/Button';
 import FilterChip from '../components/ui/FilterChip';
+import NumericText from '../components/NumericText';
+import {
+  getSetupStatsMap, SetupStats,
+} from '../lib/setupPerformance';
 
 /**
  * SetupLibraryScreen — the pattern encyclopedia. A Classic/ICT
@@ -59,6 +64,57 @@ function DifficultyBadge({ difficulty }: { difficulty: LibrarySetup['difficulty'
   );
 }
 
+// ── Per-card user stats ────────────────────────────────────────────
+
+const GREEN = '#00D395';
+const RED   = '#FF4757';
+
+/** Directional tint applied only at sample ≥ 3 (avoid one-trade
+ *  noise). Profit factor ≥ 1 reads green; < 1 reads red. Null /
+ *  small sample → no tint. */
+function pickTint(stats: SetupStats | null): { bg: string; border: string } | null {
+  if (!stats || stats.tradeCount < 3) return null;
+  if (stats.profitFactor === null) return null;
+  const positive = stats.profitFactor === 'inf' || stats.profitFactor >= 1;
+  return positive
+    ? { bg: 'rgba(0, 211, 149, 0.04)', border: 'rgba(0, 211, 149, 0.12)' }
+    : { bg: 'rgba(255, 71, 87, 0.04)', border: 'rgba(255, 71, 87, 0.12)' };
+}
+
+function StatsRow({ stats }: { stats: SetupStats }) {
+  const pnlColor =
+    stats.netPnl > 0 ? GREEN :
+    stats.netPnl < 0 ? RED   :
+    'rgba(255,255,255,0.8)';
+  const sign = stats.netPnl > 0 ? '+' : stats.netPnl < 0 ? '-' : '';
+  const pfDisplay =
+    stats.profitFactor === null  ? null :
+    stats.profitFactor === 'inf' ? 'PF ∞' :
+    `PF ${stats.profitFactor.toFixed(1)}`;
+
+  return (
+    <View style={styles.statsRow}>
+      <NumericText style={styles.statText}>
+        {stats.tradeCount} {stats.tradeCount === 1 ? 'trade' : 'trades'}
+      </NumericText>
+      <Text style={styles.statSep}>·</Text>
+      <NumericText style={styles.statText}>
+        {Math.round(stats.winRate)}% win
+      </NumericText>
+      <Text style={styles.statSep}>·</Text>
+      <NumericText bold style={[styles.statText, { color: pnlColor }]}>
+        {sign}${Math.round(Math.abs(stats.netPnl)).toLocaleString('en-US')}
+      </NumericText>
+      {pfDisplay && (
+        <>
+          <Text style={styles.statSep}>·</Text>
+          <NumericText style={styles.statText}>{pfDisplay}</NumericText>
+        </>
+      )}
+    </View>
+  );
+}
+
 export default function SetupLibraryScreen({ navigation, route }: any) {
   // Optional route-param pre-selection — the Learn screen's path
   // cards pass these in so a tap lands on the right tab + filter
@@ -73,6 +129,13 @@ export default function SetupLibraryScreen({ navigation, route }: any) {
   const [lock, setLock] = useState<LockInfo | null>(null);
 
   const currentXP = useXpStore((s) => s.currentXP);
+
+  // Per-user setup performance — computed once per render at the
+  // screen level instead of per-card so the 28-card list stays
+  // O(1) per cell. `getSetupStatsMap` filters trades-without-setupId
+  // out internally.
+  const trades = useJournalStore((s) => s.entries);
+  const statsById = useMemo(() => getSetupStatsMap(trades), [trades]);
 
   const filters: { id: Filter; label: string }[] = useMemo(() => {
     const order: SetupCategory[] =
@@ -191,12 +254,18 @@ export default function SetupLibraryScreen({ navigation, route }: any) {
           {setups.map((s) => {
             const locked =
               !!s.unlock && currentXP < unlockThreshold(s.unlock);
+            const stats = statsById[s.id] ?? null;
+            const tint = pickTint(stats);
             return (
               <Pressable
                 key={s.id}
                 onPress={() => openSetup(s)}
                 style={({ pressed }) => [
                   styles.card,
+                  tint && {
+                    backgroundColor: tint.bg,
+                    borderColor: tint.border,
+                  },
                   locked && styles.cardLocked,
                   pressed && !locked && { opacity: 0.85 },
                 ]}
@@ -228,6 +297,7 @@ export default function SetupLibraryScreen({ navigation, route }: any) {
                   {CATEGORY_LABEL[s.category]}
                 </Text>
                 <Text style={styles.cardDesc}>{s.description}</Text>
+                {stats && !locked && <StatsRow stats={stats} />}
                 {locked ? (
                   <Text style={styles.cardLockText}>
                     Unlock at {RANK_LABEL[s.unlock!]}
@@ -386,6 +456,27 @@ const styles = StyleSheet.create({
   cardLinkWrap: {
     marginTop: 10,
     alignSelf: 'flex-end',
+  },
+
+  // Per-user stats row inside each card. Sits below the description
+  // and above the "Learn & Practice" link. Hidden entirely when the
+  // user has no trades on this pattern.
+  statsRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    flexWrap: 'wrap',
+  },
+  statText: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+  statSep: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 12,
+    marginHorizontal: 6,
   },
   cardLockText: {
     marginTop: 14,

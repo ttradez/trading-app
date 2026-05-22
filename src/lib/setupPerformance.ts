@@ -91,3 +91,29 @@ export function getSetupPerformance(
   );
   return out;
 }
+
+/**
+ * Convenience: a `setupId → SetupStats` lookup pre-keyed by id.
+ * Caller passes the same trades + catalog as `getSetupPerformance`;
+ * the result is an O(1) read per setup card on the Setup Library
+ * list (otherwise each card would scan every trade to compute its
+ * own aggregate).
+ */
+export function getSetupStatsMap(
+  trades: ReadonlyArray<JournalEntry>,
+  catalog?: ReadonlyArray<LibrarySetup>,
+): Record<string, SetupStats> {
+  const list = getSetupPerformance(trades, catalog);
+  const out: Record<string, SetupStats> = {};
+  for (const s of list) out[s.setupId] = s;
+  return out;
+}
+
+/** Single-id lookup. Returns null when the setup has no trades. */
+export function getSetupStatsById(
+  trades: ReadonlyArray<JournalEntry>,
+  setupId: string,
+  catalog?: ReadonlyArray<LibrarySetup>,
+): SetupStats | null {
+  return getSetupStatsMap(trades, catalog)[setupId] ?? null;
+}
