@@ -26,6 +26,16 @@ import { useChallengeStore } from '../store/challengeStore';
 import { useRecapList } from '../store/recapStore';
 import WeeklyRecapModal from '../components/WeeklyRecapModal';
 import { WeeklyRecap } from '../utils/weeklyRecap';
+import { useNotificationsStore, NotificationTime } from '../store/notificationsStore';
+import {
+  ensureNotificationPermission, formatNotificationTime,
+  scheduleDailyMissionReminder, scheduleWeeklyRecapReminder,
+  cancelNotification, openSystemSettings,
+  cancelAllPocketTradeNotifications,
+} from '../lib/notifications';
+import DateTimePicker, {
+  DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
 
 /**
  * SettingsScreen — pushed onto the stack from the dashboard gear
@@ -130,6 +140,27 @@ export default function SettingsScreen({ navigation }: any) {
   const latestRecap = recapList[0]?.recap ?? null;
   const [openRecap, setOpenRecap] = useState<WeeklyRecap | null>(null);
 
+  // Notification prefs — opt-in toggles + native time pickers.
+  const dailyMissionEnabled = useNotificationsStore((s) => s.dailyMissionEnabled);
+  const dailyMissionTime    = useNotificationsStore((s) => s.dailyMissionTime);
+  const dailyMissionId      = useNotificationsStore((s) => s.dailyMissionIdentifier);
+  const setDailyMission     = useNotificationsStore((s) => s.setDailyMission);
+  const weeklyRecapEnabled  = useNotificationsStore((s) => s.weeklyRecapEnabled);
+  const weeklyRecapTime     = useNotificationsStore((s) => s.weeklyRecapTime);
+  const weeklyRecapId       = useNotificationsStore((s) => s.weeklyRecapIdentifier);
+  const setWeeklyRecap      = useNotificationsStore((s) => s.setWeeklyRecap);
+
+  /** Caption shown beneath a toggle the user tried to turn on while
+   *  permission is denied. `null` = no caption. Keyed per-toggle so
+   *  one denial doesn't blank both rows. */
+  const [permissionDenied, setPermissionDenied] = useState<
+    null | 'daily' | 'weekly'
+  >(null);
+
+  /** Which time picker is open (null = none). The day-of-week for
+   *  weekly is implicit — Sunday only. */
+  const [timePicker, setTimePicker] = useState<null | 'daily' | 'weekly'>(null);
+
   const [editingName, setEditingName] = useState(false);
   const [nameBuffer, setNameBuffer]   = useState(displayName);
 
@@ -143,6 +174,130 @@ export default function SettingsScreen({ navigation }: any) {
     if (trimmed.length > 0) setDisplayName(trimmed);
     setEditingName(false);
   };
+
+  // ── Notification toggles ────────────────────────────────────────
+  //
+  // Both handlers follow the same flow: request permission ONLY at
+  // the moment the user opts in, revert the toggle on denial, and
+  // surface a one-line caption with an "Open Settings" link so the
+  // user can recover from a prior deny without us re-prompting.
+
+  const toggleDailyMission = async (next: boolean) => {
+    if (!next) {
+      // Opt-out — cancel any scheduled instance, clear the caption.
+      if (dailyMissionId) await cancelNotification(dailyMissionId);
+      setDailyMission({
+        dailyMissionEnabled: false,
+        dailyMissionIdentifier: null,
+      });
+      setPermissionDenied((p) => (p === 'daily' ? null : p));
+      return;
+    }
+    const result = await ensureNotificationPermission();
+    if (result !== 'granted') {
+      setPermissionDenied('daily');
+      return;
+    }
+    setPermissionDenied((p) => (p === 'daily' ? null : p));
+    if (dailyMissionId) await cancelNotification(dailyMissionId);
+    const id = await scheduleDailyMissionReminder(
+      dailyMissionTime.hour,
+      dailyMissionTime.minute,
+    );
+    setDailyMission({
+      dailyMissionEnabled: true,
+      dailyMissionIdentifier: id,
+    });
+  };
+
+  const toggleWeeklyRecap = async (next: boolean) => {
+    if (!next) {
+      if (weeklyRecapId) await cancelNotification(weeklyRecapId);
+      setWeeklyRecap({
+        weeklyRecapEnabled: false,
+        weeklyRecapIdentifier: null,
+      });
+      setPermissionDenied((p) => (p === 'weekly' ? null : p));
+      return;
+    }
+    const result = await ensureNotificationPermission();
+    if (result !== 'granted') {
+      setPermissionDenied('weekly');
+      return;
+    }
+    setPermissionDenied((p) => (p === 'weekly' ? null : p));
+    if (weeklyRecapId) await cancelNotification(weeklyRecapId);
+    const id = await scheduleWeeklyRecapReminder(
+      weeklyRecapTime.hour,
+      weeklyRecapTime.minute,
+    );
+    setWeeklyRecap({
+      weeklyRecapEnabled: true,
+      weeklyRecapIdentifier: id,
+    });
+  };
+
+  /** Adjust the time on either pref. Cancels + reschedules so the OS
+   *  schedule is always in sync with the stored prefs. */
+  const onTimePicked = async (
+    which: 'daily' | 'weekly',
+    time: NotificationTime,
+  ) => {
+    if (which === 'daily') {
+      setDailyMission({ dailyMissionTime: time });
+      if (dailyMissionEnabled) {
+        if (dailyMissionId) await cancelNotification(dailyMissionId);
+        const id = await scheduleDailyMissionReminder(time.hour, time.minute);
+        setDailyMission({ dailyMissionIdentifier: id });
+      }
+    } else {
+      setWeeklyRecap({ weeklyRecapTime: time });
+      if (weeklyRecapEnabled) {
+        if (weeklyRecapId) await cancelNotification(weeklyRecapId);
+        const id = await scheduleWeeklyRecapReminder(time.hour, time.minute);
+        setWeeklyRecap({ weeklyRecapIdentifier: id });
+      }
+    }
+  };
+
+  const onTimePickerEvent = (
+    which: 'daily' | 'weekly',
+    _event: DateTimePickerEvent,
+    selected?: Date,
+  ) => {
+    // Android dispatches a `set` event with the chosen date; iOS
+    // fires inline as the picker scrolls. Either way we update on
+    // any concrete date; user can dismiss by tapping outside the
+    // sheet (we close it manually).
+    setTimePicker(null);
+    if (!selected) return;
+    onTimePicked(which, {
+      hour:   selected.getHours(),
+      minute: selected.getMinutes(),
+    });
+  };
+
+  const deniedCaption = (
+    <View style={styles.deniedCaptionWrap}>
+      <Text style={styles.deniedCaption}>
+        Notification permission denied. Enable in iOS Settings to use this.
+      </Text>
+      <Pressable
+        onPress={openSystemSettings}
+        hitSlop={6}
+        accessibilityRole="link"
+        accessibilityLabel="Open iOS Settings"
+      >
+        <Text style={styles.deniedCaptionLink}>Open Settings</Text>
+      </Pressable>
+    </View>
+  );
+
+  function timeToDate(t: NotificationTime): Date {
+    const d = new Date();
+    d.setHours(t.hour, t.minute, 0, 0);
+    return d;
+  }
 
   const exportCsv = async () => {
     if (journalEntries.length === 0) {
@@ -270,6 +425,11 @@ export default function SettingsScreen({ navigation }: any) {
                     useBadgeStore.getState().reset();
                     useXpStore.getState().reset();
                     useChallengeStore.getState().reset();
+                    useNotificationsStore.getState().reset();
+                    // Cancel any OS-side scheduled notifications too —
+                    // resetting the store alone wouldn't clear what's
+                    // already queued with iOS.
+                    void cancelAllPocketTradeNotifications();
                     navigation.reset({
                       index: 0,
                       routes: [{ name: 'OnboardingSplash' }],
@@ -406,6 +566,90 @@ export default function SettingsScreen({ navigation }: any) {
             />
           </View>
         </View>
+
+        {/* NOTIFICATIONS — opt-in only, no streak notifications,
+            no urgency framing. See src/lib/notifications.ts for the
+            copy-review rules. */}
+        <SectionHeader title="Notifications" />
+        <View style={styles.group}>
+          {/* Daily mission reminder */}
+          <View style={styles.notifRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowLabel}>Daily mission reminder</Text>
+              <Text style={styles.notifSublabel}>
+                We'll remind you when today's mission is ready.
+              </Text>
+              {dailyMissionEnabled && (
+                <Pressable
+                  onPress={() => setTimePicker('daily')}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel="Adjust daily reminder time"
+                >
+                  <NumericText style={styles.notifTime}>
+                    {formatNotificationTime(dailyMissionTime)}
+                  </NumericText>
+                </Pressable>
+              )}
+            </View>
+            <Switch
+              value={dailyMissionEnabled}
+              onValueChange={toggleDailyMission}
+              trackColor={{ false: SWITCH_OFF, true: GOLD }}
+              thumbColor={WHITE}
+              ios_backgroundColor={SWITCH_OFF}
+            />
+          </View>
+          {permissionDenied === 'daily' && deniedCaption}
+
+          <Separator />
+
+          {/* Weekly recap reminder */}
+          <View style={styles.notifRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowLabel}>Weekly recap</Text>
+              <Text style={styles.notifSublabel}>
+                We'll let you know when your weekly recap is ready.
+              </Text>
+              {weeklyRecapEnabled && (
+                <Pressable
+                  onPress={() => setTimePicker('weekly')}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel="Adjust weekly recap time"
+                >
+                  <NumericText style={styles.notifTime}>
+                    {'Sunday '}{formatNotificationTime(weeklyRecapTime)}
+                  </NumericText>
+                </Pressable>
+              )}
+            </View>
+            <Switch
+              value={weeklyRecapEnabled}
+              onValueChange={toggleWeeklyRecap}
+              trackColor={{ false: SWITCH_OFF, true: GOLD }}
+              thumbColor={WHITE}
+              ios_backgroundColor={SWITCH_OFF}
+            />
+          </View>
+          {permissionDenied === 'weekly' && deniedCaption}
+        </View>
+
+        {/* Native iOS time picker — opened by tapping a time label
+            above. The day for the weekly recap is fixed to Sunday;
+            only hour + minute are user-adjustable. */}
+        {timePicker !== null && (
+          <DateTimePicker
+            value={timeToDate(
+              timePicker === 'daily' ? dailyMissionTime : weeklyRecapTime,
+            )}
+            mode="time"
+            display="spinner"
+            onChange={(event, selected) =>
+              onTimePickerEvent(timePicker, event, selected)
+            }
+          />
+        )}
 
         {/* PREFERENCES */}
         <SectionHeader title="Preferences" />
@@ -761,6 +1005,49 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 10,
+  },
+  // Notification rows are taller than the basic Row because they
+  // stack a sublabel + optional time line under the main label.
+  notifRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  notifSublabel: {
+    marginTop: 4,
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 11,
+    fontWeight: '500',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    lineHeight: 16,
+  },
+  // User-chosen time — tappable to re-open the picker. White@70%
+  // per the spec.
+  notifTime: {
+    marginTop: 8,
+    color: 'rgba(255,255,255,0.70)',
+    fontSize: 15,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  },
+  deniedCaptionWrap: {
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
+  deniedCaption: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 12,
+    fontWeight: '500',
+    lineHeight: 16,
+  },
+  deniedCaptionLink: {
+    marginTop: 4,
+    color: GOLD,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   rowPressed: { backgroundColor: 'rgba(255,255,255,0.04)' },
   rowLeftIcon: { marginRight: 12 },

@@ -33,6 +33,11 @@ import { useOnboardingStore } from './src/store/onboardingStore';
 import { useStreakManager } from './src/hooks/useStreakManager';
 import { useWeeklyRecapTrigger } from './src/hooks/useWeeklyRecapTrigger';
 import WeeklyRecapModal from './src/components/WeeklyRecapModal';
+import * as Notifications from 'expo-notifications';
+import {
+  configureForegroundNotificationHandler, rescheduleFromStoredPrefs,
+} from './src/lib/notifications';
+import { useNotificationsStore } from './src/store/notificationsStore';
 import { useBadgeWatchers } from './src/hooks/useBadgeWatchers';
 import { useXpWatchers } from './src/hooks/useXpWatchers';
 import { useChallengeRotation } from './src/hooks/useChallengeRotation';
@@ -112,6 +117,49 @@ function MainTabs() {
   // re-mount is harmless.
   React.useEffect(() => {
     useJournalStore.getState().hydrate().catch(() => {});
+  }, []);
+
+  // Local-notification plumbing — set the foreground handler so a
+  // notification firing while the app is open still shows the
+  // banner; re-sync the OS schedule with the user's stored prefs
+  // (handles time-zone changes and OS-side drops); and listen for
+  // taps so we can route the user to the right surface.
+  React.useEffect(() => {
+    configureForegroundNotificationHandler();
+
+    // Wait for the notifications store to finish rehydrating from
+    // AsyncStorage before rescheduling — otherwise we'd read the
+    // in-memory defaults (everything disabled) and silently cancel
+    // the user's real schedule on cold start.
+    const persist = useNotificationsStore.persist;
+    let unsubHydration: (() => void) | undefined;
+    if (persist.hasHydrated()) {
+      void rescheduleFromStoredPrefs();
+    } else {
+      unsubHydration = persist.onFinishHydration(() => {
+        void rescheduleFromStoredPrefs();
+      });
+    }
+
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as
+        | { type?: string }
+        | undefined;
+      if (!data?.type) return;
+      // Both notifications route the user back into the main
+      // surface — Home handles the daily-mission affordance and
+      // surfaces the Sunday-Wrap banner when a weekly recap is
+      // available. Sending the user to Home from any cold-start
+      // tap avoids fragile modal-state coordination across boot.
+      if (data.type === 'daily-mission' || data.type === 'weekly-recap') {
+        navigation.navigate('Main', { screen: 'Home' });
+      }
+    });
+    return () => {
+      unsubHydration?.();
+      sub.remove();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const insets = useSafeAreaInsets();

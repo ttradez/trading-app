@@ -45,7 +45,14 @@
     "plugins": [
       "expo-font",
       "expo-web-browser",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      "@react-native-community/datetimepicker",
+      [
+        "expo-notifications",
+        {
+          "color": "#FFB800"
+        }
+      ]
     ],
     "web": {
       "favicon": "./assets/favicon.png"
