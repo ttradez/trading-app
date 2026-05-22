@@ -3,9 +3,10 @@ import { View, Text, StyleSheet } from 'react-native';
 
 import NumericText from './NumericText';
 import Button from './ui/Button';
+import PressableCard from './PressableCard';
 import { useJournalStore } from '../store/journalStore';
 import { getSetupPerformance, SetupStats } from '../lib/setupPerformance';
-import { borders, colors } from '../theme';
+import { borders, colors, surface } from '../theme';
 
 /**
  * Per-setup performance list. Each row carries a gold-at-opacity
@@ -32,11 +33,16 @@ interface Props {
   onViewAll?: () => void;
   /** Empty-state CTA — routes to the Learn tab. */
   onBrowseLibrary?: () => void;
+  /** Per-row drill-down into the SetupStats screen. Passed by
+   *  StatsScreen; absent when the breakdown is rendered in a
+   *  read-only context. */
+  onRowPress?: (setupId: string) => void;
 }
 
 export default function SetupPerformanceBreakdown({
   onViewAll,
   onBrowseLibrary,
+  onRowPress,
 }: Props) {
   const trades = useJournalStore((s) => s.entries);
 
@@ -79,6 +85,7 @@ export default function SetupPerformanceBreakdown({
           row={row}
           maxAbs={maxAbs}
           showDivider={i < visible.length - 1}
+          onPress={onRowPress ? () => onRowPress(row.setupId) : undefined}
         />
       ))}
       {hasMore && onViewAll && (
@@ -97,8 +104,13 @@ export default function SetupPerformanceBreakdown({
 // ── Row ────────────────────────────────────────────────────────────
 
 function Row({
-  row, maxAbs, showDivider,
-}: { row: SetupStats; maxAbs: number; showDivider: boolean }) {
+  row, maxAbs, showDivider, onPress,
+}: {
+  row: SetupStats;
+  maxAbs: number;
+  showDivider: boolean;
+  onPress?: () => void;
+}) {
   const ratio = maxAbs > 0 ? Math.abs(row.netPnl) / maxAbs : 0;
   const barOpacity = BAR_FLOOR_OPACITY + 0.70 * Math.min(1, ratio);
 
@@ -113,51 +125,69 @@ function Row({
     row.profitFactor === 'inf' ? 'PF ∞' :
     `PF ${row.profitFactor.toFixed(1)}`;
 
-  return (
-    <View>
-      <View style={styles.row}>
-        {/* Background magnitude bar — sized 100% width with opacity
-            modulating the perceived "fill." We deliberately don't
-            scale width so column-aligned rows still left-anchor at
-            the same x; opacity does the magnitude work alone. */}
-        <View
-          style={[
-            styles.barFill,
-            { backgroundColor: `rgba(255, 184, 0, ${barOpacity.toFixed(2)})` },
-          ]}
-          pointerEvents="none"
-        />
-        <View style={styles.rowContent}>
-          <View style={styles.left}>
-            <Text style={styles.name} numberOfLines={1}>{row.name}</Text>
-            <Text style={styles.subline} numberOfLines={1}>
-              <Text style={styles.category}>{row.category.toUpperCase()}</Text>
-              {' · '}
-              <NumericText style={styles.subline}>
-                {row.tradeCount}
-              </NumericText>
-              {' '}{row.tradeCount === 1 ? 'trade' : 'trades'}
-              {' · '}
-              <NumericText style={styles.subline}>
-                {Math.round(row.winRate)}%
-              </NumericText>
-              {' win'}
-            </Text>
-          </View>
-          <View style={styles.right}>
-            <NumericText
-              bold
-              style={[styles.pnl, { color: pnlColor }]}
-              allowFontScaling={false}
-            >
-              {sign}${formatAbsShort(Math.abs(row.netPnl))}
+  // Inner row content — extracted so we can wrap it in PressableCard
+  // when a drill-down handler is supplied without changing the layout.
+  const rowBody = (
+    <>
+      {/* Background magnitude bar — sized 100% width with opacity
+          modulating the perceived "fill." We deliberately don't
+          scale width so column-aligned rows still left-anchor at
+          the same x; opacity does the magnitude work alone. */}
+      <View
+        style={[
+          styles.barFill,
+          { backgroundColor: `rgba(255, 184, 0, ${barOpacity.toFixed(2)})` },
+        ]}
+        pointerEvents="none"
+      />
+      <View style={styles.rowContent}>
+        <View style={styles.left}>
+          <Text style={styles.name} numberOfLines={1}>{row.name}</Text>
+          <Text style={styles.subline} numberOfLines={1}>
+            <Text style={styles.category}>{row.category.toUpperCase()}</Text>
+            {' · '}
+            <NumericText style={styles.subline}>
+              {row.tradeCount}
             </NumericText>
-            {pfDisplay && (
-              <NumericText style={styles.pf}>{pfDisplay}</NumericText>
-            )}
-          </View>
+            {' '}{row.tradeCount === 1 ? 'trade' : 'trades'}
+            {' · '}
+            <NumericText style={styles.subline}>
+              {Math.round(row.winRate)}%
+            </NumericText>
+            {' win'}
+          </Text>
+        </View>
+        <View style={styles.right}>
+          <NumericText
+            bold
+            style={[styles.pnl, { color: pnlColor }]}
+            allowFontScaling={false}
+          >
+            {sign}${formatAbsShort(Math.abs(row.netPnl))}
+          </NumericText>
+          {pfDisplay && (
+            <NumericText style={styles.pf}>{pfDisplay}</NumericText>
+          )}
         </View>
       </View>
+    </>
+  );
+
+  return (
+    <View>
+      {onPress ? (
+        <PressableCard
+          onPress={onPress}
+          baseBg={surface.l1}
+          pressedBg={surface.l3}
+          style={styles.row}
+          accessibilityLabel={`${row.name} stats — ${row.tradeCount} trades`}
+        >
+          {rowBody}
+        </PressableCard>
+      ) : (
+        <View style={styles.row}>{rowBody}</View>
+      )}
       {showDivider && <View style={styles.divider} />}
     </View>
   );

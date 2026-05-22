@@ -56,6 +56,7 @@ import SetupLibraryScreen from './src/screens/SetupLibraryScreen';
 import SetupDetailScreen  from './src/screens/SetupDetailScreen';
 import InsightsScreen     from './src/screens/InsightsScreen';
 import AccountDetailScreen from './src/screens/AccountDetailScreen';
+import SetupStatsScreen   from './src/screens/SetupStatsScreen';
 import { useJournalStore } from './src/store/journalStore';
 import OnboardingSplashScreen    from './src/screens/OnboardingSplashScreen';
 import OnboardingPremiseScreen   from './src/screens/OnboardingPremiseScreen';
@@ -380,6 +381,10 @@ export default function App() {
           {/* Account performance detail — stub destination for the
               Dashboard Account hero card tap (§3.1). */}
           <Stack.Screen name="AccountDetail"         component={AccountDetailScreen} />
+          {/* Per-setup stats detail — drill-down from the Stats
+              "By setup" breakdown rows. Reuses the equity / heatmap
+              / histogram components against a filtered slice. */}
+          <Stack.Screen name="SetupStats"            component={SetupStatsScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>

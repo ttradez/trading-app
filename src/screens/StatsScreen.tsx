@@ -68,6 +68,12 @@ export default function StatsScreen({ navigation }: any) {
             // We're already inside the MainTabs navigator — jump
             // sideways to the Learn tab directly.
             onBrowseLibrary={() => navigation.navigate('Learn')}
+            // Row tap drills into the per-setup detail screen — the
+            // SetupStats route lives at the root stack level, so we
+            // just bubble up by name.
+            onRowPress={(setupId) =>
+              navigation.navigate('SetupStats', { setupId })
+            }
           />
         </View>
 

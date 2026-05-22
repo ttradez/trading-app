@@ -34,10 +34,17 @@ const LOSS_STROKE = '#FF4757';
 
 interface Props {
   onStartSession?: () => void;
+  /** Optional filtered trade snapshot — the per-setup stats screen
+   *  passes one-setup-only entries. When omitted, falls back to
+   *  the full journal store. */
+  trades?: ReadonlyArray<{ pnl: number }>;
 }
 
-export default function PnLDistributionHistogram({ onStartSession }: Props) {
-  const trades = useJournalStore((s) => s.entries);
+export default function PnLDistributionHistogram({
+  onStartSession, trades: tradesProp,
+}: Props) {
+  const storeTrades = useJournalStore((s) => s.entries);
+  const trades = tradesProp ?? storeTrades;
 
   const distribution = useMemo(
     () => getPnLDistribution(trades),
