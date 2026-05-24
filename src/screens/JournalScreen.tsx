@@ -1,20 +1,16 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Pressable, FlatList,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors, radius, spacing, fontSize, fontWeight, labelStyle, typography } from '../theme';
 import { useJournalStore, JournalEntry, Emotion } from '../store/journalStore';
-import TradeCard from '../components/TradeCard';
 import SectionHeader from '../components/SectionHeader';
 import MoneyText from '../components/MoneyText';
-import Button from '../components/ui/Button';
-import FilterChip from '../components/ui/FilterChip';
 import NumericText from '../components/NumericText';
-import { PRIMARY_ACTION_LABEL } from '../theme/copy';
+import JournalEntryCard from '../components/JournalEntryCard';
 import { colors as JT } from '../theme/tokens';
-import { useTradeJournalStore } from '../store/tradeJournalStore';
 import { useRecapList } from '../store/recapStore';
 import WeeklyRecapModal from '../components/WeeklyRecapModal';
 import { WeeklyRecap } from '../utils/weeklyRecap';
@@ -30,12 +26,25 @@ const EMOTIONS: { id: Emotion; label: string; icon: string; color: string }[] = 
   { id: 'calm',         label: 'Calm',         icon: 'water-outline',       color: '#26A69A' },
 ];
 
-type Filter = 'all' | 'wins' | 'losses';
+/**
+ * Placeholder data for the new top-of-screen "Trade Journal"
+ * section. The post-trade journal-with-screenshot flow isn't wired
+ * yet — these mocks exist so the design intent is visible.
+ *
+ * When the entry-creation flow lands, this constant goes away and
+ * the section reads from a real store (probably tradeJournalStore
+ * extended with a screenshot URI).
+ */
+const PLACEHOLDER_JOURNAL_ENTRIES = [
+  { id: 'mock-1', outcome: 'W' as const, symbol: 'NQ', entry: 19842.50, exit: 19891.25, pnl:  487.50, date: '2026-05-21' },
+  { id: 'mock-2', outcome: 'L' as const, symbol: 'ES', entry:  5421.75, exit:  5419.50, pnl: -112.50, date: '2026-05-20' },
+  { id: 'mock-3', outcome: 'W' as const, symbol: 'CL', entry:    74.32, exit:    74.81, pnl:  490.00, date: '2026-05-19' },
+  { id: 'mock-4', outcome: 'W' as const, symbol: 'GC', entry:  2387.40, exit:  2392.10, pnl:  470.00, date: '2026-05-19' },
+  { id: 'mock-5', outcome: 'L' as const, symbol: 'NQ', entry: 19720.00, exit: 19698.25, pnl: -217.50, date: '2026-05-18' },
+];
 
 export default function JournalScreen({ navigation, route }: any) {
   const { entries } = useJournalStore();
-  const [filter, setFilter] = useState<Filter>('all');
-  const [search, setSearch] = useState('');
   const [openRecap, setOpenRecap] = useState<WeeklyRecap | null>(null);
   const [editing, setEditing] = useState<JournalEntry | null>(null);
 
@@ -49,174 +58,130 @@ export default function JournalScreen({ navigation, route }: any) {
     if (!openEntryId) return;
     const target = entries.find((e) => e.id === openEntryId);
     if (target) setEditing(target);
-    // Consume the param so a back-and-forth nav doesn't re-trigger.
     navigation.setParams?.({ openEntryId: undefined });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openEntryId]);
 
-  const filtered = useMemo(() => {
-    let out = entries;
-    if (filter === 'wins')    out = out.filter((e) => e.pnl > 0);
-    if (filter === 'losses')  out = out.filter((e) => e.pnl < 0);
-    if (search.trim())        out = out.filter((e) =>
-      `${e.symbol} ${e.notes} ${e.strategy} ${e.tags.join(' ')}`.toLowerCase().includes(search.toLowerCase())
-    );
-    return out.sort((a, b) => b.savedAt - a.savedAt);
-  }, [entries, filter, search]);
-
-  const totalPnl = filtered.reduce((sum, e) => sum + e.pnl, 0);
-  const wins  = filtered.filter((e) => e.pnl > 0).length;
-  const losses = filtered.filter((e) => e.pnl < 0).length;
-  const winRate = filtered.length ? Math.round((wins / filtered.length) * 100) : 0;
+  // Stats roll up the user's real journal data (not the placeholder
+  // cards). All trades, no filter — the wins/losses filter row went
+  // away with the real-trade list and will return when the post-
+  // trade journal flow is wired and we have entries with
+  // screenshots to filter.
+  const totalPnl = entries.reduce((sum, e) => sum + e.pnl, 0);
+  const wins    = entries.filter((e) => e.pnl > 0).length;
+  const losses  = entries.filter((e) => e.pnl < 0).length;
+  const winRate = entries.length ? Math.round((wins / entries.length) * 100) : 0;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Journal</Text>
-        <Text style={styles.headerSub}>{entries.length} {entries.length === 1 ? 'entry' : 'entries'}</Text>
-      </View>
-
-      {/* Search */}
-      <View style={styles.searchBar}>
-        <Ionicons name="search" size={16} color={colors.textTertiary} />
-        <TextInput
-          style={styles.searchInput}
-          value={search}
-          onChangeText={setSearch}
-          placeholder="Search by symbol, strategy, notes…"
-          placeholderTextColor={colors.textTertiary}
-        />
-      </View>
-
-      {/* Recent Trades — relocated from Dashboard (DESIGN_AUDIT §3.1).
-          3 most-recent entries, or an inline empty state with the
-          same Start-session affordance the Dashboard used to host. */}
-      <View style={styles.recentSection}>
-        <View style={styles.recentHeader}>
-          <Text style={styles.recentLabel}>RECENT TRADES</Text>
-        </View>
-        {entries.length === 0 ? (
-          <View style={styles.recentEmpty}>
-            <Text style={styles.recentEmptyText}>
-              No trades yet. Start a session to place your first trade.
-            </Text>
-            <Button
-              label={PRIMARY_ACTION_LABEL}
-              variant="secondary"
-              onPress={() => navigation.navigate('Chart')}
-              style={styles.recentEmptyCta}
-            />
-          </View>
-        ) : (
-          <View style={styles.recentList}>
-            {[...entries]
-              .sort((a, b) => b.savedAt - a.savedAt)
-              .slice(0, 3)
-              .map((e) => (
-                <JournalTradeCard
-                  key={`recent-${e.id}`}
-                  entry={e}
-                  onPress={() => setEditing(e)}
-                />
-              ))}
-          </View>
-        )}
-      </View>
-
-      {/* Filter pills — locked FilterChip (DESIGN_AUDIT §2.4) */}
-      <View style={styles.filterRow}>
-        {(['all', 'wins', 'losses'] as Filter[]).map((f) => (
-          <FilterChip
-            key={f}
-            label={f.toUpperCase()}
-            selected={filter === f}
-            onPress={() => setFilter(f)}
-          />
-        ))}
-      </View>
-
-      {/* Summary */}
-      <View style={styles.summary}>
-        <View style={styles.summaryItem}>
-          <Text style={[labelStyle, styles.summaryLabel]}>P&L</Text>
-          <MoneyText
-            value={totalPnl}
-            size={fontSize.lg}
-            // Zero P&L stays neutral white — green only for positive,
-            // red only for negative. Was painting $0.00 as a "win"
-            // by accident. (DESIGN_AUDIT §3.3)
-            style={[
-              styles.summaryValue,
-              totalPnl > 0 && styles.green,
-              totalPnl < 0 && styles.red,
-            ]}
-          />
-        </View>
-        <View style={styles.summaryItem}>
-          <Text style={[labelStyle, styles.summaryLabel]}>WIN RATE</Text>
-          <NumericText bold style={styles.summaryValue}>{winRate}%</NumericText>
-        </View>
-        <View style={styles.summaryItem}>
-          <Text style={[labelStyle, styles.summaryLabel]}>W/L</Text>
-          <NumericText bold style={styles.summaryValue}>{wins}/{losses}</NumericText>
-        </View>
-      </View>
-
-      {/* Your Tendencies — entry to the Insights screen. */}
-      <TouchableOpacity
-        style={styles.insightsCard}
-        activeOpacity={0.85}
-        onPress={() => navigation.navigate('Insights')}
-        accessibilityRole="button"
-        accessibilityLabel="Your Tendencies — see your trading patterns"
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.insightsIconWrap}>
-          <MaterialCommunityIcons name="brain" size={22} color={colors.gold} />
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Journal</Text>
+          <Text style={styles.headerSub}>
+            {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
+          </Text>
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.insightsTitle}>Your Tendencies</Text>
-          <Text style={styles.insightsSub}>See your trading patterns →</Text>
-        </View>
-        <Ionicons
-          name="chevron-forward"
-          size={18}
-          color="rgba(255,255,255,0.3)"
-        />
-      </TouchableOpacity>
 
-      {/* List */}
-      {filtered.length === 0 ? (
-        <ScrollView contentContainerStyle={styles.listContent}>
-          <RecapsSection onOpen={setOpenRecap} />
-          <View style={styles.empty}>
-            <Text style={styles.emptyMessage}>
-              No trades yet. Start a session to place your first trade.
-            </Text>
-            <Button
-              label={PRIMARY_ACTION_LABEL}
-              variant="primary"
-              onPress={() => navigation.navigate('Chart')}
-              style={styles.emptyCta}
+        {/* 1. Stats block — promoted to the top. */}
+        <View style={styles.summary}>
+          <View style={styles.summaryItem}>
+            <Text style={[labelStyle, styles.summaryLabel]}>P&L</Text>
+            <MoneyText
+              value={totalPnl}
+              size={fontSize.lg}
+              // Zero P&L stays neutral white — green only for positive,
+              // red only for negative.
+              style={[
+                styles.summaryValue,
+                totalPnl > 0 && styles.green,
+                totalPnl < 0 && styles.red,
+              ]}
             />
           </View>
-        </ScrollView>
-      ) : (
-        <FlatList
-          data={filtered}
-          keyExtractor={(e) => e.id}
-          contentContainerStyle={styles.listContent}
-          ListHeaderComponent={<RecapsSection onOpen={setOpenRecap} />}
-          ItemSeparatorComponent={() => <View style={styles.listGap} />}
-          renderItem={({ item }) => (
-            <JournalTradeCard entry={item} onPress={() => setEditing(item)} />
-          )}
-        />
-      )}
+          <View style={styles.summaryItem}>
+            <Text style={[labelStyle, styles.summaryLabel]}>WIN RATE</Text>
+            <NumericText bold style={styles.summaryValue}>{winRate}%</NumericText>
+          </View>
+          <View style={styles.summaryItem}>
+            <Text style={[labelStyle, styles.summaryLabel]}>W/L</Text>
+            <NumericText bold style={styles.summaryValue}>{wins}/{losses}</NumericText>
+          </View>
+        </View>
 
-      {/* Edit modal */}
+        {/* 2. Trade Journal — placeholder cards. Replaces the old
+            real-trade FlatList until the post-trade journal-with-
+            screenshot flow is wired. */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <SectionHeader
+              title="Trade Journal"
+              variant="eyebrow"
+              icon={
+                <MaterialCommunityIcons
+                  name="notebook-outline"
+                  size={13}
+                  color={JT.textTertiary}
+                />
+              }
+            />
+          </View>
+          <View style={styles.entryList}>
+            {PLACEHOLDER_JOURNAL_ENTRIES.map((e) => (
+              <JournalEntryCard
+                key={e.id}
+                outcome={e.outcome}
+                symbol={e.symbol}
+                entry={e.entry}
+                exit={e.exit}
+                pnl={e.pnl}
+                date={e.date}
+              />
+            ))}
+          </View>
+        </View>
+
+        {/* 3. Your Tendencies — entry to the Insights screen.
+            Existing component preserved unchanged in its slot. */}
+        <TouchableOpacity
+          style={styles.insightsCard}
+          activeOpacity={0.85}
+          onPress={() => navigation.navigate('Insights')}
+          accessibilityRole="button"
+          accessibilityLabel="Your Tendencies — see your trading patterns"
+        >
+          <View style={styles.insightsIconWrap}>
+            <MaterialCommunityIcons name="brain" size={22} color={colors.gold} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.insightsTitle}>Your Tendencies</Text>
+            <Text style={styles.insightsSub}>See your trading patterns →</Text>
+          </View>
+          <Ionicons
+            name="chevron-forward"
+            size={18}
+            color="rgba(255,255,255,0.3)"
+          />
+        </TouchableOpacity>
+
+        {/* 4. Weekly Recap — demoted to the bottom. Was the
+            ListHeaderComponent of the (removed) trade FlatList;
+            now stands on its own as the final section. */}
+        <View style={styles.bottomRecap}>
+          <RecapsSection onOpen={setOpenRecap} />
+        </View>
+      </ScrollView>
+
+      {/* Edit modal — left mounted but currently no trigger surface
+          (the real-trade list is hidden). Re-wires for free when
+          the journal-entry flow comes online and reintroduces the
+          tap target. */}
       <EntryEditModal entry={editing} onClose={() => setEditing(null)} />
 
-      {/* Tapped past-recap review */}
+      {/* Tapped past-recap review — nav handlers preserved. */}
       <WeeklyRecapModal
         visible={openRecap !== null}
         recap={openRecap}
@@ -234,16 +199,17 @@ export default function JournalScreen({ navigation, route }: any) {
   );
 }
 
-/** "Weekly Recaps" section pinned above the trade list. Compact
- *  rows (date range · win rate · total P&L); tap → reopen the full
- *  recap modal for that week. Newest first. */
+/** "Weekly Recaps" section — compact rows (date range · win rate ·
+ *  total P&L); tap → reopen the full recap modal for that week.
+ *  Newest first. Was the ListHeaderComponent of the trade list; now
+ *  rendered as a stand-alone section at the bottom of the screen. */
 function RecapsSection({ onOpen }: { onOpen: (r: WeeklyRecap) => void }) {
   const recaps = useRecapList();
   return (
     <View style={styles.recapSection}>
       <View style={styles.recapHeader}>
         <SectionHeader
-          title="Weekly Recaps"
+          title="Weekly Recap"
           variant="eyebrow"
           icon={<MaterialCommunityIcons name="calendar-range" size={13} color={JT.textTertiary} />}
         />
@@ -287,32 +253,6 @@ function RecapsSection({ onOpen }: { onOpen: (r: WeeklyRecap) => void }) {
         })
       )}
     </View>
-  );
-}
-
-/** Per-row wrapper that looks the journaled grade up by entry id
- *  and forwards it into TradeCard. Defined as its own component so
- *  the hook call is legal (one per row, not one per iteration in
- *  a render callback). */
-function JournalTradeCard({
-  entry, onPress,
-}: { entry: JournalEntry; onPress: () => void }) {
-  const grade = useTradeJournalStore((s) => s.entries[entry.id]?.grade);
-  return (
-    <TradeCard
-      symbol={entry.symbol}
-      direction={entry.side === 'buy' ? 'long' : 'short'}
-      entryPrice={entry.entryPrice}
-      exitPrice={entry.exitPrice}
-      pnl={entry.pnl}
-      entryTime={entry.openedAt}
-      exitTime={entry.closedAt}
-      contracts={entry.lots}
-      status="closed"
-      grade={grade}
-      planSetupType={entry.planSetupType}
-      onPress={onPress}
-    />
   );
 }
 
@@ -401,53 +341,20 @@ function EntryEditModal({ entry, onClose }: { entry: JournalEntry | null; onClos
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
 
+  scrollContent: {
+    paddingBottom: spacing.xxl,
+  },
+
   header: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xs },
-  // Screen title — locked 6-step scale: `typography.display`.
   headerTitle: { ...typography.display, color: colors.textPrimary },
   headerSub: { color: colors.textTertiary, fontSize: fontSize.xs, marginTop: 2 },
 
-  searchBar: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    backgroundColor: colors.card, borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.border,
-    marginHorizontal: spacing.lg, marginVertical: spacing.sm,
-    paddingHorizontal: spacing.md, paddingVertical: 8,
-  },
-  searchInput: { flex: 1, color: colors.textPrimary, fontSize: fontSize.sm },
-
-  filterRow: { flexDirection: 'row', paddingHorizontal: spacing.lg, gap: 8, marginBottom: spacing.sm },
-
-  // Recent Trades section (relocated from Dashboard — §3.1).
-  recentSection: {
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  recentHeader: { marginBottom: spacing.sm },
-  recentLabel: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-  },
-  recentList: { gap: 10 },
-  recentEmpty: {
-    alignItems: 'center',
-    paddingVertical: 16,
-  },
-  recentEmptyText: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 14,
-    fontWeight: '500',
-    lineHeight: 20,
-    textAlign: 'center',
-    maxWidth: 280,
-  },
-  recentEmptyCta: { marginTop: 12 },
-
+  // Stats block — was below the recents/filter row; promoted to
+  // the top of the page per the new layout.
   summary: {
     flexDirection: 'row', justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+    marginTop: spacing.sm,
     borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border,
     backgroundColor: colors.card,
   },
@@ -455,12 +362,24 @@ const styles = StyleSheet.create({
   summaryLabel: { fontSize: 9 },
   summaryValue: { color: colors.textPrimary, fontSize: fontSize.lg, fontWeight: fontWeight.bold, fontVariant: ['tabular-nums'], marginTop: 2 },
 
+  // Generic section wrapper — used by the new Trade Journal block.
+  section: {
+    marginTop: spacing.xl,
+    paddingHorizontal: spacing.lg,
+  },
+  sectionHeader: {
+    marginBottom: spacing.sm,
+  },
+  entryList: {
+    gap: 10,
+  },
+
   insightsCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    marginHorizontal: spacing.md,
-    marginTop: spacing.md,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.xl,
     backgroundColor: colors.card,
     borderColor: colors.border,
     borderWidth: 1,
@@ -490,32 +409,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xl, paddingVertical: spacing.xl },
-  emptyMessage: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 15,
-    fontWeight: '500',
-    lineHeight: 22,
-    textAlign: 'center',
-    maxWidth: 280,
+  // Weekly Recap bottom slot
+  bottomRecap: {
+    marginTop: spacing.xl,
+    paddingHorizontal: spacing.lg,
   },
-  emptyCta: { marginTop: spacing.lg },
-
-  // Trade-card list — vertical stack with 10 px gap, matching spec.
-  listContent: {
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.xl,
-  },
-  listGap: { height: 10 },
-
-  // Weekly Recaps section (pinned above the trade list)
   recapSection: { marginBottom: spacing.lg },
   recapHeader: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '800',
-    letterSpacing: 1.5,
     marginBottom: 10,
   },
   recapEmpty: {
@@ -556,7 +456,6 @@ const styles = StyleSheet.create({
 
   // Edit modal
   editBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  // Bottom-sheet modal surface — L3 in the layered system.
   editSheet: { backgroundColor: '#141414', borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, maxHeight: '90%' },
   editHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md },
   editTitle: { flex: 1, color: colors.textPrimary, fontSize: fontSize.lg, fontWeight: fontWeight.bold },
