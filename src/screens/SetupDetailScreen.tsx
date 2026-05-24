@@ -62,6 +62,13 @@ export default function SetupDetailScreen({ route, navigation }: any) {
   const catColor = CATEGORY_COLOR[setup.category];
   const diffColor = DIFFICULTY_COLOR[setup.difficulty];
 
+  // `lesson === null` is the 2026-expansion "schema wired, copy
+  // to follow" marker — render a "Lesson coming soon" state in
+  // place of howToTrade/keyRules/examples. Legacy entries leave
+  // `lesson` undefined and inline those fields directly, so they
+  // fall through to the existing render path untouched.
+  const lessonPending = setup.lesson === null;
+
   const tradeThis = (ex: { symbol: string; date: string; timeframe: string }) => {
     navigation.navigate('Chart', {
       dailySetup: {
@@ -109,41 +116,76 @@ export default function SetupDetailScreen({ route, navigation }: any) {
         <Text style={styles.sectionLabel}>What is this setup?</Text>
         <Text style={styles.bodyText}>{setup.description}</Text>
 
-        <Text style={styles.sectionLabel}>How to trade it</Text>
-        <Text style={styles.bodyText}>{setup.howToTrade}</Text>
+        {setup.rule && (
+          <>
+            <Text style={styles.sectionLabel}>Trigger</Text>
+            <Text style={styles.bodyText}>{setup.rule}</Text>
+          </>
+        )}
 
-        <Text style={styles.sectionLabel}>Rules</Text>
-        <View style={styles.rulesWrap}>
-          {setup.keyRules.map((r, i) => (
-            <View key={i} style={styles.ruleRow}>
-              <Text style={styles.ruleNum}>{i + 1}</Text>
-              <Text style={styles.ruleText}>{r}</Text>
-            </View>
-          ))}
-        </View>
+        {lessonPending ? (
+          /* "Lesson coming soon" — mirrors the LearnScreen "MORE
+             COMING SOON" footer pattern (eyebrow + body type
+             tokens) so no new color/surface/font is introduced. */
+          <View style={styles.comingSoon}>
+            <Text style={styles.comingSoonEyebrow}>LESSON COMING SOON</Text>
+            <Text style={styles.comingSoonBody}>
+              The how-to-trade walkthrough, checklist rules, and
+              replay-able historical examples for this setup are on
+              the way.
+            </Text>
+          </View>
+        ) : (
+          <>
+            {setup.howToTrade && (
+              <>
+                <Text style={styles.sectionLabel}>How to trade it</Text>
+                <Text style={styles.bodyText}>{setup.howToTrade}</Text>
+              </>
+            )}
 
-        <Text style={styles.sectionLabel}>Practice this setup</Text>
-        <View style={styles.exampleList}>
-          {setup.examples.map((ex, i) => (
-            <View key={i} style={styles.exampleCard}>
-              <Text style={styles.exampleHead}>
-                {ex.symbol} · {ex.date} · {ex.timeframe}
-              </Text>
-              <Text style={styles.exampleContext}>{ex.context}</Text>
-              <Pressable
-                onPress={() => tradeThis(ex)}
-                style={({ pressed }) => [
-                  styles.tradeBtn,
-                  pressed && { opacity: 0.85 },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel={`Trade ${ex.symbol} ${ex.date}`}
-              >
-                <Text style={styles.tradeBtnText}>Trade this →</Text>
-              </Pressable>
-            </View>
-          ))}
-        </View>
+            {setup.keyRules && setup.keyRules.length > 0 && (
+              <>
+                <Text style={styles.sectionLabel}>Rules</Text>
+                <View style={styles.rulesWrap}>
+                  {setup.keyRules.map((r, i) => (
+                    <View key={i} style={styles.ruleRow}>
+                      <Text style={styles.ruleNum}>{i + 1}</Text>
+                      <Text style={styles.ruleText}>{r}</Text>
+                    </View>
+                  ))}
+                </View>
+              </>
+            )}
+
+            {setup.examples && setup.examples.length > 0 && (
+              <>
+                <Text style={styles.sectionLabel}>Practice this setup</Text>
+                <View style={styles.exampleList}>
+                  {setup.examples.map((ex, i) => (
+                    <View key={i} style={styles.exampleCard}>
+                      <Text style={styles.exampleHead}>
+                        {ex.symbol} · {ex.date} · {ex.timeframe}
+                      </Text>
+                      <Text style={styles.exampleContext}>{ex.context}</Text>
+                      <Pressable
+                        onPress={() => tradeThis(ex)}
+                        style={({ pressed }) => [
+                          styles.tradeBtn,
+                          pressed && { opacity: 0.85 },
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Trade ${ex.symbol} ${ex.date}`}
+                      >
+                        <Text style={styles.tradeBtnText}>Trade this →</Text>
+                      </Pressable>
+                    </View>
+                  ))}
+                </View>
+              </>
+            )}
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -269,5 +311,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     letterSpacing: 0.3,
+  },
+
+  // "Lesson coming soon" — visually mirrors the LearnScreen
+  // footer "MORE COMING SOON" block (white@50% eyebrow + body
+  // copy, no new color/surface/font tokens).
+  comingSoon: {
+    marginTop: 28,
+    paddingHorizontal: 4,
+  },
+  comingSoonEyebrow: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    marginBottom: 8,
+  },
+  comingSoonBody: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 14,
+    fontWeight: '500',
+    lineHeight: 20,
   },
 });

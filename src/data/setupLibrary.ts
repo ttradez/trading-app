@@ -45,6 +45,21 @@ export interface SetupExample {
   context: string;
 }
 
+/** Deep lesson content for a setup. Optional on the top-level
+ *  LibrarySetup — entries authored before the 50-setup expansion
+ *  inline these fields directly (back-compat). The 2026 expansion
+ *  batch sets `lesson: null` to mark "schema wired, lesson copy to
+ *  follow"; SetupDetailScreen renders a "Lesson coming soon" state
+ *  in that case. */
+export interface LessonContent {
+  /** 2-3 sentences: how to identify + trade it. */
+  howToTrade: string;
+  /** 3-4 short checklist rules. */
+  keyRules: string[];
+  /** 2-3 replay-able historical examples. */
+  examples: SetupExample[];
+}
+
 export interface LibrarySetup {
   id: string;
   name: string;
@@ -52,12 +67,22 @@ export interface LibrarySetup {
   difficulty: SetupDifficulty;
   /** 2-3 sentences: what this setup IS. */
   description: string;
-  /** 2-3 sentences: how to identify + trade it. */
-  howToTrade: string;
-  /** 3-4 short checklist rules. */
-  keyRules: string[];
-  /** 2-3 replay-able historical examples. */
-  examples: SetupExample[];
+  /** One-line trigger rule. Newer (2026 expansion) entries set this;
+   *  older entries surface their trigger through `keyRules` instead. */
+  rule?: string;
+  /** Legacy inline lesson fields — present on the original 28
+   *  entries. New 2026-expansion entries leave these undefined and
+   *  set `lesson: null` instead. */
+  howToTrade?: string;
+  keyRules?: string[];
+  examples?: SetupExample[];
+  /** Lesson content. `undefined` on legacy entries (they inline the
+   *  fields above for back-compat). `null` explicitly marks
+   *  "schema-only entry; full lesson copy is on the way" and flips
+   *  SetupDetailScreen into a "Lesson coming soon" state. A non-null
+   *  object is the new canonical home for deep content once legacy
+   *  entries migrate. */
+  lesson?: LessonContent | null;
   /** 'classic' (default when omitted — keeps the original 15
    *  untouched) or 'ict'. */
   section?: SetupSection;
@@ -816,10 +841,271 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
         context: 'AM-window FVG to the prior session high' },
     ],
   },
+
+  // ══════════════════════════════════════════════════════════════
+  // 2026 EXPANSION BATCH — +22 setups (50 total). `lesson: null`
+  // marks "schema wired, lesson copy to follow in a separate pass".
+  // SetupDetailScreen renders a "Lesson coming soon" body for these
+  // until full lesson content lands.
+  //
+  // ICT-section category note: the source spec assigned several
+  // entries to "Reversal" / "Range", which are Classic-only category
+  // values. To avoid churning the ICT category union (and the chip
+  // filter + color map that hang off it), each ICT-section entry is
+  // routed to the closest existing IctCategory:
+  //   - reversal-flavored entry triggers → 'entry'
+  //   - manipulation / sweep-based setups → 'liquidity'
+  //   - Premium/Discount Zones → 'structure' (matches the existing
+  //     `ict_premium_discount` entry's categorization)
+  // ══════════════════════════════════════════════════════════════
+
+  // ── CLASSIC EXPANSION (13) ──────────────────────────────────
+
+  {
+    id: 'vwap-reclaim-momentum',
+    name: 'VWAP Reclaim',
+    category: 'momentum',
+    difficulty: 'intermediate',
+    rule: 'Price loses VWAP, then closes back above on volume — long.',
+    description:
+      'A more aggressive cousin of the VWAP bounce: price breaks below VWAP, trades below it for a stretch, then "reclaims" the level from below on a clean volume close. The trader is betting that buyers absorbed the breakdown and unwinding shorts will fuel a push back to the day\'s highs.',
+    lesson: null,
+  },
+  {
+    id: 'anchored-vwap-bounce',
+    name: 'Anchored VWAP Bounce',
+    category: 'reversal',
+    difficulty: 'intermediate',
+    rule: 'Price pulls back to AVWAP anchored at a key event and rejects.',
+    description:
+      'A VWAP is anchored to a meaningful pivot (overnight high, FOMC bar, prior day high, earnings, news spike) rather than session open, then traded as dynamic support/resistance. Popularized by Brian Shannon; well-suited to futures because index/commodity opens are arbitrary while institutional reference points are not.',
+    lesson: null,
+  },
+  {
+    id: 'initial-balance-break',
+    name: 'Initial Balance Break',
+    category: 'momentum',
+    difficulty: 'intermediate',
+    rule: 'Break of first-hour high or low after IB completes — trade in direction.',
+    description:
+      'The Initial Balance is the range of the first 60 minutes of RTH (9:30–10:30 ET). When price breaks IBH or IBL with conviction after IB closes, traders enter in the direction of the break, targeting IB-range extensions (1x, 1.5x, 2x). Empirical work cited by Axia/TRADEPRO shows IB extremes get tested in nearly every session.',
+    lesson: null,
+  },
+  {
+    id: 'nr7-inside-bar-compression-breakout',
+    name: 'NR7 Inside-Bar Compression Breakout',
+    category: 'momentum',
+    difficulty: 'beginner',
+    rule: 'Break of the narrowest-range bar in 7 sessions — trade the side that goes first.',
+    description:
+      'Toby Crabel\'s volatility-contraction setup: an NR7 (or NR4, or an inside bar) signals that volatility is coiled and an expansion bar is statistically due. Traders buy a break of the NR7 high or short a break of its low, with a stop on the other side. Used extensively by intraday futures and prop traders as a low-noise filter.',
+    lesson: null,
+  },
+  {
+    id: 'bull-flag-continuation',
+    name: 'Bull Flag Continuation',
+    category: 'momentum',
+    difficulty: 'beginner',
+    rule: 'Buy the break of a tight pullback channel after a strong impulse.',
+    description:
+      'A sharp impulse ("flagpole") followed by a 5–15-bar parallel-channel consolidation sloping against the trend; entry on the breakout of the flag in the direction of the flagpole. Measured-move target is the flagpole length projected from the breakout. Heavily used on ES/NQ/CL 5- and 15-min charts.',
+    lesson: null,
+  },
+  {
+    id: 'bear-flag-continuation',
+    name: 'Bear Flag Continuation',
+    category: 'momentum',
+    difficulty: 'beginner',
+    rule: 'Sell the break of a tight pullback channel after a strong impulse.',
+    description:
+      'A sharp impulse ("flagpole") followed by a 5–15-bar parallel-channel consolidation sloping against the trend; entry on the breakdown of the flag in the direction of the flagpole. Measured-move target is the flagpole length projected from the breakdown. Heavily used on ES/NQ/CL 5- and 15-min charts.',
+    lesson: null,
+  },
+  {
+    id: 'pennant-continuation',
+    name: 'Pennant Continuation',
+    category: 'momentum',
+    difficulty: 'beginner',
+    rule: 'Buy/sell the break of a small symmetrical triangle after a sharp move.',
+    description:
+      'Like a flag but the consolidation forms converging trendlines (a small symmetrical triangle) rather than a parallel channel. Same measured-move logic; tighter coil typically produces a more violent break. Treated as a distinct setup from flag because the breakout mechanics and stop placement differ.',
+    lesson: null,
+  },
+  {
+    id: 'head-and-shoulders-reversal',
+    name: 'Head & Shoulders',
+    category: 'reversal',
+    difficulty: 'intermediate',
+    rule: 'Short on neckline break after the third shoulder forms.',
+    description:
+      'A classic three-peak reversal: left shoulder, higher head, lower right shoulder, with a "neckline" connecting the intervening lows. Confirmed on a neckline break, often with a retest; measured target is the head-to-neckline distance projected from the break. Still cited by 2025 prop-firm-funded futures educators for ES/NQ swing-day reversals.',
+    lesson: null,
+  },
+  {
+    id: 'inverse-head-and-shoulders',
+    name: 'Inverse Head & Shoulders',
+    category: 'reversal',
+    difficulty: 'intermediate',
+    rule: 'Long on neckline break after the third shoulder forms.',
+    description:
+      'A classic three-trough reversal: left shoulder, lower head, higher right shoulder, with a "neckline" connecting the intervening highs. Confirmed on a neckline break, often with a retest; measured target is the head-to-neckline distance projected from the break. Still cited by 2025 prop-firm-funded futures educators for ES/NQ swing-day reversals.',
+    lesson: null,
+  },
+  {
+    id: 'three-drives',
+    name: 'Three Drives',
+    category: 'reversal',
+    difficulty: 'advanced',
+    rule: 'Fade the third symmetrical drive at 1.272/1.618 extension.',
+    description:
+      'Three symmetric price drives separated by 0.618/0.786 retracements, with each drive extending 1.272 or 1.618 of the prior correction. The third drive\'s completion is the trade — fade it back toward the start of drive 2. Rare but high-RR; cited as a "prized" technical pattern by Forex.com and TradingView education.',
+    lesson: null,
+  },
+  {
+    id: 'wyckoff-spring',
+    name: 'Wyckoff Spring',
+    category: 'reversal',
+    difficulty: 'advanced',
+    rule: 'Long the snap-back after a false break below range support.',
+    description:
+      'Wyckoff "Phase C" event inside an accumulation range: price briefly violates support to flush stops, then snaps back inside the range on heavy volume. Treated as the trigger that begins the markup phase.',
+    lesson: null,
+  },
+  {
+    id: 'wyckoff-upthrust',
+    name: 'Wyckoff Upthrust',
+    category: 'reversal',
+    difficulty: 'advanced',
+    rule: 'Short the rejection of a false break above range resistance.',
+    description:
+      'Wyckoff "Phase C" event inside a distribution range: price briefly violates resistance to flush stops, then snaps back inside the range on heavy volume. Treated as the trigger that begins the markdown phase.',
+    lesson: null,
+  },
+  {
+    id: 'power-hour-reversal',
+    name: 'Power Hour Reversal',
+    category: 'reversal',
+    difficulty: 'intermediate',
+    rule: 'Trade the 3 PM ET inflection back toward VWAP or with end-of-day flow.',
+    description:
+      'The final NYSE hour (3:00–4:00 PM ET) sees an institutional rebalancing flush — volume spikes and intraday extremes often get retested. Setups include fading exhaustion back to VWAP, or riding the dominant side\'s MOC imbalance into the close. Prop-firm traders use it because moves are fast and well-defined.',
+    lesson: null,
+  },
+
+  // ── ICT EXPANSION (9) ──────────────────────────────────────
+
+  {
+    id: 'inversion-fair-value-gap',
+    name: 'Inversion Fair Value Gap (IFVG)',
+    category: 'entry',
+    difficulty: 'intermediate',
+    section: 'ict',
+    unlock: 'paper_hands',
+    rule: 'Trade the FVG that price closed through — it now flips polarity as support/resistance.',
+    description:
+      'When price closes decisively through an existing FVG, the gap "inverts" — a former bullish FVG becomes resistance, and a former bearish FVG becomes support. The retest of the inverted gap is the entry. One of the cleanest reversal triggers in the post-2022 ICT toolkit.',
+    lesson: null,
+  },
+  {
+    id: 'balanced-price-range',
+    name: 'Balanced Price Range (BPR)',
+    category: 'entry',
+    difficulty: 'intermediate',
+    section: 'ict',
+    unlock: 'paper_hands',
+    rule: 'Enter at the overlap of two opposing FVGs at the same price zone.',
+    description:
+      'A bullish FVG and a bearish FVG that overlap at the same price form a Balanced Price Range. Returning to the overlap typically produces a sharp reaction in either direction because two independent imbalances are stacked. Often paired with CISD/MSS for confirmation.',
+    lesson: null,
+  },
+  {
+    id: 'unicorn-model',
+    name: 'Unicorn Model',
+    category: 'entry',
+    difficulty: 'advanced',
+    section: 'ict',
+    unlock: 'sniper',
+    rule: 'Enter where a Breaker Block and an FVG overlap in the same zone.',
+    description:
+      'The Unicorn is the high-confluence intersection of a Breaker Block and a Fair Value Gap formed in the same delivery leg. When price retraces back to the overlap, the two PD Arrays reinforce each other — considered one of the highest-conviction setups in the ICT framework.',
+    lesson: null,
+  },
+  {
+    id: 'judas-swing',
+    name: 'Judas Swing',
+    category: 'liquidity',
+    difficulty: 'intermediate',
+    section: 'ict',
+    unlock: 'paper_hands',
+    rule: 'Fade the false move against daily bias right after session open.',
+    description:
+      'A false move engineered at the session open (NY midnight → ~05:00 ET, or NY 9:30 open) that runs counter to the day\'s true bias, designed to trap retail and trigger stops before the real move. Trade the reversal once liquidity is swept and structure shifts (MSS/CISD) in the direction of bias.',
+    lesson: null,
+  },
+  {
+    id: 'turtle-soup',
+    name: 'Turtle Soup',
+    category: 'liquidity',
+    difficulty: 'intermediate',
+    section: 'ict',
+    unlock: 'paper_hands',
+    rule: 'Fade a false breakout beyond a prior swing high/low.',
+    description:
+      'Price extends just beyond a prior session/swing high or low, sweeps the resting liquidity, then rejects sharply back into range. ICT\'s adaptation of Linda Raschke\'s original Turtle Soup, now codified by session (Asia, London, NY AM/PM) and almost always paired with an opposing FVG or BPR for the entry.',
+    lesson: null,
+  },
+  {
+    id: 'market-maker-buy-model',
+    name: 'Market Maker Buy Model (MMBM)',
+    category: 'liquidity',
+    difficulty: 'advanced',
+    section: 'ict',
+    unlock: 'sniper',
+    rule: 'Trade the bullish Smart Money Reversal after the manipulation leg sweeps liquidity.',
+    description:
+      'A 4-phase institutional delivery framework: Original Consolidation → Engineering Liquidity (the manipulation move) → Smart Money Reversal → Liquidity Hunt to the opposite array. MMBM = bullish version (low to high). Often used as the daily/4H "macro template" inside which other entries (Silver Bullet, Judas, IFVG) trigger.',
+    lesson: null,
+  },
+  {
+    id: 'market-maker-sell-model',
+    name: 'Market Maker Sell Model (MMSM)',
+    category: 'liquidity',
+    difficulty: 'advanced',
+    section: 'ict',
+    unlock: 'sniper',
+    rule: 'Trade the bearish Smart Money Reversal after the manipulation leg sweeps liquidity.',
+    description:
+      'A 4-phase institutional delivery framework: Original Consolidation → Engineering Liquidity (the manipulation move) → Smart Money Reversal → Liquidity Hunt to the opposite array. MMSM = bearish version (high to low). Often used as the daily/4H "macro template" inside which other entries (Silver Bullet, Judas, IFVG) trigger.',
+    lesson: null,
+  },
+  {
+    id: 'change-in-state-of-delivery',
+    name: 'Change in State of Delivery (CISD)',
+    category: 'entry',
+    difficulty: 'intermediate',
+    section: 'ict',
+    unlock: 'paper_hands',
+    rule: 'Enter when price closes through the open of the prior delivery leg.',
+    description:
+      'Earlier reversal signal than a full Market Structure Shift: CISD fires when a candle closes past the open of the most recent opposing-direction leg, signalling delivery has switched from buy-side to sell-side (or vice versa). Used as a candle-close entry trigger, often inside an FVG/OB.',
+    lesson: null,
+  },
+  {
+    id: 'premium-discount-zones',
+    name: 'Premium/Discount Zones',
+    category: 'structure',
+    difficulty: 'beginner',
+    section: 'ict',
+    rule: 'Sell premium (above 50% of range), buy discount (below 50%).',
+    description:
+      'Within any defined dealing range (recent swing high to swing low), the midpoint (Equilibrium / 0.50) divides "premium" (expensive) from "discount" (cheap). ICT framework calls for buys only in discount and sells only in premium, with the 0.50 line itself a frequent reaction point. A foundational filter layered on top of other entries.',
+    lesson: null,
+  },
 ];
 
-/** Section of each setup, splitting Classic (the original 15) from
- *  ICT (13). `SETUP_LIBRARY_COUNT` is the grand total (28). */
+/** Section of each setup, splitting Classic from ICT.
+ *  `SETUP_LIBRARY_COUNT` is the grand total (50 after the 2026
+ *  expansion batch — 28 originals + 22 new). */
 export const CLASSIC_SETUPS: ReadonlyArray<LibrarySetup> =
   SETUP_LIBRARY.filter((s) => getSection(s) === 'classic');
 export const ICT_SETUPS: ReadonlyArray<LibrarySetup> =
