@@ -491,8 +491,12 @@ const styles = StyleSheet.create({
 
   tourneyCard: {
     backgroundColor: colors.card, borderRadius: radius.lg,
+    // Uniform gold border on all four sides — the prior
+    // `borderTopColor: LT.hairlineHighlight` override (the
+    // standard hairline-highlight trick on neutral cards) was
+    // cancelling the top edge of the gold accent, which read as
+    // a missing border on the top side only.
     borderWidth: 1, borderColor: colors.gold,
-    borderTopColor: LT.hairlineHighlight,
     padding: spacing.xl, marginBottom: spacing.lg,
     alignItems: 'center',
   },
