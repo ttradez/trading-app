@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   CLASSIC_SETUPS, ICT_SETUPS, LibrarySetup, SetupCategory, SetupSection,
   CATEGORY_COLOR, CATEGORY_LABEL, DIFFICULTY_COLOR,
-  CLASSIC_CATEGORY_ORDER, ICT_CATEGORY_ORDER,
+  CLASSIC_CATEGORY_ORDER, ICT_CATEGORY_ORDER, TYPE_LABEL,
 } from '../data/setupLibrary';
 import { useXpStore } from '../store/xpStore';
 import { useJournalStore } from '../store/journalStore';
@@ -322,9 +322,14 @@ export default function SetupLibraryScreen({ navigation, route }: any) {
                 )}
                 <View style={styles.cardTopRow}>
                   <Text style={styles.cardName}>{s.name}</Text>
-                  {mastered
-                    ? <MasteredPill />
-                    : <DifficultyBadge difficulty={s.difficulty} />}
+                  <View style={styles.cardTopRowRight}>
+                    <Text style={styles.cardTypeEyebrow}>
+                      {TYPE_LABEL[s.type]}
+                    </Text>
+                    {mastered
+                      ? <MasteredPill />
+                      : <DifficultyBadge difficulty={s.difficulty} />}
+                  </View>
                 </View>
                 <Text
                   style={[
@@ -469,6 +474,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
+  },
+  // Right cluster of the top row — type eyebrow + difficulty/mastered
+  // pill, grouped so they read as a single meta unit on the right.
+  cardTopRowRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  // SETUP / CONCEPT eyebrow tag — same eyebrow type system as
+  // `cardCategory` below (11pt / 800 weight / 1.5 tracking / white@60%
+  // via opacity 0.6). No new color, font, or surface introduced.
+  cardTypeEyebrow: {
+    color: WHITE,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    opacity: 0.6,
   },
   cardName: {
     flexShrink: 1,

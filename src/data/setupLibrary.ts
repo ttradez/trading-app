@@ -32,6 +32,14 @@ export type SetupSection = 'classic' | 'ict';
 
 export type SetupDifficulty = 'beginner' | 'intermediate' | 'advanced';
 
+/** Setup vs. concept classification. `setup` = an entry trigger
+ *  (most entries). `concept` = a filter, framework, or context tool
+ *  with no entry trigger (e.g. Premium/Discount, Kill Zones,
+ *  BSL/SSL). Drives the eyebrow tag on the library card so users
+ *  can tell at a glance whether a row teaches them HOW to enter or
+ *  WHEN/WHERE entries are valid. */
+export type SetupType = 'setup' | 'concept';
+
 /** Accent for all ICT category labels — violet, distinct from the
  *  per-category Classic palette. */
 export const ICT_ACCENT = '#9B59B6';
@@ -65,6 +73,9 @@ export interface LibrarySetup {
   name: string;
   category: SetupCategory;
   difficulty: SetupDifficulty;
+  /** 'setup' = entry trigger; 'concept' = filter/framework/context.
+   *  Required — every entry must declare which it is. */
+  type: SetupType;
   /** 2-3 sentences: what this setup IS. */
   description: string;
   /** One-line trigger rule. Newer (2026 expansion) entries set this;
@@ -128,6 +139,12 @@ export const CATEGORY_LABEL: Record<SetupCategory, string> = {
   time:      'TIME',
 };
 
+/** Type → eyebrow label rendered on each library card. */
+export const TYPE_LABEL: Record<SetupType, string> = {
+  setup:   'SETUP',
+  concept: 'CONCEPT',
+};
+
 export const CLASSIC_CATEGORY_ORDER: ClassicCategory[] =
   ['momentum', 'reversal', 'range', 'news', 'pattern'];
 export const ICT_CATEGORY_ORDER: IctCategory[] =
@@ -153,6 +170,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Opening Range Breakout',
     category: 'momentum',
     difficulty: 'beginner',
+    type: 'setup',
     description:
       'The high and low of the first 15-30 minutes after the open form the "opening range". A decisive break of that range often sets the directional tone for the rest of the session.',
     howToTrade:
@@ -177,6 +195,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Gap and Go',
     category: 'momentum',
     difficulty: 'beginner',
+    type: 'setup',
     description:
       'The market gaps up or down at the open on a catalyst and continues in the gap direction instead of filling it. Strong hands are positioned and there is no supply/demand to fade the move.',
     howToTrade:
@@ -201,6 +220,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Trend Continuation',
     category: 'momentum',
     difficulty: 'beginner',
+    type: 'setup',
     description:
       'In an established trend, price pulls back to a moving average or prior support, then resumes in the trend direction. You are buying the dip in an uptrend (or selling the rally in a downtrend), not predicting a turn.',
     howToTrade:
@@ -227,6 +247,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Failed Breakout',
     category: 'reversal',
     difficulty: 'intermediate',
+    type: 'setup',
     description:
       'Price breaks a well-watched level, traps breakout traders, then reverses sharply back through it. The trapped orders becoming exits fuel the move the other way.',
     howToTrade:
@@ -251,6 +272,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Double Bottom / Double Top',
     category: 'reversal',
     difficulty: 'intermediate',
+    type: 'setup',
     description:
       'Price tests a level twice, fails to break it the second time, and reverses. The second failed test shows the prior pressure is exhausted.',
     howToTrade:
@@ -275,6 +297,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'V-Bottom Recovery',
     category: 'reversal',
     difficulty: 'intermediate',
+    type: 'setup',
     description:
       'A sharp, panicked sell-off is met by an equally sharp bounce off a key level — a "V" with no base. Maximum fear flushes the last sellers, then aggressive buyers step in.',
     howToTrade:
@@ -301,6 +324,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Range Fade',
     category: 'range',
     difficulty: 'beginner',
+    type: 'setup',
     description:
       'On a low-conviction day price oscillates inside a defined range. You fade the edges — sell the top, buy the bottom — targeting the middle. Not every day trends; some days you get paid to fade.',
     howToTrade:
@@ -325,6 +349,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Opening Range Hold',
     category: 'range',
     difficulty: 'beginner',
+    type: 'setup',
     description:
       'Price tests the opening-range boundary, rejects it, and stays inside the range. The opposite of an opening-range breakout — the break fails and the range contains the day.',
     howToTrade:
@@ -351,6 +376,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'CPI Reaction Trade',
     category: 'news',
     difficulty: 'advanced',
+    type: 'setup',
     description:
       'The 8:30 AM CPI release produces a violent initial spike. Trading the spike-and-fade (or spike-and-go) requires a plan made BEFORE the number, because the first move is often a trap.',
     howToTrade:
@@ -375,6 +401,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'FOMC Fade',
     category: 'news',
     difficulty: 'advanced',
+    type: 'setup',
     description:
       'The knee-jerk move on the 2:00 PM Fed statement frequently reverses during the 2:30 PM press conference. The statement pop is often a liquidity trap; the presser sets the real trend.',
     howToTrade:
@@ -399,6 +426,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'NFP Momentum',
     category: 'news',
     difficulty: 'advanced',
+    type: 'setup',
     description:
       'When the 8:30 AM non-farm payrolls number is a large miss or beat, it can drive a sustained one-directional move rather than a fade. The surprise reprices expectations for the whole session.',
     howToTrade:
@@ -425,6 +453,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Bull/Bear Flag',
     category: 'pattern',
     difficulty: 'intermediate',
+    type: 'setup',
     description:
       'A sharp impulsive move (the "pole") is followed by a tight, low-volume consolidation channel (the "flag") that drifts slightly against the move, then continues in the original direction.',
     howToTrade:
@@ -449,6 +478,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Head and Shoulders',
     category: 'pattern',
     difficulty: 'intermediate',
+    type: 'setup',
     description:
       'Three peaks with the middle (the "head") highest and two lower "shoulders", connected by a "neckline". A break of the neckline signals a trend reversal. The inverse marks a bottom.',
     howToTrade:
@@ -468,54 +498,12 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
         context: 'Gap-up forms an H&S top through the session' },
     ],
   },
-  {
-    id: 'liquidity_sweep',
-    name: 'Liquidity Sweep',
-    category: 'pattern',
-    difficulty: 'intermediate',
-    description:
-      'Price spikes through an obvious swing high/low where stop orders cluster, grabs that liquidity, then immediately reverses back inside. The "stop run" is the fuel for the move the other way.',
-    howToTrade:
-      'Mark obvious prior swing highs/lows (where stops sit). When price wicks through one and snaps back inside on the same or next candle, enter the reversal with a stop just beyond the sweep extreme.',
-    keyRules: [
-      'Target obvious stop pools — prior swing highs/lows',
-      'The reversal must be immediate (wick + fast reclaim)',
-      'Stop is tight, just past the swept extreme',
-      'No fast reclaim = a real break, not a sweep — skip it',
-    ],
-    examples: [
-      { symbol: 'NQ', date: '2022-10-13', timeframe: '5m',
-        context: 'Swept the prior low for stops, then immediately reversed' },
-      { symbol: 'ES', date: '2022-02-24', timeframe: '5m',
-        context: 'Spiked through the overnight low then snapped back' },
-      { symbol: 'ES', date: '2022-01-24', timeframe: '5m',
-        context: 'Stop-run below the prior swing low before the V' },
-    ],
-  },
-  {
-    id: 'vwap_reclaim',
-    name: 'VWAP Reclaim',
-    category: 'pattern',
-    difficulty: 'intermediate',
-    description:
-      'Price trades below VWAP, then reclaims it from below and holds — signaling intraday control has shifted from sellers to buyers (or the inverse). VWAP is the session\'s fair-value anchor.',
-    howToTrade:
-      'Watch a session trading below VWAP. When price pushes back above it and HOLDS on a retest from above, enter long with a stop back below VWAP. The hold of the retest is the confirmation, not the first touch.',
-    keyRules: [
-      'The reclaim must HOLD a retest, not just tag VWAP',
-      'Confirmation is the successful retest from above',
-      'Stop goes back below VWAP — a loss of it negates the idea',
-      'Strongest when it aligns with a higher-timeframe level',
-    ],
-    examples: [
-      { symbol: 'NQ', date: '2022-10-13', timeframe: '5m',
-        context: 'Lost VWAP on the CPI spike, reclaimed from below, ran' },
-      { symbol: 'ES', date: '2022-11-30', timeframe: '5m',
-        context: 'Reclaimed VWAP on the Powell pivot; control shifted up' },
-      { symbol: 'NQ', date: '2022-07-19', timeframe: '5m',
-        context: 'Held above reclaimed VWAP all session in the uptrend' },
-    ],
-  },
+  // NOTE: Classic-section `liquidity_sweep` removed — duplicated the
+  // ICT-section `ict_liquidity_sweep` (kept). No external references
+  // to the deleted id existed outside this file.
+  // NOTE: Classic-section `vwap_reclaim` removed — duplicated the
+  // 2026-expansion `vwap-reclaim-momentum` (kept, recategorized to
+  // momentum). No external references existed outside this file.
 
   // ══════════════ ICT — STRUCTURE ══════════════
   {
@@ -523,6 +511,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Break of Structure (BOS)',
     category: 'structure',
     difficulty: 'beginner',
+    type: 'setup',
     section: 'ict',
     description:
       'Price breaks a prior swing point in the direction of the existing trend, confirming continuation. BOS tells you the trend is intact, not that you should chase it.',
@@ -547,6 +536,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Change of Character (CHoCH)',
     category: 'structure',
     difficulty: 'intermediate',
+    type: 'setup',
     section: 'ict',
     unlock: 'paper_hands',
     description:
@@ -572,6 +562,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Premium / Discount',
     category: 'structure',
     difficulty: 'beginner',
+    type: 'concept',
     section: 'ict',
     description:
       'Above the 50% level of a range is premium (favor shorts). Below is discount (favor longs). Buy in discount, sell in premium.',
@@ -596,6 +587,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Market Structure Shift (MSS)',
     category: 'structure',
     difficulty: 'intermediate',
+    type: 'setup',
     section: 'ict',
     unlock: 'paper_hands',
     description:
@@ -623,6 +615,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Order Block (OB)',
     category: 'entry',
     difficulty: 'beginner',
+    type: 'setup',
     section: 'ict',
     description:
       'The last opposing candle before an impulsive move that breaks structure. These zones are institutional footprints.',
@@ -647,6 +640,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Fair Value Gap (FVG)',
     category: 'entry',
     difficulty: 'beginner',
+    type: 'setup',
     section: 'ict',
     description:
       'A three-candle pattern where candle 1 and candle 3 wicks do not overlap, leaving a gap. Price tends to revisit these imbalances.',
@@ -671,6 +665,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Optimal Trade Entry (OTE)',
     category: 'entry',
     difficulty: 'beginner',
+    type: 'setup',
     section: 'ict',
     description:
       'A Fibonacci-based entry zone between the 62% and 79% retracement. The sweet spot for trend-continuation entries.',
@@ -695,6 +690,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Breaker Block',
     category: 'entry',
     difficulty: 'intermediate',
+    type: 'setup',
     section: 'ict',
     unlock: 'paper_hands',
     description:
@@ -720,6 +716,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Mitigation Block',
     category: 'entry',
     difficulty: 'advanced',
+    type: 'setup',
     section: 'ict',
     unlock: 'sniper',
     description:
@@ -747,6 +744,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Liquidity Sweep (Stop Hunt)',
     category: 'liquidity',
     difficulty: 'beginner',
+    type: 'setup',
     section: 'ict',
     description:
       'Price pushes through a visible swing high/low, runs the stops, then reverses sharply. Smart money taking liquidity before the real move.',
@@ -771,6 +769,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Buy-Side / Sell-Side Liquidity (BSL/SSL)',
     category: 'liquidity',
     difficulty: 'beginner',
+    type: 'concept',
     section: 'ict',
     description:
       'Buy-side liquidity sits above swing highs (short stops + breakout buys). Sell-side sits below swing lows. Price gravitates toward these pools.',
@@ -797,6 +796,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Kill Zones',
     category: 'time',
     difficulty: 'beginner',
+    type: 'concept',
     section: 'ict',
     description:
       'High-volume time windows where the best setups tend to occur. In replay, you recognize them by expanded candle range and decisive direction — not by the clock.',
@@ -821,6 +821,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Silver Bullet',
     category: 'time',
     difficulty: 'intermediate',
+    type: 'setup',
     section: 'ict',
     unlock: 'paper_hands',
     description:
@@ -866,6 +867,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'VWAP Reclaim',
     category: 'momentum',
     difficulty: 'intermediate',
+    type: 'setup',
     rule: 'Price loses VWAP, then closes back above on volume — long.',
     description:
       'A more aggressive cousin of the VWAP bounce: price breaks below VWAP, trades below it for a stretch, then "reclaims" the level from below on a clean volume close. The trader is betting that buyers absorbed the breakdown and unwinding shorts will fuel a push back to the day\'s highs.',
@@ -876,6 +878,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Anchored VWAP Bounce',
     category: 'reversal',
     difficulty: 'intermediate',
+    type: 'setup',
     rule: 'Price pulls back to AVWAP anchored at a key event and rejects.',
     description:
       'A VWAP is anchored to a meaningful pivot (overnight high, FOMC bar, prior day high, earnings, news spike) rather than session open, then traded as dynamic support/resistance. Popularized by Brian Shannon; well-suited to futures because index/commodity opens are arbitrary while institutional reference points are not.',
@@ -886,6 +889,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Initial Balance Break',
     category: 'momentum',
     difficulty: 'intermediate',
+    type: 'setup',
     rule: 'Break of first-hour high or low after IB completes — trade in direction.',
     description:
       'The Initial Balance is the range of the first 60 minutes of RTH (9:30–10:30 ET). When price breaks IBH or IBL with conviction after IB closes, traders enter in the direction of the break, targeting IB-range extensions (1x, 1.5x, 2x). Empirical work cited by Axia/TRADEPRO shows IB extremes get tested in nearly every session.',
@@ -896,6 +900,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'NR7 Inside-Bar Compression Breakout',
     category: 'momentum',
     difficulty: 'beginner',
+    type: 'setup',
     rule: 'Break of the narrowest-range bar in 7 sessions — trade the side that goes first.',
     description:
       'Toby Crabel\'s volatility-contraction setup: an NR7 (or NR4, or an inside bar) signals that volatility is coiled and an expansion bar is statistically due. Traders buy a break of the NR7 high or short a break of its low, with a stop on the other side. Used extensively by intraday futures and prop traders as a low-noise filter.',
@@ -906,6 +911,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Bull Flag Continuation',
     category: 'momentum',
     difficulty: 'beginner',
+    type: 'setup',
     rule: 'Buy the break of a tight pullback channel after a strong impulse.',
     description:
       'A sharp impulse ("flagpole") followed by a 5–15-bar parallel-channel consolidation sloping against the trend; entry on the breakout of the flag in the direction of the flagpole. Measured-move target is the flagpole length projected from the breakout. Heavily used on ES/NQ/CL 5- and 15-min charts.',
@@ -916,6 +922,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Bear Flag Continuation',
     category: 'momentum',
     difficulty: 'beginner',
+    type: 'setup',
     rule: 'Sell the break of a tight pullback channel after a strong impulse.',
     description:
       'A sharp impulse ("flagpole") followed by a 5–15-bar parallel-channel consolidation sloping against the trend; entry on the breakdown of the flag in the direction of the flagpole. Measured-move target is the flagpole length projected from the breakdown. Heavily used on ES/NQ/CL 5- and 15-min charts.',
@@ -926,6 +933,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Pennant Continuation',
     category: 'momentum',
     difficulty: 'beginner',
+    type: 'setup',
     rule: 'Buy/sell the break of a small symmetrical triangle after a sharp move.',
     description:
       'Like a flag but the consolidation forms converging trendlines (a small symmetrical triangle) rather than a parallel channel. Same measured-move logic; tighter coil typically produces a more violent break. Treated as a distinct setup from flag because the breakout mechanics and stop placement differ.',
@@ -936,6 +944,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Head & Shoulders',
     category: 'reversal',
     difficulty: 'intermediate',
+    type: 'setup',
     rule: 'Short on neckline break after the third shoulder forms.',
     description:
       'A classic three-peak reversal: left shoulder, higher head, lower right shoulder, with a "neckline" connecting the intervening lows. Confirmed on a neckline break, often with a retest; measured target is the head-to-neckline distance projected from the break. Still cited by 2025 prop-firm-funded futures educators for ES/NQ swing-day reversals.',
@@ -946,6 +955,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Inverse Head & Shoulders',
     category: 'reversal',
     difficulty: 'intermediate',
+    type: 'setup',
     rule: 'Long on neckline break after the third shoulder forms.',
     description:
       'A classic three-trough reversal: left shoulder, lower head, higher right shoulder, with a "neckline" connecting the intervening highs. Confirmed on a neckline break, often with a retest; measured target is the head-to-neckline distance projected from the break. Still cited by 2025 prop-firm-funded futures educators for ES/NQ swing-day reversals.',
@@ -956,6 +966,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Three Drives',
     category: 'reversal',
     difficulty: 'advanced',
+    type: 'setup',
     rule: 'Fade the third symmetrical drive at 1.272/1.618 extension.',
     description:
       'Three symmetric price drives separated by 0.618/0.786 retracements, with each drive extending 1.272 or 1.618 of the prior correction. The third drive\'s completion is the trade — fade it back toward the start of drive 2. Rare but high-RR; cited as a "prized" technical pattern by Forex.com and TradingView education.',
@@ -966,6 +977,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Wyckoff Spring',
     category: 'reversal',
     difficulty: 'advanced',
+    type: 'setup',
     rule: 'Long the snap-back after a false break below range support.',
     description:
       'Wyckoff "Phase C" event inside an accumulation range: price briefly violates support to flush stops, then snaps back inside the range on heavy volume. Treated as the trigger that begins the markup phase.',
@@ -976,6 +988,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Wyckoff Upthrust',
     category: 'reversal',
     difficulty: 'advanced',
+    type: 'setup',
     rule: 'Short the rejection of a false break above range resistance.',
     description:
       'Wyckoff "Phase C" event inside a distribution range: price briefly violates resistance to flush stops, then snaps back inside the range on heavy volume. Treated as the trigger that begins the markdown phase.',
@@ -986,6 +999,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Power Hour Reversal',
     category: 'reversal',
     difficulty: 'intermediate',
+    type: 'setup',
     rule: 'Trade the 3 PM ET inflection back toward VWAP or with end-of-day flow.',
     description:
       'The final NYSE hour (3:00–4:00 PM ET) sees an institutional rebalancing flush — volume spikes and intraday extremes often get retested. Setups include fading exhaustion back to VWAP, or riding the dominant side\'s MOC imbalance into the close. Prop-firm traders use it because moves are fast and well-defined.',
@@ -999,6 +1013,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Inversion Fair Value Gap (IFVG)',
     category: 'entry',
     difficulty: 'intermediate',
+    type: 'setup',
     section: 'ict',
     unlock: 'paper_hands',
     rule: 'Trade the FVG that price closed through — it now flips polarity as support/resistance.',
@@ -1011,6 +1026,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Balanced Price Range (BPR)',
     category: 'entry',
     difficulty: 'intermediate',
+    type: 'setup',
     section: 'ict',
     unlock: 'paper_hands',
     rule: 'Enter at the overlap of two opposing FVGs at the same price zone.',
@@ -1023,6 +1039,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Unicorn Model',
     category: 'entry',
     difficulty: 'advanced',
+    type: 'setup',
     section: 'ict',
     unlock: 'sniper',
     rule: 'Enter where a Breaker Block and an FVG overlap in the same zone.',
@@ -1035,6 +1052,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Judas Swing',
     category: 'liquidity',
     difficulty: 'intermediate',
+    type: 'setup',
     section: 'ict',
     unlock: 'paper_hands',
     rule: 'Fade the false move against daily bias right after session open.',
@@ -1047,6 +1065,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Turtle Soup',
     category: 'liquidity',
     difficulty: 'intermediate',
+    type: 'setup',
     section: 'ict',
     unlock: 'paper_hands',
     rule: 'Fade a false breakout beyond a prior swing high/low.',
@@ -1059,6 +1078,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Market Maker Buy Model (MMBM)',
     category: 'liquidity',
     difficulty: 'advanced',
+    type: 'setup',
     section: 'ict',
     unlock: 'sniper',
     rule: 'Trade the bullish Smart Money Reversal after the manipulation leg sweeps liquidity.',
@@ -1071,6 +1091,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Market Maker Sell Model (MMSM)',
     category: 'liquidity',
     difficulty: 'advanced',
+    type: 'setup',
     section: 'ict',
     unlock: 'sniper',
     rule: 'Trade the bearish Smart Money Reversal after the manipulation leg sweeps liquidity.',
@@ -1083,6 +1104,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Change in State of Delivery (CISD)',
     category: 'entry',
     difficulty: 'intermediate',
+    type: 'setup',
     section: 'ict',
     unlock: 'paper_hands',
     rule: 'Enter when price closes through the open of the prior delivery leg.',
@@ -1095,6 +1117,12 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     name: 'Premium/Discount Zones',
     category: 'structure',
     difficulty: 'beginner',
+    // NOTE: substantively identical to `ict_premium_discount` above,
+    // which is reclassified as `concept`. Left as `setup` here to
+    // strictly honor the spec's three-entry concept list — flag for
+    // follow-up (likely also belongs in `concept`, or this entry
+    // should be deduped against `ict_premium_discount`).
+    type: 'setup',
     section: 'ict',
     rule: 'Sell premium (above 50% of range), buy discount (below 50%).',
     description:
@@ -1104,8 +1132,9 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
 ];
 
 /** Section of each setup, splitting Classic from ICT.
- *  `SETUP_LIBRARY_COUNT` is the grand total (50 after the 2026
- *  expansion batch — 28 originals + 22 new). */
+ *  `SETUP_LIBRARY_COUNT` is the grand total (48 after the 2026
+ *  dedup pass — 28 originals + 22 expansion − 2 duplicates removed
+ *  (Classic-section `liquidity_sweep` and `vwap_reclaim`)). */
 export const CLASSIC_SETUPS: ReadonlyArray<LibrarySetup> =
   SETUP_LIBRARY.filter((s) => getSection(s) === 'classic');
 export const ICT_SETUPS: ReadonlyArray<LibrarySetup> =
