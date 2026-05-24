@@ -361,6 +361,10 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     minHeight: 120,
     padding: 16,
+    // Center the icon (and child text) horizontally within the card.
+    // Cards already span the full row; the icon was sitting at the
+    // left edge because column-flex defaults to `stretch`.
+    alignItems: 'center',
     backgroundColor: surface.l1,
     borderColor: borders.card,
     borderWidth: 1,
