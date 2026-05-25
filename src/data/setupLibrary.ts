@@ -837,21 +837,23 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     section: 'ict',
     unlock: 'paper_hands',
     description:
-      'A specific setup targeting a one-hour window. Look for the first FVG aligned with the daily bias after a sweep or MSS.',
+      'A time-bounded ICT setup that runs in three specific one-hour windows per day. Inside the window, the trader waits for a liquidity sweep, then a displacement creating an FVG, and enters on the retrace targeting the next draw on liquidity.',
     howToTrade:
-      'Enter on the retrace into the FVG. Stop beyond the swing; target the prior session high/low.',
+      'Silver Bullet only applies inside three NY-local one-hour windows: the London Silver Bullet 03:00–04:00, the NY AM Silver Bullet 10:00–11:00 (the canonical variant), and the NY PM Silver Bullet 14:00–15:00. Outside these windows the setup does not exist — the time bound is part of the edge, so the first job is to confirm you are inside one of the three. Before the window opens, map your HTF bias and identify the draw on liquidity — the clear high or low the market is reaching for. The highest-probability trades align with HTF bias: longs from HTF discount, shorts from HTF premium. Inside the window, wait for a liquidity sweep of an opposing pool — a session high or low, prior-day high or low, or recent swing. After the sweep, watch for displacement in the trade direction that leaves an FVG on the entry timeframe (5m or 1m). Your entry is the retrace into the FVG, with consequent encroachment (the 50% midpoint of the gap) as the canonical optimal fill. Place the stop beyond the swept liquidity from the sweep itself, not the far side of the FVG, and target the draw on liquidity you mapped before the window. If the full sequence — sweep, displacement, FVG, retrace — does not complete inside the 60-minute window, skip the trade and wait for the next window. The discipline of letting the clock kill the setup is what protects the edge.',
     keyRules: [
-      'Bias must be defined before the window',
-      'One trade per window — no revenge',
-      'Skip if no clean FVG forms',
+      'Silver Bullet only fires in three NY windows: 03:00–04:00, 10:00–11:00, and 14:00–15:00',
+      'Inside the window the sequence is sweep → displacement → FVG → retrace entry, in that order',
+      'Align with HTF bias — longs from HTF discount, shorts from HTF premium',
+      'Stop beyond the swept liquidity, not the far side of the FVG',
+      'If the sequence does not complete inside the 60-minute window, skip the trade',
     ],
     examples: [
       { symbol: 'NQ', date: '2022-11-10', timeframe: '5m',
-        context: 'First FVG after the soft-CPI sweep ran clean' },
-      { symbol: 'NQ', date: '2022-06-24', timeframe: '5m',
-        context: 'Window FVG aligned with the daily bias' },
+        context: 'NY AM Silver Bullet long — 10:00–11:00 NY sweep of session low, displacement up leaves an FVG, entry at consequent encroachment, target the draw above' },
       { symbol: 'ES', date: '2022-10-04', timeframe: '5m',
-        context: 'AM-window FVG to the prior session high' },
+        context: 'NY PM Silver Bullet short — 14:00–15:00 NY sweep of session high, displacement down leaves an FVG, entry on the retrace, target the prior-day low' },
+      { symbol: 'NQ', date: '2022-06-24', timeframe: '5m',
+        context: 'NY AM Silver Bullet skipped — sweep prints inside the 10:00–11:00 window but no clean FVG before 11:00; the clock kills the setup and the trade is passed' },
     ],
   },
 
