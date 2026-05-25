@@ -403,14 +403,15 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     difficulty: 'advanced',
     type: 'setup',
     description:
-      'The knee-jerk move on the 2:00 PM Fed statement frequently reverses during the 2:30 PM press conference. The statement pop is often a liquidity trap; the presser sets the real trend.',
+      'Since 2020 the knee-jerk move on the 2:00 PM Fed statement often reverses during the 2:30 PM press conference — but not always. Direction depends on the specific language Powell uses in the Q&A. In the pre-2020 Bernanke/Yellen era the presser typically reinforced the statement; the modern fade pattern is a Powell-era phenomenon, not an iron law.',
     howToTrade:
-      'Avoid the 2:00 PM spike. Mark the pre-release level. If the initial move fails to hold within ~15 minutes, fade it on the reclaim of that level and ride the presser trend.',
+      'Avoid the 2:00 PM spike. Mark the pre-release level. If the initial move fails to hold within ~15 minutes and Powell\'s presser tone cuts against it, fade it on the reclaim of that level and ride the presser trend. If the presser instead reinforces the statement (the pre-2020 norm and still common today), stand aside or trade with the initial move.',
     keyRules: [
       'The 2:00 PM bar is a trap — do not chase it',
       'The 2:30 PM presser is where the real move forms',
       'Fade trigger = failed hold + reclaim of pre-release level',
       'Two-sided and fast; size down and define risk first',
+      'Wait for the second move after the headline — the initial spike is the trap, not the trade.',
     ],
     examples: [
       { symbol: 'ES', date: '2022-09-21', timeframe: '5m',
@@ -542,7 +543,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     description:
       'The first break of structure in the opposite direction of the prevailing trend, signaling a potential reversal.',
     howToTrade:
-      'After CHoCH, wait for a pullback into the OB/FVG that caused the CHoCH and enter in the new direction.',
+      'Two-step sequence: (1) CHoCH prints — treat it as a warning, not a trigger. (2) Wait for a BOS in the new direction to confirm the reversal. (3) Only then take the entry on a pullback into an OB or FVG that formed during the CHoCH leg. No BOS confirmation, no trade.',
     keyRules: [
       'CHoCH is a warning, not a guarantee — confirm with BOS in the new direction',
       'Higher-timeframe CHoCH carries more weight',
@@ -668,11 +669,15 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     type: 'setup',
     section: 'ict',
     description:
-      'A Fibonacci-based entry zone between the 62% and 79% retracement. The sweet spot for trend-continuation entries.',
+      'A Fibonacci-based entry zone between the 62% and 79% retracement, with the 70.5% midpoint as the optimal entry. The sweet spot for trend-continuation entries.',
+    rule:
+      'Enter at the 70.5% retracement (the midpoint of the 62%–79% OTE window) on LTF confirmation.',
     howToTrade:
-      'Enter on LTF confirmation inside the OTE. Stop beyond the swing point. Confluence with an OB/FVG = highest probability.',
+      'Draw the Fib across the most recent leg in the direction of the bias: for a long bias, anchor it from the most recent pullback low to the swing high that preceded the pullback (inverse for shorts). The 62%–79% retracement is the OTE window; the 70.5% midpoint is the primary entry. Enter on LTF confirmation inside the zone. Stop beyond the swing point. Confluence with an OB/FVG sitting on or around 70.5% = highest probability.',
     keyRules: [
       'Must be in a clear trend or post-MSS',
+      '70.5% is the canonical entry; the 62%–79% band is the acceptable window',
+      'Anchor the Fib from the pullback extreme to the prior swing in the direction of bias',
       'OB/FVG overlap with the OTE = best',
       'Never enter without invalidation',
     ],
@@ -694,13 +699,15 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     section: 'ict',
     unlock: 'paper_hands',
     description:
-      'A failed order block that becomes support/resistance in the opposite direction. The OB was invalidated by displacement.',
+      'A failed order block that becomes support/resistance in the opposite direction. The OB body must be broken AND a market structure shift in the opposite direction must occur — without that MSS it is just a failed OB, not a Breaker.',
     howToTrade:
-      'Enter on the retest of the breaker in the new trend direction. The first retest is highest probability.',
+      'Checklist: (1) the original OB body is broken through (not just wicked). (2) An MSS prints in the opposite direction of the original OB. (3) Wait for price to retest the failed OB — now the Breaker — and enter in the new trend direction. The first retest is highest probability. No MSS in the new direction = not a Breaker, skip it.',
     keyRules: [
-      'Original OB must be invalidated by displacement',
+      'Original OB must be invalidated by displacement through the body',
+      'A market structure shift in the opposite direction is required — no MSS, no Breaker',
       'First retest is best',
       'Combine with HTF bias',
+      'Mitigation continues the trend. Breaker reverses it. The diagnostic is whether MSS happened in the opposite direction.',
     ],
     examples: [
       { symbol: 'NQ', date: '2022-06-24', timeframe: '5m',
@@ -772,12 +779,13 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     type: 'concept',
     section: 'ict',
     description:
-      'Buy-side liquidity sits above swing highs (short stops + breakout buys). Sell-side sits below swing lows. Price gravitates toward these pools.',
+      'A draw-on-liquidity framework. Buy-side liquidity sits above swing highs (short stops + breakout buys); sell-side sits below swing lows. Price is drawn toward these pools — use that draw to set your directional bias and targets. Pairs with the Liquidity Sweep setup for the actual entry trigger.',
     howToTrade:
-      'Anticipate price running toward BSL or SSL, then look for a sweep + CHoCH on a lower timeframe for the reversal entry.',
+      'Map the obvious BSL and SSL pools on your timeframe (equal highs/lows, prior session high/low, PDH/PDL). Use the nearer pool as the magnet that tells you which direction price is being drawn. The framework ends there — execution lives elsewhere: once price reaches the pool, switch over to the Liquidity Sweep setup (sweep + MSS + OB/FVG retrace) for the actual entry trigger.',
     keyRules: [
-      'Equal highs/lows are magnets',
-      'Liquidity taken = often a reversal',
+      'Use BSL/SSL to define the draw and your targets, not as an entry signal',
+      'Equal highs/lows are the strongest magnets',
+      'Liquidity taken = often a reversal — but confirm with a setup, do not assume',
       'Always know which side has the more obvious liquidity',
     ],
     examples: [
@@ -799,13 +807,15 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     type: 'concept',
     section: 'ict',
     description:
-      'High-volume time windows where the best setups tend to occur. In replay, you recognize them by expanded candle range and decisive direction — not by the clock.',
+      'Canonical NY-local time windows where the highest-quality displacement, sweeps, and MSS tend to occur. This is a session-filter that improves bias selection and timing — not a setup you take by itself. Use it to decide WHEN your other setups are valid.',
     howToTrade:
-      'Use kill-zone awareness to anticipate when displacement is likely, but always trade the price action you see. The replay clock gives you historical context.',
+      'In live trading, the windows are: London Killzone 02:00–05:00 NY, NY AM Killzone 07:00–10:00 NY, and London Close / NY PM 13:00–16:00 NY (sometimes split as 13:30–16:00). In replay, use the session selector to land inside one of these windows, then hunt your actual entry (sweep + MSS + OB/FVG) there. Kill zones bias the WHEN; the entry trigger comes from another library entry.',
     keyRules: [
-      'Volume and range matter more than clock time',
-      'NY AM and London Open produce the cleanest sweeps/MSS',
-      'Asia tends to range — expect liquidity build',
+      'Use as a context filter, not an entry trigger',
+      'London Killzone: 02:00–05:00 NY',
+      'NY AM Killzone: 07:00–10:00 NY (cleanest sweeps + MSS)',
+      'London Close / NY PM: 13:00–16:00 NY',
+      'Asia tends to range — expect liquidity build, not displacement',
     ],
     examples: [
       { symbol: 'NQ', date: '2022-09-13', timeframe: '5m',
