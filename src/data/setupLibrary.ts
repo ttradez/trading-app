@@ -1126,29 +1126,14 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
       'Earlier reversal signal than a full Market Structure Shift: CISD fires when a candle closes past the open of the most recent opposing-direction leg, signalling delivery has switched from buy-side to sell-side (or vice versa). Used as a candle-close entry trigger, often inside an FVG/OB.',
     lesson: null,
   },
-  {
-    id: 'premium-discount-zones',
-    name: 'Premium/Discount Zones',
-    category: 'structure',
-    difficulty: 'beginner',
-    // NOTE: substantively identical to `ict_premium_discount` above,
-    // which is reclassified as `concept`. Left as `setup` here to
-    // strictly honor the spec's three-entry concept list — flag for
-    // follow-up (likely also belongs in `concept`, or this entry
-    // should be deduped against `ict_premium_discount`).
-    type: 'setup',
-    section: 'ict',
-    rule: 'Sell premium (above 50% of range), buy discount (below 50%).',
-    description:
-      'Within any defined dealing range (recent swing high to swing low), the midpoint (Equilibrium / 0.50) divides "premium" (expensive) from "discount" (cheap). ICT framework calls for buys only in discount and sells only in premium, with the 0.50 line itself a frequent reaction point. A foundational filter layered on top of other entries.',
-    lesson: null,
-  },
 ];
 
 /** Section of each setup, splitting Classic from ICT.
- *  `SETUP_LIBRARY_COUNT` is the grand total (48 after the 2026
- *  dedup pass — 28 originals + 22 expansion − 2 duplicates removed
- *  (Classic-section `liquidity_sweep` and `vwap_reclaim`)). */
+ *  `SETUP_LIBRARY_COUNT` is the grand total (47 after the 2026
+ *  dedup pass — 28 originals + 22 expansion − 3 duplicates removed
+ *  (Classic-section `liquidity_sweep` and `vwap_reclaim`, plus
+ *  ICT-section `premium-discount-zones` merged into
+ *  `ict_premium_discount`)). */
 export const CLASSIC_SETUPS: ReadonlyArray<LibrarySetup> =
   SETUP_LIBRARY.filter((s) => getSection(s) === 'classic');
 export const ICT_SETUPS: ReadonlyArray<LibrarySetup> =
