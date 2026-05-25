@@ -727,21 +727,23 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     section: 'ict',
     unlock: 'sniper',
     description:
-      'An unmitigated origin point of a move that gets revisited. Where institutions mitigate their earlier positions.',
+      'An unmitigated order block re-tested for a continuation trade in the existing trend direction. The test confirms the trend is intact (no opposite-direction MSS) and price is returning to fill orders left at the original OB.',
     howToTrade:
-      'Enter on the return to the mitigation block. Treat partial mitigation (50%) as the trigger.',
+      'Identify the original OB in the direction of the prevailing trend. For a bullish bias, that is the last down-close candle before a strong up leg; for a bearish bias, the last up-close candle before a strong down leg. Confirm the trend is still intact — no market structure shift in the opposite direction has printed between OB formation and now. Wait for price to return to the OB zone. Your entry trigger is a rejection from the OB on the lower timeframe (5m or 1m depending on the OB\'s timeframe), ideally with a CISD or quick structure shift on the entry timeframe — enter on the rejection, not on the arrival. Place your stop beyond the far side of the OB: below the OB low for longs, above the OB high for shorts. Target the most recent swing high (long) or swing low (short) in the direction of the trend first, then extend if structure permits.',
     keyRules: [
-      'Distinct from a breaker — focuses on the origin',
-      'Best when aligned with the HTF PD array',
-      'Partial mitigation is the entry',
+      'Mitigation = continuation. The OB body stays intact and no MSS prints in the opposite direction',
+      'Diagnostic: if MSS happened in the opposite direction, it is a Breaker (reversal), not a Mitigation',
+      'Entry on the lower-timeframe rejection from the OB zone, not on the arrival',
+      'Stop beyond the far side of the OB, not at its midpoint',
+      'Target the prior swing in the direction of the trend first',
     ],
     examples: [
-      { symbol: 'NQ', date: '2022-09-13', timeframe: '5m',
-        context: 'CPI sell-off — origin mitigation on the retrace' },
-      { symbol: 'ES', date: '2022-08-26', timeframe: '5m',
-        context: 'Jackson Hole rout — supply mitigation re-entry' },
       { symbol: 'NQ', date: '2022-03-07', timeframe: '5m',
-        context: 'Risk-off slide — mitigation block held' },
+        context: 'Bullish mitigation — return to the origin OB, LTF rejection, continuation to the prior swing high' },
+      { symbol: 'ES', date: '2022-08-26', timeframe: '5m',
+        context: 'Bearish mitigation — Jackson Hole downtrend intact, supply OB re-tested for the next leg down' },
+      { symbol: 'NQ', date: '2022-09-13', timeframe: '5m',
+        context: 'Mis-diagnosed Mitigation — the opposite-direction MSS that flipped the read to Breaker, reversal not continuation' },
     ],
   },
 
