@@ -27,6 +27,7 @@ import {
 // variant swap.
 
 import { auth } from './src/services/firebase';
+import { initializeRevenueCat, rcLogIn, rcLogOut } from './src/services/revenueCat';
 import { upsertUser, getUser } from './src/services/api';
 import { useAuthStore } from './src/store/authStore';
 import { useOnboardingStore } from './src/store/onboardingStore';
@@ -345,6 +346,14 @@ export default function App() {
     return () => { unsub?.(); clearTimeout(t); };
   }, [hydrated]);
 
+  // RevenueCat init runs at the top-level App component (not MainTabs)
+  // so the SDK is ready before onboarding / auth screens mount — the
+  // auth-state listener below relies on it for rcLogIn/rcLogOut.
+  // No-op on Android (see src/services/revenueCat.ts).
+  useEffect(() => {
+    initializeRevenueCat();
+  }, []);
+
   // The single Firebase auth-state listener: resolves the routing
   // guard AND populates the auth store / best-effort backend upsert
   // when a session exists. The first callback fires once Firebase
@@ -361,8 +370,15 @@ export default function App() {
           }
         }).catch(() => {});
         upsertUser(user.uid, fallbackUsername, user.email ?? '').catch(() => {});
+        // Fire-and-forget: rcLogIn/rcLogOut swallow their own errors
+        // and we don't want to delay auth-state propagation to the
+        // rest of the app on a slow RevenueCat round-trip. Wiring
+        // here (not in SettingsScreen.signOutUser) catches every
+        // sign-in path — Apple, Google, email — through one funnel.
+        void rcLogIn(user.uid);
         setAuthState('authenticated');
       } else {
+        void rcLogOut();
         setAuthState('unauthenticated');
       }
     });
