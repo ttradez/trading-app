@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import Purchases, { LOG_LEVEL } from 'react-native-purchases';
+import { FEATURE_FLAGS } from '../config/featureFlags';
 
 // iOS public SDK key from app.revenuecat.com. Safe to ship in the
 // client bundle (RevenueCat's threat model treats public keys as
@@ -18,6 +19,10 @@ const IOS_API_KEY = 'appl_owkLLNlpLuFPhFUTFFxWrdhFHQB';
  * platform-agnostic.
  */
 export function initializeRevenueCat(): void {
+  if (!FEATURE_FLAGS.REVENUECAT_ENABLED) {
+    console.log('[RC] Disabled by feature flag');
+    return;
+  }
   if (Platform.OS !== 'ios') {
     if (__DEV__) console.warn('[RevenueCat] Skipped — Android initialization deferred until Play Store wiring.');
     return;
@@ -31,13 +36,23 @@ export function initializeRevenueCat(): void {
 }
 
 // Re-export the auth-link helpers so callers don't import Purchases
-// directly. Both are iOS-only no-ops on Android.
+// directly. Both are iOS-only no-ops on Android, and full no-ops
+// when the feature flag is off (the native SDK isn't configured,
+// so any Purchases.* call would throw).
 export async function rcLogIn(uid: string): Promise<void> {
+  if (!FEATURE_FLAGS.REVENUECAT_ENABLED) {
+    console.log('[RC] Disabled by feature flag');
+    return;
+  }
   if (Platform.OS !== 'ios') return;
   try { await Purchases.logIn(uid); } catch (err) { console.error('[RevenueCat] logIn failed', err); }
 }
 
 export async function rcLogOut(): Promise<void> {
+  if (!FEATURE_FLAGS.REVENUECAT_ENABLED) {
+    console.log('[RC] Disabled by feature flag');
+    return;
+  }
   if (Platform.OS !== 'ios') return;
   try { await Purchases.logOut(); } catch (err) { console.error('[RevenueCat] logOut failed', err); }
 }

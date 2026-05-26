@@ -4,6 +4,7 @@ import Purchases, {
   CustomerInfo,
   CustomerInfoUpdateListener,
 } from 'react-native-purchases';
+import { FEATURE_FLAGS } from '../config/featureFlags';
 
 /**
  * useEntitlement — read the user's current "pro" entitlement from
@@ -32,11 +33,12 @@ export interface EntitlementState {
 export function useEntitlement(): EntitlementState {
   const [state, setState] = useState<EntitlementState>({
     isPro: false,
-    loading: Platform.OS === 'ios',
+    loading: FEATURE_FLAGS.REVENUECAT_ENABLED && Platform.OS === 'ios',
     customerInfo: null,
   });
 
   useEffect(() => {
+    if (!FEATURE_FLAGS.REVENUECAT_ENABLED) return;
     if (Platform.OS !== 'ios') return;
     let cancelled = false;
 
