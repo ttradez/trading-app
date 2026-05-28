@@ -182,9 +182,8 @@ function MainTabs() {
         },
         tabBarActiveTintColor: colors.gold,
         tabBarInactiveTintColor: colors.textSecondary,
-        // 5 tabs at 10pt label — fits without truncation. Chart was
-        // removed from the bottom nav (now a stack screen reached
-        // from Today's Mission / saved setups / empty-state CTAs).
+        // 6 tabs at 10pt label — narrower per-cell but "CHART" still
+        // fits without truncation at typical phone widths.
         tabBarLabelStyle: {
           fontSize: 10,
           fontWeight: '700',
@@ -200,6 +199,7 @@ function MainTabs() {
           // muted line at white@50%.
           const lineIcon: Record<string, keyof typeof Ionicons.glyphMap> = {
             Home:        'home-outline',
+            Chart:       'analytics-outline',
             Stats:       'stats-chart-outline',
             Journal:     'journal-outline',
             Learn:       'school-outline',
@@ -222,6 +222,7 @@ function MainTabs() {
         tabBarLabel: ({ focused }) => {
           const labelMap: Record<string, string> = {
             Home:        'HOME',
+            Chart:       'CHART',
             Stats:       'STATS',
             Journal:     'JOURNAL',
             Learn:       'LEARN',
@@ -253,6 +254,7 @@ function MainTabs() {
       })}
     >
       <Tab.Screen name="Home"        component={HomeScreen} />
+      <Tab.Screen name="Chart"       component={ChartTestScreen} />
       <Tab.Screen name="Stats"       component={StatsScreen} />
       <Tab.Screen name="Journal"     component={JournalScreen} />
       <Tab.Screen name="Learn"       component={LearnScreen} />
@@ -447,10 +449,6 @@ export default function App() {
               navigation.navigate('Chart', ...) from any tab screen
               still finds it via React Navigation's parent search. */}
           <Stack.Screen name="Chart"                 component={TradingScreen} />
-          {/* Phase 1 TradingView WebView scaffold — reached via deep-link
-              only, NOT wired into the bottom tab bar. Lives alongside
-              the existing Chart screen until the new path is proven. */}
-          <Stack.Screen name="ChartTest"             component={ChartTestScreen} />
           {/* Pushed from the dashboard gear icon — slides in over
               the tab navigator with its own in-screen back button. */}
           <Stack.Screen name="Settings"              component={SettingsScreen} />
