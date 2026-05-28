@@ -1,6 +1,16 @@
+import Constants from 'expo-constants';
+
 import { Candle, Timeframe } from '../types';
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
+// In dev, auto-detect the backend host from Expo's debuggerHost (hostUri) so the
+// app talks to the laptop running the dev server over LAN without hardcoding an IP.
+// An explicit EXPO_PUBLIC_API_URL still wins if set.
+const debuggerHost = Constants.expoConfig?.hostUri?.split(':').shift();
+const BASE_URL =
+  process.env.EXPO_PUBLIC_API_URL ??
+  (__DEV__ && debuggerHost
+    ? `http://${debuggerHost}:8000`
+    : 'https://api.pockettrade.app'); // production placeholder
 
 async function req<T>(path: string, options?: RequestInit & { timeoutMs?: number }): Promise<T> {
   // Fail fast if backend is unreachable — no infinite hangs.
