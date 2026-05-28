@@ -68,6 +68,22 @@
     <div id="tv_chart_container"></div>
 
     <script type="text/javascript">
+      // ---- WebView bridge ------------------------------------------------
+      // Forward log lines and errors back to React Native via
+      // `window.ReactNativeWebView.postMessage` so the host app can
+      // observe widget bootstrap progress / failures without a debugger.
+      function postMsg(msg) {
+        try {
+          if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+            window.ReactNativeWebView.postMessage(String(msg));
+          }
+        } catch (e) {}
+      }
+      window.onerror = function (msg, src, line, col, err) {
+        postMsg('window.onerror: ' + msg + ' @ ' + src + ':' + line + ':' + col);
+        return false;
+      };
+
       (function () {
         // ---- Stub datafeed -------------------------------------------------
         // Phase 1 ships a hardcoded, deterministic 100-bar upward trend.
@@ -172,33 +188,40 @@
         // ---- Widget init ---------------------------------------------------
         window.TradingView = window.TradingView || {};
         function initChart() {
-          new TradingView.widget({
-            symbol: 'NQ',
-            interval: '5',
-            container: 'tv_chart_container',
-            library_path: './charting_library/',
-            locale: 'en',
-            timezone: 'America/New_York',
-            theme: 'Dark',
-            toolbar_bg: '#000000',
-            fullscreen: true,
-            autosize: true,
-            datafeed: stubDatafeed,
-            disabled_features: [
-              'header_symbol_search',
-              'symbol_search_hot_key',
-              'header_compare',
-            ],
-            enabled_features: ['hide_left_toolbar_by_default'],
-            overrides: {
-              'paneProperties.background': '#000000',
-              'paneProperties.backgroundType': 'solid',
-              'paneProperties.vertGridProperties.color': 'rgba(255,255,255,0.04)',
-              'paneProperties.horzGridProperties.color': 'rgba(255,255,255,0.04)',
-              'scalesProperties.textColor': 'rgba(255,255,255,0.60)',
-              'scalesProperties.lineColor': 'rgba(255,255,255,0.10)',
-            },
-          });
+          var libraryPath = window.LIBRARY_PATH_OVERRIDE || './charting_library/';
+          try {
+            postMsg('init: library_path = ' + libraryPath);
+            new TradingView.widget({
+              symbol: 'NQ',
+              interval: '5',
+              container: 'tv_chart_container',
+              library_path: libraryPath,
+              locale: 'en',
+              timezone: 'America/New_York',
+              theme: 'Dark',
+              toolbar_bg: '#000000',
+              fullscreen: true,
+              autosize: true,
+              datafeed: stubDatafeed,
+              disabled_features: [
+                'header_symbol_search',
+                'symbol_search_hot_key',
+                'header_compare',
+              ],
+              enabled_features: ['hide_left_toolbar_by_default'],
+              overrides: {
+                'paneProperties.background': '#000000',
+                'paneProperties.backgroundType': 'solid',
+                'paneProperties.vertGridProperties.color': 'rgba(255,255,255,0.04)',
+                'paneProperties.horzGridProperties.color': 'rgba(255,255,255,0.04)',
+                'scalesProperties.textColor': 'rgba(255,255,255,0.60)',
+                'scalesProperties.lineColor': 'rgba(255,255,255,0.10)',
+              },
+            });
+            postMsg('widget: constructor returned');
+          } catch (err) {
+            postMsg('widget: init error - ' + (err && err.message ? err.message : String(err)));
+          }
         }
 
         if (document.readyState === 'loading') {
