@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Pocket Trade — Chart Host</title>
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1.0,maximum-scale=1.0,minimum-scale=1.0,user-scalable=no"
+    />
+
+    <!--
+      Pocket Trade chart host. Loads TradingView Advanced Charts inside a
+      WebView and serves it a stub datafeed (100 mock NQ bars) until the
+      real datafeed lands in Phase 2. Background, theme, and accent
+      colors mirror the app brand tokens (#000 surface, #FFB800 gold).
+    -->
+
+    <script type="text/javascript" src="./charting_library/charting_library.standalone.js"></script>
+
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        width: 100%;
+        background: #000000;
+        color: #FFFFFF;
+        overflow: hidden;
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+
+      #tv_chart_container {
+        position: absolute;
+        inset: 0;
+        background: #000000;
+      }
+
+      /*
+        Force the Pocket Trade gold accent on the chart UI surfaces the
+        public TradingView CSS exposes. The library's class names are
+        semi-stable across releases — these selectors track the
+        canonical set documented in the mobile_black.html reference and
+        cover the toolbar / icon button hover + active states.
+      */
+      .toolbar-button--active,
+      .toolbar-button--active * {
+        color: #FFB800 !important;
+        fill: #FFB800 !important;
+      }
+      .icon-button-hover:hover,
+      .icon-button-hover:hover *,
+      button:hover,
+      button:hover svg {
+        color: #FFB800 !important;
+        fill: #FFB800 !important;
+      }
+      ::selection {
+        background: rgba(255, 184, 0, 0.30);
+        color: #FFFFFF;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="tv_chart_container"></div>
+
+    <script type="text/javascript">
+      (function () {
+        // ---- Stub datafeed -------------------------------------------------
+        // Phase 1 ships a hardcoded, deterministic 100-bar upward trend.
+        // Phase 2 replaces this with the live datafeed.
+        var SUPPORTED_RESOLUTIONS = ['1', '5', '15', '60', 'D'];
+
+        function resolutionToMs(resolution) {
+          if (resolution === 'D' || resolution === '1D') return 24 * 60 * 60 * 1000;
+          var minutes = parseInt(resolution, 10);
+          if (isNaN(minutes) || minutes <= 0) minutes = 5;
+          return minutes * 60 * 1000;
+        }
+
+        function buildMockBars(resolution) {
+          var bars = [];
+          var count = 100;
+          var stepMs = resolutionToMs(resolution);
+          var endTime = Date.now();
+          var startPrice = 20000;
+          for (var i = 0; i < count; i++) {
+            var idx = i;
+            var time = endTime - (count - 1 - idx) * stepMs;
+            // Deterministic small noise per bar (sin-based — no PRNG drift).
+            var noise = Math.sin(idx * 1.37) * 3;
+            var open = startPrice + idx * 5 + noise;
+            var close = startPrice + (idx + 1) * 5 + Math.sin((idx + 1) * 1.37) * 3;
+            var high = Math.max(open, close) + 2.5;
+            var low = Math.min(open, close) - 2.5;
+            bars.push({
+              time: time,
+              open: open,
+              high: high,
+              low: low,
+              close: close,
+              volume: 1000 + Math.floor(Math.abs(noise) * 100),
+            });
+          }
+          return bars;
+        }
+
+        var stubDatafeed = {
+          onReady: function (cb) {
+            setTimeout(function () {
+              cb({
+                supported_resolutions: SUPPORTED_RESOLUTIONS,
+                supports_marks: false,
+                supports_timescale_marks: false,
+                supports_time: true,
+              });
+            }, 0);
+          },
+          searchSymbols: function (userInput, exchange, symbolType, onResult) {
+            // Header search is disabled — return empty regardless.
+            onResult([]);
+          },
+          resolveSymbol: function (symbolName, onResolve, onError) {
+            setTimeout(function () {
+              onResolve({
+                ticker: 'NQ',
+                name: 'NQ',
+                description: 'E-mini Nasdaq 100',
+                type: 'futures',
+                session: '24x7',
+                timezone: 'America/New_York',
+                exchange: 'CME',
+                listed_exchange: 'CME',
+                format: 'price',
+                minmov: 1,
+                pricescale: 100,
+                has_intraday: true,
+                has_daily: true,
+                has_weekly_and_monthly: false,
+                supported_resolutions: SUPPORTED_RESOLUTIONS,
+                volume_precision: 0,
+                data_status: 'streaming',
+              });
+            }, 0);
+          },
+          getBars: function (symbolInfo, resolution, periodParams, onResult, onError) {
+            try {
+              var bars = buildMockBars(resolution);
+              // Honor the requested window — clip to bars that fall inside
+              // [from, to]. periodParams uses seconds (TradingView spec).
+              var fromMs = (periodParams && periodParams.from) ? periodParams.from * 1000 : 0;
+              var toMs = (periodParams && periodParams.to) ? periodParams.to * 1000 : Date.now();
+              var clipped = bars.filter(function (b) {
+                return b.time >= fromMs && b.time <= toMs;
+              });
+              onResult(clipped, { noData: clipped.length === 0 });
+            } catch (err) {
+              onError(String(err));
+            }
+          },
+          subscribeBars: function (symbolInfo, resolution, onTick, listenerGuid, onResetCacheNeededCallback) {
+            // Phase 1: no live ticks.
+          },
+          unsubscribeBars: function (listenerGuid) {
+            // Phase 1: noop.
+          },
+        };
+
+        // ---- Widget init ---------------------------------------------------
+        window.TradingView = window.TradingView || {};
+        function initChart() {
+          new TradingView.widget({
+            symbol: 'NQ',
+            interval: '5',
+            container: 'tv_chart_container',
+            library_path: './charting_library/',
+            locale: 'en',
+            timezone: 'America/New_York',
+            theme: 'Dark',
+            toolbar_bg: '#000000',
+            fullscreen: true,
+            autosize: true,
+            datafeed: stubDatafeed,
+            disabled_features: [
+              'header_symbol_search',
+              'symbol_search_hot_key',
+              'header_compare',
+            ],
+            enabled_features: ['hide_left_toolbar_by_default'],
+            overrides: {
+              'paneProperties.background': '#000000',
+              'paneProperties.backgroundType': 'solid',
+              'paneProperties.vertGridProperties.color': 'rgba(255,255,255,0.04)',
+              'paneProperties.horzGridProperties.color': 'rgba(255,255,255,0.04)',
+              'scalesProperties.textColor': 'rgba(255,255,255,0.60)',
+              'scalesProperties.lineColor': 'rgba(255,255,255,0.10)',
+            },
+          });
+        }
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', initChart);
+        } else {
+          initChart();
+        }
+      })();
+    </script>
+  </body>
+</html>

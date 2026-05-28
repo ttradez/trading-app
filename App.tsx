@@ -52,6 +52,7 @@ import HomeScreen         from './src/screens/HomeScreen';
 import StatsScreen        from './src/screens/StatsScreen';
 import LearnScreen        from './src/screens/LearnScreen';
 import TradingScreen      from './src/screens/TradingScreen';
+import ChartTestScreen    from './src/screens/ChartTestScreen';
 import LeaderboardScreen  from './src/screens/LeaderboardScreen';
 import JournalScreen      from './src/screens/JournalScreen';
 // ChallengesScreen retired from the tab bar 2026-05-14 — the
@@ -446,6 +447,10 @@ export default function App() {
               navigation.navigate('Chart', ...) from any tab screen
               still finds it via React Navigation's parent search. */}
           <Stack.Screen name="Chart"                 component={TradingScreen} />
+          {/* Phase 1 TradingView WebView scaffold — reached via deep-link
+              only, NOT wired into the bottom tab bar. Lives alongside
+              the existing Chart screen until the new path is proven. */}
+          <Stack.Screen name="ChartTest"             component={ChartTestScreen} />
           {/* Pushed from the dashboard gear icon — slides in over
               the tab navigator with its own in-screen back button. */}
           <Stack.Screen name="Settings"              component={SettingsScreen} />
