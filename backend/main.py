@@ -610,20 +610,40 @@ def advance_session(session_id: str, req: AdvanceRequest):
         raise HTTPException(status_code=400, detail="Session ended")
 
     s = TF_SECONDS.get(sess["timeframe"], 86400)
-    # Find the next `count` bars whose period END is past current_time.
-    # When current_time falls inside a bar's period (because the user just
-    # advanced on a finer TF), this picks up that straddling bar first so
-    # advancing on a coarser TF reveals the rest of that period.
-    # Cutoff precomputed (current_time - s) so the index can be used.
-    cutoff_lo = sess["current_time"] - s
+    # Reveal the next `count` COMPLETE buckets at this TF, where "next" means
+    # the buckets whose `time >= current_time`. Table-driven so it works on
+    # every TF including 1D, whose buckets are CME-aligned (NOT N*86400) —
+    # the candles table is the source of truth for where the next bucket
+    # starts.
+    #
+    # Why `time >= current_time` (not `time > current_time - s`):
+    # GET's `_resample_with_forming` shows a FORMING bucket whose `time` ≤
+    # current_time (its bucket-start, ≤ cursor). Re-emitting that same bar
+    # here would not reveal a NEW bucket — the chart's pushBar would slot
+    # it next to the forming bucket and the user wouldn't see progress.
+    # `time >= current_time` skips that straddling/forming bucket and
+    # returns the first bucket whose start is at or past the cursor — i.e.
+    # the next NEWLY-revealed bucket. On X-grid boundaries the bucket
+    # starting AT current_time is returned (e.g. a fresh 5m session whose
+    # cursor sits exactly on a 5m boundary). When current_time is mid-
+    # bucket (e.g. session started on 1D then user switched to 5m), the
+    # bar starting at the next boundary is returned and the previously-
+    # straddling bucket's "stale forming" close persists on the chart
+    # until the next getBars — this is the documented trade-off
+    # (`_resample_with_forming` stays untouched).
+    #
+    # After advance, `new_current = last_row.time + s` sits on an X-grid
+    # boundary (the END of the newly-revealed bucket). The subsequent GET
+    # finds no bucket containing it and the forming-bucket logic kicks in
+    # naturally for the next bucket whose start == new_current.
     rows = conn.execute(
         """
         SELECT time, open, high, low, close, volume
         FROM candles
-        WHERE symbol = ? AND timeframe = ? AND time > ?
+        WHERE symbol = ? AND timeframe = ? AND time >= ?
         ORDER BY time ASC LIMIT ?
         """,
-        (sess["symbol"], sess["timeframe"], cutoff_lo, req.count),
+        (sess["symbol"], sess["timeframe"], sess["current_time"], req.count),
     ).fetchall()
 
     if not rows:
@@ -650,14 +670,31 @@ def advance_session(session_id: str, req: AdvanceRequest):
         (new_current, session_id),
     )
 
-    # Check SL/TP hits for all open positions on each new bar
+    # Check SL/TP hits for all open positions on each newly-traversed bar.
+    # The H/L walk uses a SUPERSET of `rows`: it also includes any straddling
+    # bucket that was forming at old current_time and just became complete
+    # during this advance (its full H/L period traversed inside this step).
+    # Without this, a TP/SL inside the straddling bucket's full range would
+    # be missed on the first advance after a TF switch. The response
+    # `candles` array stays as `rows` (just the NEW buckets) so the chart
+    # appends exactly `count` new bars via pushBar.
+    walk_rows = conn.execute(
+        """
+        SELECT time, open, high, low, close, volume
+        FROM candles
+        WHERE symbol = ? AND timeframe = ? AND time > ? AND time <= ?
+        ORDER BY time ASC
+        """,
+        (sess["symbol"], sess["timeframe"], sess["current_time"] - s, new_current - s),
+    ).fetchall()
+
     positions = json.loads(sess["open_positions"])
     closed_trades = json.loads(sess["closed_trades"])
     balance = sess["balance"]
     spec = CONTRACT_SPECS.get(sess["symbol"], {"pip": 1, "contractSize": 1})
     closed_now = []
     for pos in positions[:]:
-        for r in rows:
+        for r in walk_rows:
             hit_sl = hit_tp = False
             if pos["side"] == "buy":
                 if pos.get("stop_loss") and r["low"] <= pos["stop_loss"]:
