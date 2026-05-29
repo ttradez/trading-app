@@ -145,7 +145,7 @@ function QtyStepper({
 
 export default function ChartScreen() {
   const [selectedSymbol, setSelectedSymbol] = useState('NQ');
-  const [selectedInterval, setSelectedInterval] = useState('5');
+  const [selectedInterval, setSelectedInterval] = useState('D');
   const [pickerOpen, setPickerOpen] = useState(false);
 
   // The logged-in Firebase user. App.tsx's onAuthStateChanged listener
