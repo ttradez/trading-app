@@ -9,10 +9,22 @@ import TradingViewChart, {
 } from '../components/charts/TradingViewChart';
 import SymbolPickerSheet from '../components/SymbolPickerSheet';
 import Button from '../components/ui/Button';
+import NumericText from '../components/NumericText';
 import { colors } from '../theme';
 import { CHART_BACKEND_URL } from '../config/chartBackend';
 import { tvIntervalToApiTimeframe } from '../lib/chartIntervals';
 import { useAuthStore } from '../store/authStore';
+
+/**
+ * An open replay position as returned by POST /sessions/{id}/trade
+ * (action:"open"). We only need a subset for the readout + close call.
+ */
+interface OpenPosition {
+  id: string;
+  side: 'buy' | 'sell';
+  lots: number;
+  entry_price: number;
+}
 
 /**
  * ChartScreen — the live Chart tab. Hosts the TradingView WebView
@@ -74,6 +86,50 @@ function ActionButton({
   );
 }
 
+/**
+ * Compact contract-quantity stepper: [ − ] N [ + ]. Fixed-width so the
+ * Sell/Buy/Next Bar cells flex around it. Integer count, min 1. Rendered
+ * inert (greyed, taps no-op) while a position is open — you can't resize
+ * mid-position.
+ */
+function QtyStepper({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: number;
+  onChange: (next: number) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <View style={[styles.stepper, disabled && styles.actionBtnDisabled]}>
+      <Pressable
+        onPress={() => onChange(Math.max(1, value - 1))}
+        disabled={disabled || value <= 1}
+        hitSlop={6}
+        style={({ pressed }) => [styles.stepperBtn, pressed && !disabled && styles.actionBtnPressed]}
+        accessibilityRole="button"
+        accessibilityLabel="Decrease contracts"
+      >
+        <Ionicons name="remove" size={16} color={colors.textPrimary} />
+      </Pressable>
+      <NumericText bold style={styles.stepperValue}>
+        {value}
+      </NumericText>
+      <Pressable
+        onPress={() => onChange(value + 1)}
+        disabled={disabled}
+        hitSlop={6}
+        style={({ pressed }) => [styles.stepperBtn, pressed && !disabled && styles.actionBtnPressed]}
+        accessibilityRole="button"
+        accessibilityLabel="Increase contracts"
+      >
+        <Ionicons name="add" size={16} color={colors.textPrimary} />
+      </Pressable>
+    </View>
+  );
+}
+
 export default function ChartScreen() {
   const [selectedSymbol, setSelectedSymbol] = useState('NQ');
   const [selectedInterval, setSelectedInterval] = useState('5');
@@ -107,6 +163,30 @@ export default function ChartScreen() {
   const [advancing, setAdvancing] = useState(false);
   const [done, setDone] = useState(false);
   const [advanceError, setAdvanceError] = useState<string | null>(null);
+
+  // ── Trade state (Phase 4) ──────────────────────────────────────────────
+  // The current REVEALED price = the close of the last revealed candle.
+  // There's no live tick in replay, so RN tracks it itself: seeded from the
+  // session-start candles and updated on every /advance. Drives both the
+  // open `entry_price` and the live unrealized P&L.
+  const [currentPrice, setCurrentPrice] = useState<number | null>(null);
+
+  // Contract multiplier for the active symbol (from /markets). Backend uses
+  // it for realized P&L; we use the SAME value for the unrealized readout so
+  // the two agree. Falls back to 1 if /markets is unreachable (the displayed
+  // unrealized may then be off, but the backend still computes realized
+  // correctly on close).
+  const [contractSize, setContractSize] = useState(1);
+
+  // Contract quantity (integer ≥ 1) sent as `lots` on open. Inert while a
+  // position is open — you can't resize mid-position.
+  const [qty, setQty] = useState(1);
+
+  // The single open position (one-at-a-time gate). The backend's
+  // open_positions is an ARRAY and would allow more, but the UI gates to one
+  // for now. null = flat.
+  const [position, setPosition] = useState<OpenPosition | null>(null);
+  const [tradeBusy, setTradeBusy] = useState(false);
 
   // Start a fresh replay session whenever the symbol or interval changes.
   // The `cancelled` guard drops a slow response from a stale symbol so it
@@ -158,6 +238,13 @@ export default function ChartScreen() {
       .then((data) => {
         if (cancelled) return;
         setSessionId(data.session_id);
+        // Seed the current revealed price from the last loaded candle's close.
+        // The session-start effect used to discard candles; now we keep the
+        // last close so opens/unrealized P&L have a price before any advance.
+        const candles: any[] = Array.isArray(data?.candles) ? data.candles : [];
+        if (candles.length > 0) {
+          setCurrentPrice(candles[candles.length - 1].close);
+        }
         setSessionLoading(false);
         setSessionError(null);
       })
@@ -185,6 +272,34 @@ export default function ChartScreen() {
   const retrySession = useCallback(() => {
     setSessionAttempt((n) => n + 1);
   }, []);
+
+  // Fetch the contract multiplier for the active symbol from /markets. The
+  // SymbolPickerSheet fetches /markets for its UI; here we only need the
+  // DATA (contractSize) for the active symbol, so this is a tiny standalone
+  // fetch — no duplicated picker UI. Re-runs on symbol change. On failure we
+  // keep contractSize = 1 (the unrealized readout may then be off; realized
+  // P&L is still computed server-side on close regardless).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${CHART_BACKEND_URL}/markets`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data: any[] = await res.json();
+        if (cancelled) return;
+        const m = Array.isArray(data)
+          ? data.find((x) => x?.symbol === selectedSymbol)
+          : null;
+        setContractSize(m && typeof m.contractSize === 'number' ? m.contractSize : 1);
+      } catch {
+        if (cancelled) return;
+        setContractSize(1);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedSymbol]);
 
   // Phase 3B-3 → in-place TF switch: the user tapped a different timeframe in
   // the hosted chart's top toolbar. By the time this fires, TV's internal
@@ -239,6 +354,11 @@ export default function ChartScreen() {
     setDone(false);
     setAdvanceError(null);
     setAdvancing(false);
+    // A new session means any prior position belonged to the old session —
+    // drop it so the readout doesn't carry over. Reset qty to the default.
+    setPosition(null);
+    setQty(1);
+    setTradeBusy(false);
   }, [sessionId]);
 
   // Advance the replay `count` bar(s) and append the newly-revealed candle(s)
@@ -280,10 +400,21 @@ export default function ChartScreen() {
           chartRef.current?.pushBar(bar);
         }
 
-        // auto_closed is out of scope this phase — log and move on. The
-        // end-of-data shape omits the key, so default to [] (no choke).
+        // Track the current revealed price = the last newly-revealed close.
+        // This drives the live unrealized P&L readout (recomputed on render).
+        if (candles.length > 0) {
+          setCurrentPrice(candles[candles.length - 1].close);
+        }
+
+        // auto_closed: positions stopped/targeted out as bars revealed. Keep
+        // the existing log. ALSO: if our open position's id appears, clear it
+        // (it was closed server-side). End-of-data shape omits the key → [].
+        const autoClosed: any[] = Array.isArray(data?.auto_closed) ? data.auto_closed : [];
         // eslint-disable-next-line no-console
-        console.log('[advance] auto_closed', data?.auto_closed ?? []);
+        console.log('[advance] auto_closed', autoClosed);
+        if (position && autoClosed.some((t) => t?.position_id === position.id)) {
+          setPosition(null);
+        }
 
         if (data?.done === true) setDone(true);
       } catch (err: any) {
@@ -295,8 +426,94 @@ export default function ChartScreen() {
         setAdvancing(false);
       }
     },
-    [sessionId, advancing, done],
+    [sessionId, advancing, done, position],
   );
+
+  // Open a position. Buy = LONG (side:"buy"), Sell = SHORT (side:"sell").
+  // We send entry_price = currentPrice so the recorded entry matches the
+  // price on screen (the last revealed close). One-at-a-time gate: ignored
+  // if a position is already open or we don't yet have a price.
+  const openPosition = useCallback(
+    async (side: 'buy' | 'sell') => {
+      if (!sessionId || position || tradeBusy) return;
+      if (currentPrice == null) return;
+      setTradeBusy(true);
+      setAdvanceError(null);
+      try {
+        const res = await fetch(`${CHART_BACKEND_URL}/sessions/${sessionId}/trade`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'open',
+            side,
+            lots: qty,
+            entry_price: currentPrice,
+          }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (data?.position) {
+          setPosition({
+            id: data.position.id,
+            side: data.position.side,
+            lots: data.position.lots,
+            entry_price: data.position.entry_price,
+          });
+        }
+      } catch (err: any) {
+        setAdvanceError(
+          err && err.message ? `Couldn't open: ${err.message}` : 'Couldn’t open position',
+        );
+      } finally {
+        setTradeBusy(false);
+      }
+    },
+    [sessionId, position, tradeBusy, currentPrice, qty],
+  );
+
+  // Close the open position. Realized P&L comes back on the {trade} response —
+  // logged here; a closed-trade summary UI is a later phase. Balance is also
+  // returned ({balance}); we don't currently surface balance on this screen,
+  // so there's nothing to update (logged for traceability).
+  const closePosition = useCallback(async () => {
+    if (!sessionId || !position || tradeBusy) return;
+    setTradeBusy(true);
+    setAdvanceError(null);
+    try {
+      const res = await fetch(`${CHART_BACKEND_URL}/sessions/${sessionId}/trade`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'close', position_id: position.id }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      // eslint-disable-next-line no-console
+      console.log('[trade] closed', data?.trade);
+      setPosition(null);
+    } catch (err: any) {
+      setAdvanceError(
+        err && err.message ? `Couldn't close: ${err.message}` : 'Couldn’t close position',
+      );
+    } finally {
+      setTradeBusy(false);
+    }
+  }, [sessionId, position, tradeBusy]);
+
+  // Live unrealized P&L — matches the backend's realized math. Backend:
+  //   pips = (exit - entry) / pip * dir;  pnl = pips * pip * contractSize * lots
+  // The `pip` cancels, so: (currentPrice - entry) * dir * contractSize * lots,
+  // where dir = +1 for a long (buy) and -1 for a short (sell). null while flat.
+  const unrealizedPnl =
+    position && currentPrice != null
+      ? (currentPrice - position.entry_price) *
+        (position.side === 'buy' ? 1 : -1) *
+        contractSize *
+        position.lots
+      : null;
+
+  // One-at-a-time gate: Buy/Sell + the stepper are disabled while a position
+  // is open or a trade request is in flight.
+  const tradeDisabled = !!position || tradeBusy || currentPrice == null;
 
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
@@ -378,6 +595,59 @@ export default function ChartScreen() {
                 sessionId={sessionId}
                 onIntervalChange={handleIntervalChange}
               />
+
+              {/* Position readout — compact overlay top-left of the chart,
+                  positioned UNDER the TV toolbar so it doesn't cover it.
+                  Hidden when flat. Recomputes its P&L on every render, so it
+                  updates whenever currentPrice changes (each advance). */}
+              {position && (
+                <View style={styles.readout} pointerEvents="box-none">
+                  <View style={styles.readoutRow}>
+                    <Text
+                      style={[
+                        styles.readoutSide,
+                        { color: position.side === 'buy' ? colors.green : colors.red },
+                      ]}
+                    >
+                      {position.side === 'buy' ? 'LONG' : 'SHORT'}
+                    </Text>
+                    <NumericText style={styles.readoutQty}>
+                      {`${position.lots} ${selectedSymbol}`}
+                    </NumericText>
+                  </View>
+                  <View style={styles.readoutRow}>
+                    <Text style={styles.readoutMetaLabel}>@</Text>
+                    <NumericText style={styles.readoutEntry}>
+                      {position.entry_price}
+                    </NumericText>
+                  </View>
+                  <NumericText
+                    bold
+                    style={[
+                      styles.readoutPnl,
+                      { color: (unrealizedPnl ?? 0) >= 0 ? colors.green : colors.red },
+                    ]}
+                  >
+                    {`${(unrealizedPnl ?? 0) >= 0 ? '+' : '-'}$${Math.abs(
+                      unrealizedPnl ?? 0,
+                    ).toFixed(2)}`}
+                  </NumericText>
+                  <Pressable
+                    onPress={closePosition}
+                    disabled={tradeBusy}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    style={({ pressed }) => [
+                      styles.closeBtn,
+                      pressed && !tradeBusy && styles.actionBtnPressed,
+                      tradeBusy && styles.actionBtnDisabled,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Close position"
+                  >
+                    <Text style={styles.closeBtnLabel}>Close</Text>
+                  </Pressable>
+                </View>
+              )}
             </View>
 
             {/* Thin status strip directly above the action row. Takes zero
@@ -399,29 +669,30 @@ export default function ChartScreen() {
             )}
 
             {/* Bottom action row — full-width, pinned below the chart and
-                above the app tab bar. Sell / Buy / Next Bar flex; FF is a
-                fixed compact icon button. Next Bar + FF share the single
-                `advance()` path (counts 1 and 5). */}
+                above the app tab bar. Order: Sell | qty | Buy | Next Bar | FF.
+                Sell/Buy/Next Bar flex; the qty stepper is a fixed compact
+                width; FF is the fixed compact icon button. Sell/Buy +
+                stepper are gated to one-at-a-time (disabled while a position
+                is open). Next Bar + FF share the single `advance()` path. */}
             <View style={styles.actionRow}>
               <ActionButton
                 label="Sell"
                 bg={colors.red}
                 textColor={colors.textPrimary}
                 flex={1}
+                disabled={tradeDisabled}
                 accessibilityLabel="Sell"
-                onPress={() => {
-                  /* Phase 4: open short/sell position */
-                }}
+                onPress={() => openPosition('sell')}
               />
+              <QtyStepper value={qty} onChange={setQty} disabled={tradeDisabled} />
               <ActionButton
                 label="Buy"
                 bg={colors.green}
                 textColor={colors.textInverse}
                 flex={1}
+                disabled={tradeDisabled}
                 accessibilityLabel="Buy"
-                onPress={() => {
-                  /* Phase 4: open long/buy position */
-                }}
+                onPress={() => openPosition('buy')}
               />
               <ActionButton
                 label="Next Bar"
@@ -535,6 +806,92 @@ const styles = StyleSheet.create({
   actionBtnDisabled: { opacity: 0.5 },
   actionLabel: {
     fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+
+  // Contract-quantity stepper — fixed compact width (~88px) so the flexed
+  // Sell/Buy/Next Bar cells share the rest. Matches the action-row height.
+  stepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: 88,
+    height: 41,
+    borderRadius: 11,
+    backgroundColor: colors.cardAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 4,
+  },
+  stepperBtn: {
+    width: 28,
+    height: 33,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+  },
+  stepperValue: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    minWidth: 18,
+    textAlign: 'center',
+  },
+
+  // Position readout — absolute overlay, top-left of the chart area, offset
+  // down so it sits UNDER the TV toolbar (which lives at the top of the
+  // WebView). Hidden when flat.
+  readout: {
+    position: 'absolute',
+    top: 48,
+    left: 8,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    minWidth: 120,
+  },
+  readoutRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  readoutSide: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  readoutQty: {
+    color: colors.textPrimary,
+    fontSize: 12,
+  },
+  readoutMetaLabel: {
+    color: colors.textSecondary,
+    fontSize: 11,
+  },
+  readoutEntry: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  readoutPnl: {
+    marginTop: 4,
+    fontSize: 16,
+  },
+  closeBtn: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: colors.cardAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  closeBtnLabel: {
+    color: colors.textPrimary,
+    fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.2,
   },
