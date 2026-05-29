@@ -231,6 +231,9 @@ export default function ChartScreen() {
 
         {uid && !sessionLoading && !sessionError && sessionId && (
           <View style={styles.chartLayout}>
+            {/* Chart fills ALL vertical space; the advance controls float
+                over its bottom as an absolute overlay (see advanceRow) so
+                they don't steal chart height. */}
             <View style={styles.chartFill}>
               <TradingViewChart
                 ref={chartRef}
@@ -240,15 +243,22 @@ export default function ChartScreen() {
               />
             </View>
 
-            {/* Next Bar control row — sits BELOW the WebView so it never
-                occludes candle content. */}
+            {/* Compact floating control row, absolutely positioned over the
+                chart's bottom edge. Left side reserved for Phase 4 position
+                buttons; Next Bar is right-aligned via marginLeft:'auto'. The
+                End-of-session / advanceError text sits left-aligned in the
+                row so it stays visible (not clipped behind the button). */}
             <View style={styles.advanceRow}>
+              {/* Phase 4: Buy / Sell position buttons go here */}
+
               {advanceError ? (
                 <Text style={styles.advanceErrorText} numberOfLines={1}>
                   {advanceError}
                 </Text>
               ) : done ? (
-                <Text style={styles.endOfSessionText}>End of session</Text>
+                <Text style={styles.endOfSessionText} numberOfLines={1}>
+                  End of session
+                </Text>
               ) : null}
 
               <Pressable
@@ -263,7 +273,7 @@ export default function ChartScreen() {
                 accessibilityLabel="Advance to next bar"
                 accessibilityState={{ disabled: done || advancing }}
               >
-                <Ionicons name="play-skip-forward" size={18} color={colors.textInverse} />
+                <Ionicons name="play-skip-forward" size={16} color={colors.textInverse} />
                 <Text style={styles.nextBarLabel}>Next Bar</Text>
               </Pressable>
             </View>
@@ -310,46 +320,53 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   chartWrap: { flex: 1 },
-  // The chart + Next Bar row stack vertically inside chartWrap. The WebView
-  // takes the flex space; the button row sits beneath it.
+  // The chart fills the whole area; the advance controls float over its
+  // bottom as an absolute overlay (advanceRow) so they steal no height.
   chartLayout: { flex: 1 },
   chartFill: { flex: 1 },
+  // Compact floating control row over the chart's bottom edge. Small insets
+  // keep it light and minimize occlusion of the time axis below. Next Bar is
+  // pushed to the right via its own marginLeft:'auto'; the left side is free
+  // for Phase 4 position buttons. No backing panel — keep it a light float.
   advanceRow: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    bottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
     gap: 12,
   },
-  // Focused gold pill (a sibling to the shared Button's primary variant):
-  // same 52pt height, pill radius, gold fill, black text — built here so we
-  // can host the leading icon the shared Button doesn't support.
+  // Compact gold pill (~35% smaller than the 52pt 3B-2 button): keeps the
+  // gold fill + black text + leading icon, just tighter padding/typography.
   nextBarBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 52,
-    paddingHorizontal: 24,
+    marginLeft: 'auto',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     borderRadius: 999,
     backgroundColor: colors.gold,
-    gap: 8,
+    gap: 6,
   },
   nextBarBtnPressed: { opacity: 0.85 },
   nextBarBtnDisabled: { opacity: 0.5 },
   nextBarLabel: {
     color: colors.textInverse,
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 15,
+    fontWeight: '600',
     letterSpacing: 0.2,
   },
+  // End-of-session / error text: left-aligned in the row, allowed to shrink
+  // so the floating button is never pushed off-screen.
   endOfSessionText: {
-    flex: 1,
+    flexShrink: 1,
     color: 'rgba(255,255,255,0.50)',
     fontSize: 13,
   },
   advanceErrorText: {
-    flex: 1,
+    flexShrink: 1,
     color: colors.red,
     fontSize: 13,
   },
