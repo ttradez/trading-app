@@ -6,7 +6,7 @@ import { Candle, Timeframe } from '../types';
 // app talks to the laptop running the dev server over LAN without hardcoding an IP.
 // An explicit EXPO_PUBLIC_API_URL still wins if set.
 const debuggerHost = Constants.expoConfig?.hostUri?.split(':').shift();
-const BASE_URL =
+export const BASE_URL =
   process.env.EXPO_PUBLIC_API_URL ??
   (__DEV__ && debuggerHost
     ? `http://${debuggerHost}:8000`

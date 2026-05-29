@@ -2,9 +2,10 @@ import React from 'react';
 import { StyleSheet } from 'react-native';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { colors } from '../../theme';
+import { BASE_URL } from '../../services/api';
 
 /**
- * TradingView Advanced Charts host (Phase 1.8 — hosted Vercel URL).
+ * TradingView Advanced Charts host (Phase 2 — hosted Vercel URL + real datafeed).
  *
  * Loads the chart from `https://pt-chart-host.vercel.app` directly in the
  * WebView. Earlier phases bundled `chart_host.html` + the `charting_library/`
@@ -12,28 +13,28 @@ import { colors } from '../../theme';
  * pipeline is gone now that the page is served from a real origin (which the
  * charting library's relative `library_path` resolves against cleanly).
  *
- * Phase 2 will wire `symbol` / `interval` through to drive symbol / interval
- * switching from the React side.
+ * `symbol` / `interval` (and the backend URL) are passed through to the hosted
+ * page as query params; the page's datafeed reads them to hit FastAPI /candles.
  */
 interface Props {
   symbol?: string;
   interval?: string;
 }
 
-export default function TradingViewChart({
-  symbol: _symbol,
-  interval: _interval,
-}: Props) {
+export default function TradingViewChart({ symbol, interval }: Props) {
   const onMessage = (event: WebViewMessageEvent) => {
     // eslint-disable-next-line no-console
     console.log('[TVChart]', event.nativeEvent.data);
   };
 
+  const chartUrl =
+    'https://pt-chart-host.vercel.app/?backend=' + encodeURIComponent(BASE_URL) +
+    '&symbol=' + encodeURIComponent(symbol ?? 'NQ') +
+    '&interval=' + encodeURIComponent(interval ?? '5');
+
   return (
-    // TODO Phase 2: pass symbol + interval via URL query params or postMessage
-    // once we wire the real FastAPI datafeed
     <WebView
-      source={{ uri: 'https://pt-chart-host.vercel.app' }}
+      source={{ uri: chartUrl }}
       style={styles.web}
       originWhitelist={['*']}
       allowFileAccess
