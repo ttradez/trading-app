@@ -216,6 +216,100 @@ def _get_candles_up_to(conn, symbol: str, timeframe: str, up_to: int, limit: int
     return list(reversed(rows))
 
 
+def _resample_with_forming(conn, symbol: str, timeframe: str, current_time: int, limit: int):
+    """Return up to `limit` candles in `timeframe` ending with a FORMING bucket
+    whose close == the 1m base close at `current_time`. This makes the last
+    candle's close identical across every TF — the single source of truth being
+    the 1m base price at the replay cursor.
+
+    Mechanics:
+      * For tf=='1m', no forming bucket is needed; the base IS the data, so the
+        candle whose time == current_time naturally has close == base[pos].close.
+      * For higher TFs, pick the TF candle whose bucket contains `current_time`
+        (its `time` ≤ current_time and `time + tf_seconds` > current_time). If
+        such a bucket exists, REPLACE it with an aggregate over the 1m candles
+        in [bucket_start, current_time]. Otherwise (no containing TF bucket
+        because the dataset ended on a boundary), no forming bucket is added —
+        the existing fully-closed candles already end at current_time.
+
+    Note on bucket alignment: this DB's TF buckets are NOT aligned to
+    `N * TF_SECONDS` (1D buckets start near CME session open, not UTC midnight).
+    The bucket-start is derived from the existing TF candle's `time`, never
+    computed as `(current_time // tf_seconds) * tf_seconds` — that would land
+    off-grid and break the rebuild.
+    """
+    s = TF_SECONDS.get(timeframe, 86400)
+    # 1m base: no resample, just hand back rows up to current_time.
+    if timeframe == "1m":
+        rows = conn.execute(
+            """
+            SELECT time, open, high, low, close, volume
+            FROM candles
+            WHERE symbol = ? AND timeframe = '1m' AND time <= ?
+            ORDER BY time DESC LIMIT ?
+            """,
+            (symbol, current_time, limit),
+        ).fetchall()
+        return list(reversed(rows))
+
+    # Locate the TF bucket that CONTAINS current_time, if any.
+    containing = conn.execute(
+        """
+        SELECT time, open, high, low, close, volume
+        FROM candles
+        WHERE symbol = ? AND timeframe = ? AND time <= ?
+        ORDER BY time DESC LIMIT 1
+        """,
+        (symbol, timeframe, current_time),
+    ).fetchone()
+
+    forming = None
+    if containing is not None and containing["time"] + s > current_time:
+        # Rebuild the bucket from 1m candles in [bucket_start, current_time].
+        bucket_start = containing["time"]
+        m_rows = conn.execute(
+            """
+            SELECT open, high, low, close, volume
+            FROM candles
+            WHERE symbol = ? AND timeframe = '1m' AND time >= ? AND time <= ?
+            ORDER BY time ASC
+            """,
+            (symbol, bucket_start, current_time),
+        ).fetchall()
+        if m_rows:
+            forming = {
+                "time": bucket_start,
+                "open": m_rows[0]["open"],
+                "high": max(r["high"] for r in m_rows),
+                "low":  min(r["low"]  for r in m_rows),
+                "close": m_rows[-1]["close"],
+                "volume": sum((r["volume"] or 0) for r in m_rows),
+            }
+        else:
+            # No 1m data inside this bucket — fall back to the pre-aggregated
+            # row's own values (last close still won't equal base, but we'd
+            # have nothing to rebuild with). This is a graceful degrade.
+            forming = dict(containing)
+
+    # Complete TF candles: bucket-end <= current_time (i.e. time + s <= current_time).
+    # We want (limit - 1) complete + 1 forming if a forming bucket exists.
+    complete_limit = (limit - 1) if forming is not None else limit
+    cutoff = current_time - s
+    complete = conn.execute(
+        """
+        SELECT time, open, high, low, close, volume
+        FROM candles
+        WHERE symbol = ? AND timeframe = ? AND time <= ?
+        ORDER BY time DESC LIMIT ?
+        """,
+        (symbol, timeframe, cutoff, complete_limit),
+    ).fetchall()
+    out = [dict(r) for r in reversed(complete)]
+    if forming is not None:
+        out.append(forming)
+    return out
+
+
 # ─── Sessions ────────────────────────────────────────────────────────────────
 
 class StartSessionRequest(BaseModel):
@@ -279,15 +373,17 @@ def get_session(session_id: str, timeframe: Optional[str] = Query(None)):
     # Pick which TF to query at: the request's override or the session's stored TF.
     effective_tf = timeframe if timeframe is not None else sess["timeframe"]
 
-    # Reconstruct the bar-indexed candle history from hidden_start up to current_time
-    rows = _get_candles_up_to(conn, sess["symbol"], effective_tf, sess["current_time"], 500)
+    # Reconstruct the bar-indexed candle history from hidden_start up to current_time.
+    # Use the forming-bucket resampler so the LAST candle's close is the 1m base
+    # close at current_time — identical across every TF (single source of truth).
+    rows = _resample_with_forming(conn, sess["symbol"], effective_tf, sess["current_time"], 500)
     # Self-heal: pre-existing sessions stored current_time as bar.start under
     # the old convention. The new convention treats current_time as bar.end,
     # so the query returns nothing. Shift forward by tf_seconds and migrate.
     if not rows:
         s_heal = TF_SECONDS.get(sess["timeframe"], 86400)
         new_t = sess["current_time"] + s_heal
-        rows = _get_candles_up_to(conn, sess["symbol"], effective_tf, new_t, 500)
+        rows = _resample_with_forming(conn, sess["symbol"], effective_tf, new_t, 500)
         if rows:
             conn.execute(
                 "UPDATE trading_sessions SET current_time = ? WHERE session_id = ?",
@@ -407,12 +503,13 @@ def change_session_timeframe(session_id: str, req: TimeframeChangeRequest):
     # user has already revealed on other timeframes are reflected on this one.
     # And keep current_time as-is — don't floor to the new TF's grid; otherwise
     # advancing on a higher TF and switching to a lower one would lose progress.
-    rows = _get_candles_up_to(conn, sess["symbol"], req.timeframe, sess["current_time"], 200)
+    # Forming-bucket resampler keeps the last close in sync with the GET path.
+    rows = _resample_with_forming(conn, sess["symbol"], req.timeframe, sess["current_time"], 200)
     # Self-heal stored current_time → end-of-bar convention if needed.
     if not rows:
         s_heal_old = TF_SECONDS.get(sess["timeframe"], 86400)
         new_t = sess["current_time"] + s_heal_old
-        rows = _get_candles_up_to(conn, sess["symbol"], req.timeframe, new_t, 200)
+        rows = _resample_with_forming(conn, sess["symbol"], req.timeframe, new_t, 200)
         if rows:
             conn.execute(
                 "UPDATE trading_sessions SET current_time = ? WHERE session_id = ?",
