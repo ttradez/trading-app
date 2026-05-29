@@ -1,8 +1,31 @@
-import React from 'react';
+import React, { forwardRef, useImperativeHandle, useRef } from 'react';
 import { StyleSheet, View, ActivityIndicator } from 'react-native';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { colors } from '../../theme';
 import { CHART_BACKEND_URL } from '../../config/chartBackend';
+
+/**
+ * One OHLCV bar in the shape `window.pushBar(bar)` expects on the
+ * hosted chart. `time` is **milliseconds** (TV's `activeOnTick`
+ * convention) — the parent multiplies the advance API's unix-seconds
+ * `time` by 1000 before calling `pushBar`.
+ */
+export interface ChartBar {
+  time: number; // ms
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+/**
+ * Imperative handle the parent (ChartScreen) drives via a ref to
+ * append newly-revealed replay candles to the live chart.
+ */
+export interface TradingViewChartHandle {
+  pushBar: (bar: ChartBar) => void;
+}
 
 /**
  * TradingView Advanced Charts host (Phase 2 — hosted Vercel URL + real datafeed).
@@ -26,7 +49,31 @@ interface Props {
   sessionId?: string | null;
 }
 
-export default function TradingViewChart({ symbol, interval, sessionId }: Props) {
+function TradingViewChart(
+  { symbol, interval, sessionId }: Props,
+  ref: React.Ref<TradingViewChartHandle>,
+) {
+  const webviewRef = useRef<WebView>(null);
+
+  // Expose `pushBar` to the parent. The injected JS is guarded against an
+  // undefined `window.pushBar` so an early tap (before the hosted page's
+  // bundle has run) can never throw inside the WebView. NOTE: even when
+  // `window.pushBar` exists, its internal `activeOnTick` is null until the
+  // datafeed's `subscribeBars` has fired — so a very-early bar may be
+  // silently dropped on the chart side (server still advances). See the
+  // early-tap desync note in ChartScreen; not fully solved this phase.
+  useImperativeHandle(
+    ref,
+    () => ({
+      pushBar: (bar: ChartBar) => {
+        webviewRef.current?.injectJavaScript(
+          'if (window.pushBar) { window.pushBar(' + JSON.stringify(bar) + '); } true;',
+        );
+      },
+    }),
+    [],
+  );
+
   const onMessage = (event: WebViewMessageEvent) => {
     // eslint-disable-next-line no-console
     console.log('[TVChart]', event.nativeEvent.data);
@@ -56,6 +103,7 @@ export default function TradingViewChart({ symbol, interval, sessionId }: Props)
     // this phase; once one lands, fold it into the key too.)
     // TODO v2: postMessage widget.chart().setSymbol() to switch without a full reload.
     <WebView
+      ref={webviewRef}
       key={`${symbol}-${sessionId}`}
       source={{ uri: chartUrl }}
       style={styles.web}
@@ -73,6 +121,11 @@ export default function TradingViewChart({ symbol, interval, sessionId }: Props)
     />
   );
 }
+
+const TradingViewChartWithRef = forwardRef<TradingViewChartHandle, Props>(TradingViewChart);
+TradingViewChartWithRef.displayName = 'TradingViewChart';
+
+export default TradingViewChartWithRef;
 
 const styles = StyleSheet.create({
   web: {

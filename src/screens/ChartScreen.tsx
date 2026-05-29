@@ -1,9 +1,12 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
-import TradingViewChart from '../components/charts/TradingViewChart';
+import TradingViewChart, {
+  type ChartBar,
+  type TradingViewChartHandle,
+} from '../components/charts/TradingViewChart';
 import SymbolPickerSheet from '../components/SymbolPickerSheet';
 import Button from '../components/ui/Button';
 import { colors } from '../theme';
@@ -43,6 +46,18 @@ export default function ChartScreen() {
   // A monotonic token to force a session restart on Retry. Bumping it
   // re-runs the effect below with the same symbol/interval.
   const [sessionAttempt, setSessionAttempt] = useState(0);
+
+  // Imperative handle to the chart WebView — used to push newly-revealed
+  // replay candles in via `pushBar`.
+  const chartRef = useRef<TradingViewChartHandle>(null);
+
+  // "Next Bar" advance state.
+  //  - advancing: in-flight guard so a double-tap can't fire two advances.
+  //  - done: the session has hit end-of-data; the button is disabled.
+  //  - advanceError: a brief, non-crashing message; cleared on the next tap.
+  const [advancing, setAdvancing] = useState(false);
+  const [done, setDone] = useState(false);
+  const [advanceError, setAdvanceError] = useState<string | null>(null);
 
   // Start a fresh replay session whenever the symbol or interval changes.
   // The `cancelled` guard drops a slow response from a stale symbol so it
@@ -115,6 +130,64 @@ export default function ChartScreen() {
     setSessionAttempt((n) => n + 1);
   }, []);
 
+  // Reset advance state when the session changes (new symbol/interval, or a
+  // Retry-driven restart). Without this, a `done` flag from a finished
+  // session would leave Next Bar disabled on a freshly-started one.
+  useEffect(() => {
+    setDone(false);
+    setAdvanceError(null);
+    setAdvancing(false);
+  }, [sessionId]);
+
+  // Advance the replay one bar and append the newly-revealed candle(s) to the
+  // chart. The advance API returns one of two shapes:
+  //   normal:      { candles: [...newly revealed], done: false, auto_closed: [...] }
+  //   end-of-data: { candles: [], done: true }   ← no `auto_closed` key
+  // We push every candle in `candles` (usually one) and flip `done` when the
+  // server says so. `auto_closed` is logged only — trade UI is out of scope.
+  const advanceBar = useCallback(async () => {
+    if (!sessionId || advancing || done) return; // debounce + end-of-data guard
+
+    setAdvancing(true);
+    setAdvanceError(null);
+    try {
+      const res = await fetch(`${CHART_BACKEND_URL}/sessions/${sessionId}/advance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ count: 1 }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      const candles: any[] = Array.isArray(data?.candles) ? data.candles : [];
+      for (const c of candles) {
+        const bar: ChartBar = {
+          time: c.time * 1000, // API unix seconds → TV ms
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          volume: c.volume,
+        };
+        chartRef.current?.pushBar(bar);
+      }
+
+      // auto_closed is out of scope this phase — log and move on. The
+      // end-of-data shape omits the key, so default to [] (no choke).
+      // eslint-disable-next-line no-console
+      console.log('[advance] auto_closed', data?.auto_closed ?? []);
+
+      if (data?.done === true) setDone(true);
+    } catch (err: any) {
+      // Non-crashing: surface a brief message, keep the button usable.
+      setAdvanceError(
+        err && err.message ? `Couldn't advance: ${err.message}` : 'Couldn’t advance',
+      );
+    } finally {
+      setAdvancing(false);
+    }
+  }, [sessionId, advancing, done]);
+
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
       <View style={styles.header}>
@@ -157,11 +230,44 @@ export default function ChartScreen() {
         )}
 
         {uid && !sessionLoading && !sessionError && sessionId && (
-          <TradingViewChart
-            symbol={selectedSymbol}
-            interval={selectedInterval}
-            sessionId={sessionId}
-          />
+          <View style={styles.chartLayout}>
+            <View style={styles.chartFill}>
+              <TradingViewChart
+                ref={chartRef}
+                symbol={selectedSymbol}
+                interval={selectedInterval}
+                sessionId={sessionId}
+              />
+            </View>
+
+            {/* Next Bar control row — sits BELOW the WebView so it never
+                occludes candle content. */}
+            <View style={styles.advanceRow}>
+              {advanceError ? (
+                <Text style={styles.advanceErrorText} numberOfLines={1}>
+                  {advanceError}
+                </Text>
+              ) : done ? (
+                <Text style={styles.endOfSessionText}>End of session</Text>
+              ) : null}
+
+              <Pressable
+                onPress={advanceBar}
+                disabled={done || advancing}
+                style={({ pressed }) => [
+                  styles.nextBarBtn,
+                  pressed && !done && !advancing && styles.nextBarBtnPressed,
+                  (done || advancing) && styles.nextBarBtnDisabled,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Advance to next bar"
+                accessibilityState={{ disabled: done || advancing }}
+              >
+                <Ionicons name="play-skip-forward" size={18} color={colors.textInverse} />
+                <Text style={styles.nextBarLabel}>Next Bar</Text>
+              </Pressable>
+            </View>
+          </View>
         )}
       </View>
 
@@ -204,6 +310,49 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   chartWrap: { flex: 1 },
+  // The chart + Next Bar row stack vertically inside chartWrap. The WebView
+  // takes the flex space; the button row sits beneath it.
+  chartLayout: { flex: 1 },
+  chartFill: { flex: 1 },
+  advanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  // Focused gold pill (a sibling to the shared Button's primary variant):
+  // same 52pt height, pill radius, gold fill, black text — built here so we
+  // can host the leading icon the shared Button doesn't support.
+  nextBarBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 52,
+    paddingHorizontal: 24,
+    borderRadius: 999,
+    backgroundColor: colors.gold,
+    gap: 8,
+  },
+  nextBarBtnPressed: { opacity: 0.85 },
+  nextBarBtnDisabled: { opacity: 0.5 },
+  nextBarLabel: {
+    color: colors.textInverse,
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  endOfSessionText: {
+    flex: 1,
+    color: 'rgba(255,255,255,0.50)',
+    fontSize: 13,
+  },
+  advanceErrorText: {
+    flex: 1,
+    color: colors.red,
+    fontSize: 13,
+  },
   chartCenter: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
