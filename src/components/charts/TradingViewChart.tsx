@@ -47,10 +47,19 @@ interface Props {
   symbol?: string;
   interval?: string;
   sessionId?: string | null;
+  /**
+   * Phase 3B-3: fired when the USER taps a different timeframe in the hosted
+   * chart's top toolbar. The hosted page posts `{type:'intervalChanged',
+   * interval}` (TV resolution code) and we surface it here so the parent can
+   * restart the replay session at the new TF — the session serves candles at
+   * its FIXED start-timeframe, so a TF change requires a session restart, not
+   * just a getBars re-fetch.
+   */
+  onIntervalChange?: (interval: string) => void;
 }
 
 function TradingViewChart(
-  { symbol, interval, sessionId }: Props,
+  { symbol, interval, sessionId, onIntervalChange }: Props,
   ref: React.Ref<TradingViewChartHandle>,
 ) {
   const webviewRef = useRef<WebView>(null);
@@ -75,8 +84,29 @@ function TradingViewChart(
   );
 
   const onMessage = (event: WebViewMessageEvent) => {
+    const data = event.nativeEvent.data;
     // eslint-disable-next-line no-console
-    console.log('[TVChart]', event.nativeEvent.data);
+    console.log('[TVChart]', data);
+
+    // Most messages are plain `postMsg(...)` log strings (e.g. "getBars: ...")
+    // which are NOT JSON — parse defensively so they can't throw. Only treat a
+    // message as a typed bridge event if it parses to an object with a `type`.
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(data);
+    } catch {
+      return; // non-JSON log line — already logged above
+    }
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      (parsed as { type?: unknown }).type === 'intervalChanged'
+    ) {
+      const next = (parsed as { interval?: unknown }).interval;
+      if (typeof next === 'string' && next) {
+        onIntervalChange?.(next);
+      }
+    }
   };
 
   // Defensive guard: don't load the chart before a session exists. The
@@ -97,14 +127,15 @@ function TradingViewChart(
     '&session=' + encodeURIComponent(sessionId ?? '');
 
   return (
-    // `key={`${symbol}-${sessionId}`}` forces a full WebView remount when
-    // the symbol OR the replay session changes — a bare `source.uri` prop
-    // change doesn't reliably trigger a reload. (Interval has no picker
-    // this phase; once one lands, fold it into the key too.)
+    // `key={`${symbol}-${interval}-${sessionId}`}` forces a full WebView
+    // remount when the symbol, interval, OR replay session changes — a bare
+    // `source.uri` prop change doesn't reliably trigger a reload. On a user
+    // TF change the parent restarts the session (new sessionId) AND updates
+    // interval, so the key changes and the chart reloads at the new TF.
     // TODO v2: postMessage widget.chart().setSymbol() to switch without a full reload.
     <WebView
       ref={webviewRef}
-      key={`${symbol}-${sessionId}`}
+      key={`${symbol}-${interval}-${sessionId}`}
       source={{ uri: chartUrl }}
       style={styles.web}
       originWhitelist={['*']}

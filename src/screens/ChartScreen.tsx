@@ -76,7 +76,7 @@ function ActionButton({
 
 export default function ChartScreen() {
   const [selectedSymbol, setSelectedSymbol] = useState('NQ');
-  const [selectedInterval] = useState('5');
+  const [selectedInterval, setSelectedInterval] = useState('5');
   const [pickerOpen, setPickerOpen] = useState(false);
 
   // The logged-in Firebase user. App.tsx's onAuthStateChanged listener
@@ -178,6 +178,29 @@ export default function ChartScreen() {
   const retrySession = useCallback(() => {
     setSessionAttempt((n) => n + 1);
   }, []);
+
+  // Phase 3B-3: the user tapped a different timeframe in the hosted chart's
+  // top toolbar. `selectedInterval` IS the resolution the session starts at,
+  // so updating it re-runs the session-start effect above (it's keyed on
+  // [selectedSymbol, selectedInterval, ...]). That POSTs /sessions/start with
+  // the new tvIntervalToApiTimeframe(...) value, yields a NEW sessionId, and
+  // TradingViewChart remounts (its key includes interval + sessionId) to load
+  // candles at the new TF. We do NOT add a second session-start path — we just
+  // drive the existing effect.
+  //
+  // Loop-safety: the hosted page subscribes to onIntervalChanged INSIDE
+  // onChartReady, so the programmatic initial load of the remounted chart does
+  // NOT re-emit; only genuine user taps do. The `=== selectedInterval` guard is
+  // a second line of defence, so there's no restart loop.
+  //
+  // Known limitation (in scope to accept): restarting the session resets the
+  // replay position. Preserving it via start_time is a later refinement.
+  const handleIntervalChange = useCallback(
+    (newInterval: string) => {
+      setSelectedInterval((prev) => (prev === newInterval ? prev : newInterval));
+    },
+    [],
+  );
 
   // Reset advance state when the session changes (new symbol/interval, or a
   // Retry-driven restart). Without this, a `done` flag from a finished
@@ -323,6 +346,7 @@ export default function ChartScreen() {
                 symbol={selectedSymbol}
                 interval={selectedInterval}
                 sessionId={sessionId}
+                onIntervalChange={handleIntervalChange}
               />
             </View>
 
