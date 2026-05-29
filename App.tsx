@@ -52,7 +52,7 @@ import HomeScreen         from './src/screens/HomeScreen';
 import StatsScreen        from './src/screens/StatsScreen';
 import LearnScreen        from './src/screens/LearnScreen';
 import TradingScreen      from './src/screens/TradingScreen';
-import ChartTestScreen    from './src/screens/ChartTestScreen';
+import ChartScreen        from './src/screens/ChartScreen';
 import LeaderboardScreen  from './src/screens/LeaderboardScreen';
 import JournalScreen      from './src/screens/JournalScreen';
 // ChallengesScreen retired from the tab bar 2026-05-14 — the
@@ -254,7 +254,7 @@ function MainTabs() {
       })}
     >
       <Tab.Screen name="Home"        component={HomeScreen} />
-      <Tab.Screen name="Chart"       component={ChartTestScreen} />
+      <Tab.Screen name="Chart"       component={ChartScreen} />
       <Tab.Screen name="Stats"       component={StatsScreen} />
       <Tab.Screen name="Journal"     component={JournalScreen} />
       <Tab.Screen name="Learn"       component={LearnScreen} />

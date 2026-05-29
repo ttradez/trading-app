@@ -33,7 +33,14 @@ export default function TradingViewChart({ symbol, interval }: Props) {
     '&interval=' + encodeURIComponent(interval ?? '5');
 
   return (
+    // `key={symbol}` forces a full WebView remount when the symbol
+    // changes — a bare `source.uri` prop change doesn't reliably
+    // trigger a reload. Symbol-only for now: there's no interval
+    // picker this phase. Add interval to the key (`${symbol}-${interval}`)
+    // once an interval picker lands.
+    // TODO v2: postMessage widget.chart().setSymbol() to switch without a full reload.
     <WebView
+      key={symbol}
       source={{ uri: chartUrl }}
       style={styles.web}
       originWhitelist={['*']}
