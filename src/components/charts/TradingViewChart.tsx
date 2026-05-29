@@ -25,6 +25,14 @@ export interface ChartBar {
  */
 export interface TradingViewChartHandle {
   pushBar: (bar: ChartBar) => void;
+  /**
+   * Refresh the chart IN PLACE after an in-session /timeframe switch. Invokes
+   * the hosted page's `window.ptResetData`, which calls
+   * `activeChart().resetData()` — TV re-runs getBars at its CURRENT resolution
+   * (already the new TF, since the user changed it via the toolbar), re-fetching
+   * the new-TF candles for the same period. No remount, no spinner.
+   */
+  resetData: () => void;
 }
 
 /**
@@ -79,6 +87,9 @@ function TradingViewChart(
           'if (window.pushBar) { window.pushBar(' + JSON.stringify(bar) + '); } true;',
         );
       },
+      resetData: () => {
+        webviewRef.current?.injectJavaScript('window.ptResetData && window.ptResetData(); true;');
+      },
     }),
     [],
   );
@@ -127,15 +138,18 @@ function TradingViewChart(
     '&session=' + encodeURIComponent(sessionId ?? '');
 
   return (
-    // `key={`${symbol}-${interval}-${sessionId}`}` forces a full WebView
-    // remount when the symbol, interval, OR replay session changes — a bare
-    // `source.uri` prop change doesn't reliably trigger a reload. On a user
-    // TF change the parent restarts the session (new sessionId) AND updates
-    // interval, so the key changes and the chart reloads at the new TF.
-    // TODO v2: postMessage widget.chart().setSymbol() to switch without a full reload.
+    // `key={`${symbol}-${sessionId}`}` forces a full WebView remount when the
+    // symbol OR replay session changes — a bare `source.uri` prop change
+    // doesn't reliably trigger a reload. INTERVAL is intentionally NOT in the
+    // key: a TF change must NOT remount the chart. The parent now switches the
+    // session's timeframe IN PLACE (POST /sessions/{id}/timeframe) and refreshes
+    // the chart via `resetData()` — preserving the period, with no full-screen
+    // spinner. A symbol change still starts a new session (new sessionId) and
+    // remounts, which is correct.
+    // TODO v2: postMessage widget.chart().setSymbol() to switch symbol without a full reload.
     <WebView
       ref={webviewRef}
-      key={`${symbol}-${interval}-${sessionId}`}
+      key={`${symbol}-${sessionId}`}
       source={{ uri: chartUrl }}
       style={styles.web}
       originWhitelist={['*']}
