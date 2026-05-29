@@ -20,6 +20,17 @@ export interface ChartBar {
 }
 
 /**
+ * A position to draw on the chart via the hosted `window.ptShowPosition`.
+ * `pnl` is the live unrealized P&L (colored on the line).
+ */
+export interface ChartPosition {
+  side: 'buy' | 'sell';
+  qty: number;
+  entry: number;
+  pnl: number;
+}
+
+/**
  * Imperative handle the parent (ChartScreen) drives via a ref to
  * append newly-revealed replay candles to the live chart.
  */
@@ -33,7 +44,32 @@ export interface TradingViewChartHandle {
    * the new-TF candles for the same period. No remount, no spinner.
    */
   resetData: () => void;
+  /**
+   * Phase 4B: trade lines drawn ON the chart (replacing the RN corner box).
+   * Each injects the corresponding hosted `window.ptXxx(...)` global, guarded
+   * against the global not yet existing (early call before the page bundle ran).
+   *  - showPosition: create-or-update the single position line at entry.
+   *  - showTP / showSL: create-or-update a draggable TP/SL order line.
+   *  - clearTrade: remove all three lines.
+   */
+  showPosition: (p: ChartPosition) => void;
+  showTP: (price: number) => void;
+  showSL: (price: number) => void;
+  clearTrade: () => void;
 }
+
+/**
+ * Typed bridge events the hosted chart posts that the parent acts on:
+ *  - tpMoved / slMoved: the user dragged a TP/SL line; `price` is the new value.
+ *  - closePosition: the user tapped the position line's close button.
+ *  - lineApiStatus: the one-shot runtime probe of whether createOrderLine /
+ *    createPositionLine actually work in this (Advanced Charts) bundle.
+ */
+export type ChartLineMessage =
+  | { type: 'tpMoved'; price: number }
+  | { type: 'slMoved'; price: number }
+  | { type: 'closePosition' }
+  | { type: 'lineApiStatus'; ok: boolean; detail?: string };
 
 /**
  * TradingView Advanced Charts host (Phase 2 — hosted Vercel URL + real datafeed).
@@ -64,10 +100,16 @@ interface Props {
    * just a getBars re-fetch.
    */
   onIntervalChange?: (interval: string) => void;
+  /**
+   * Phase 4B: fired for the trade-line bridge events the hosted page posts
+   * (tpMoved / slMoved / closePosition / lineApiStatus). The parent wires
+   * these to update_stops, close, and the line-API availability note.
+   */
+  onLineMessage?: (msg: ChartLineMessage) => void;
 }
 
 function TradingViewChart(
-  { symbol, interval, sessionId, onIntervalChange }: Props,
+  { symbol, interval, sessionId, onIntervalChange, onLineMessage }: Props,
   ref: React.Ref<TradingViewChartHandle>,
 ) {
   const webviewRef = useRef<WebView>(null);
@@ -90,6 +132,24 @@ function TradingViewChart(
       resetData: () => {
         webviewRef.current?.injectJavaScript('window.ptResetData && window.ptResetData(); true;');
       },
+      showPosition: (p: ChartPosition) => {
+        webviewRef.current?.injectJavaScript(
+          'if (window.ptShowPosition) { window.ptShowPosition(' + JSON.stringify(p) + '); } true;',
+        );
+      },
+      showTP: (price: number) => {
+        webviewRef.current?.injectJavaScript(
+          'if (window.ptShowTP) { window.ptShowTP(' + JSON.stringify(price) + '); } true;',
+        );
+      },
+      showSL: (price: number) => {
+        webviewRef.current?.injectJavaScript(
+          'if (window.ptShowSL) { window.ptShowSL(' + JSON.stringify(price) + '); } true;',
+        );
+      },
+      clearTrade: () => {
+        webviewRef.current?.injectJavaScript('window.ptClearTrade && window.ptClearTrade(); true;');
+      },
     }),
     [],
   );
@@ -108,15 +168,38 @@ function TradingViewChart(
     } catch {
       return; // non-JSON log line — already logged above
     }
-    if (
-      parsed &&
-      typeof parsed === 'object' &&
-      (parsed as { type?: unknown }).type === 'intervalChanged'
-    ) {
+    if (!parsed || typeof parsed !== 'object') return;
+    const type = (parsed as { type?: unknown }).type;
+
+    if (type === 'intervalChanged') {
       const next = (parsed as { interval?: unknown }).interval;
       if (typeof next === 'string' && next) {
         onIntervalChange?.(next);
       }
+      return;
+    }
+
+    // Phase 4B trade-line bridge events. Forward the typed ones to the parent.
+    if (type === 'tpMoved' || type === 'slMoved') {
+      const price = (parsed as { price?: unknown }).price;
+      if (typeof price === 'number') {
+        onLineMessage?.({ type, price });
+      }
+      return;
+    }
+    if (type === 'closePosition') {
+      onLineMessage?.({ type: 'closePosition' });
+      return;
+    }
+    if (type === 'lineApiStatus') {
+      const ok = (parsed as { ok?: unknown }).ok;
+      const detail = (parsed as { detail?: unknown }).detail;
+      onLineMessage?.({
+        type: 'lineApiStatus',
+        ok: !!ok,
+        detail: typeof detail === 'string' ? detail : undefined,
+      });
+      return;
     }
   };
 

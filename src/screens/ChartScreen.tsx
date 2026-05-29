@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import TradingViewChart, {
   type ChartBar,
+  type ChartLineMessage,
   type TradingViewChartHandle,
 } from '../components/charts/TradingViewChart';
 import SymbolPickerSheet from '../components/SymbolPickerSheet';
@@ -17,14 +18,26 @@ import { useAuthStore } from '../store/authStore';
 
 /**
  * An open replay position as returned by POST /sessions/{id}/trade
- * (action:"open"). We only need a subset for the readout + close call.
+ * (action:"open"). We track tp/sl locally so drag-to-adjust can sync them
+ * back to the backend via the `update_stops` action and keep the chart lines
+ * in sync.
  */
 interface OpenPosition {
   id: string;
   side: 'buy' | 'sell';
   lots: number;
   entry_price: number;
+  stop_loss: number | null;
+  take_profit: number | null;
 }
+
+/**
+ * Default TP/SL offset as a fraction of entry (~0.25%). Scales sensibly across
+ * instruments. Side rules (applied at open):
+ *   LONG  (buy):  TP ABOVE entry (entry * 1+OFFSET), SL BELOW (entry * 1−OFFSET)
+ *   SHORT (sell): TP BELOW entry (entry * 1−OFFSET), SL ABOVE (entry * 1+OFFSET)
+ */
+const STOP_OFFSET = 0.0025;
 
 /**
  * ChartScreen — the live Chart tab. Hosts the TradingView WebView
@@ -187,6 +200,32 @@ export default function ChartScreen() {
   // for now. null = flat.
   const [position, setPosition] = useState<OpenPosition | null>(null);
   const [tradeBusy, setTradeBusy] = useState(false);
+
+  // Phase 4B: position + TP/SL now render as TradingView lines (no corner box).
+  //  - lineApiUnavailable: set true if the hosted page reports the line API is
+  //    gated out of the Advanced Charts bundle (lineApiStatus ok:false). Drives
+  //    a tiny inline note so the user knows lines won't appear — but trading
+  //    still works (entry/close/P&L are backend-driven).
+  //  - tradeResult: a BRIEF realized-P&L line shown after an auto-close (TP/SL
+  //    hit on advance) or manual close. Auto-clears after a few seconds.
+  const [lineApiUnavailable, setLineApiUnavailable] = useState(false);
+  const [tradeResult, setTradeResult] = useState<string | null>(null);
+  const tradeResultTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Show a brief realized-P&L result line, auto-clearing after 4s. Reused by
+  // both auto-close (TP/SL hit) and manual close.
+  const flashResult = useCallback((text: string) => {
+    setTradeResult(text);
+    if (tradeResultTimer.current) clearTimeout(tradeResultTimer.current);
+    tradeResultTimer.current = setTimeout(() => setTradeResult(null), 4000);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (tradeResultTimer.current) clearTimeout(tradeResultTimer.current);
+    },
+    [],
+  );
 
   // Start a fresh replay session whenever the symbol or interval changes.
   // The `cancelled` guard drops a slow response from a stale symbol so it
@@ -359,6 +398,9 @@ export default function ChartScreen() {
     setPosition(null);
     setQty(1);
     setTradeBusy(false);
+    // Clear any leftover trade lines + transient result from the prior session.
+    chartRef.current?.clearTrade();
+    setTradeResult(null);
   }, [sessionId]);
 
   // Advance the replay `count` bar(s) and append the newly-revealed candle(s)
@@ -402,18 +444,41 @@ export default function ChartScreen() {
 
         // Track the current revealed price = the last newly-revealed close.
         // This drives the live unrealized P&L readout (recomputed on render).
+        const newPrice =
+          candles.length > 0 ? candles[candles.length - 1].close : currentPrice;
         if (candles.length > 0) {
           setCurrentPrice(candles[candles.length - 1].close);
         }
 
         // auto_closed: positions stopped/targeted out as bars revealed. Keep
-        // the existing log. ALSO: if our open position's id appears, clear it
-        // (it was closed server-side). End-of-data shape omits the key → [].
+        // the existing log. If our open position's id appears, it was closed
+        // server-side (TP/SL hit) — clear the chart lines and flash the brief
+        // realized result. End-of-data shape omits the key → [].
         const autoClosed: any[] = Array.isArray(data?.auto_closed) ? data.auto_closed : [];
         // eslint-disable-next-line no-console
         console.log('[advance] auto_closed', autoClosed);
-        if (position && autoClosed.some((t) => t?.position_id === position.id)) {
+        const mine = position
+          ? autoClosed.find((t) => t?.position_id === position.id)
+          : null;
+        if (mine) {
           setPosition(null);
+          chartRef.current?.clearTrade();
+          const pnl = typeof mine.pnl === 'number' ? mine.pnl : 0;
+          const hitLabel = mine.hit === 'tp' ? 'TP hit' : mine.hit === 'sl' ? 'SL hit' : 'Closed';
+          flashResult(`${hitLabel} ${pnl >= 0 ? '+' : '-'}$${Math.abs(pnl).toFixed(2)}`);
+        } else if (position && newPrice != null) {
+          // Position still open — refresh the line's P&L for the new price.
+          const pnl =
+            (newPrice - position.entry_price) *
+            (position.side === 'buy' ? 1 : -1) *
+            contractSize *
+            position.lots;
+          chartRef.current?.showPosition({
+            side: position.side,
+            qty: position.lots,
+            entry: position.entry_price,
+            pnl,
+          });
         }
 
         if (data?.done === true) setDone(true);
@@ -426,7 +491,7 @@ export default function ChartScreen() {
         setAdvancing(false);
       }
     },
-    [sessionId, advancing, done, position],
+    [sessionId, advancing, done, position, currentPrice, contractSize, flashResult],
   );
 
   // Open a position. Buy = LONG (side:"buy"), Sell = SHORT (side:"sell").
@@ -439,6 +504,16 @@ export default function ChartScreen() {
       if (currentPrice == null) return;
       setTradeBusy(true);
       setAdvanceError(null);
+
+      // Default TP/SL at ~0.25% of entry, placed on the correct sides. The
+      // backend accepts stop_loss/take_profit at open, so we send the defaults
+      // in the open body (no separate update_stops needed on entry).
+      const entry = currentPrice;
+      const up = entry * (1 + STOP_OFFSET);
+      const down = entry * (1 - STOP_OFFSET);
+      const takeProfit = side === 'buy' ? up : down;
+      const stopLoss = side === 'buy' ? down : up;
+
       try {
         const res = await fetch(`${CHART_BACKEND_URL}/sessions/${sessionId}/trade`, {
           method: 'POST',
@@ -447,18 +522,29 @@ export default function ChartScreen() {
             action: 'open',
             side,
             lots: qty,
-            entry_price: currentPrice,
+            entry_price: entry,
+            stop_loss: stopLoss,
+            take_profit: takeProfit,
           }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         if (data?.position) {
-          setPosition({
+          const p: OpenPosition = {
             id: data.position.id,
             side: data.position.side,
             lots: data.position.lots,
             entry_price: data.position.entry_price,
-          });
+            stop_loss: data.position.stop_loss ?? stopLoss,
+            take_profit: data.position.take_profit ?? takeProfit,
+          };
+          setPosition(p);
+          // Draw the position line + draggable TP/SL on the chart. P&L starts
+          // at 0 (entry == current price). These no-op gracefully if the line
+          // API is gated (the hosted page reports lineApiStatus ok:false).
+          chartRef.current?.showPosition({ side: p.side, qty: p.lots, entry: p.entry_price, pnl: 0 });
+          if (p.take_profit != null) chartRef.current?.showTP(p.take_profit);
+          if (p.stop_loss != null) chartRef.current?.showSL(p.stop_loss);
         }
       } catch (err: any) {
         setAdvanceError(
@@ -490,6 +576,12 @@ export default function ChartScreen() {
       // eslint-disable-next-line no-console
       console.log('[trade] closed', data?.trade);
       setPosition(null);
+      // Clear the chart lines and flash the realized P&L.
+      chartRef.current?.clearTrade();
+      const pnl = typeof data?.trade?.pnl === 'number' ? data.trade.pnl : null;
+      if (pnl != null) {
+        flashResult(`Closed ${pnl >= 0 ? '+' : '-'}$${Math.abs(pnl).toFixed(2)}`);
+      }
     } catch (err: any) {
       setAdvanceError(
         err && err.message ? `Couldn't close: ${err.message}` : 'Couldn’t close position',
@@ -497,19 +589,61 @@ export default function ChartScreen() {
     } finally {
       setTradeBusy(false);
     }
-  }, [sessionId, position, tradeBusy]);
+  }, [sessionId, position, tradeBusy, flashResult]);
 
-  // Live unrealized P&L — matches the backend's realized math. Backend:
-  //   pips = (exit - entry) / pip * dir;  pnl = pips * pip * contractSize * lots
-  // The `pip` cancels, so: (currentPrice - entry) * dir * contractSize * lots,
-  // where dir = +1 for a long (buy) and -1 for a short (sell). null while flat.
-  const unrealizedPnl =
-    position && currentPrice != null
-      ? (currentPrice - position.entry_price) *
-        (position.side === 'buy' ? 1 : -1) *
-        contractSize *
-        position.lots
-      : null;
+  // Drag-to-adjust: a TP/SL line was moved on the chart. Persist the new stop
+  // to the backend via the STEP-0 `update_stops` action (only the moved stop is
+  // sent — the omitted one is left untouched server-side) and keep RN's local
+  // tp/sl state in sync so close/auto-close math and re-renders agree.
+  const updateStop = useCallback(
+    async (which: 'stop_loss' | 'take_profit', price: number) => {
+      if (!sessionId || !position) return;
+      // Optimistic local sync first so the readout/state is immediately correct.
+      setPosition((prev) =>
+        prev && prev.id === position.id ? { ...prev, [which]: price } : prev,
+      );
+      try {
+        const res = await fetch(`${CHART_BACKEND_URL}/sessions/${sessionId}/trade`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'update_stops',
+            position_id: position.id,
+            [which]: price,
+          }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      } catch (err: any) {
+        setAdvanceError(
+          err && err.message ? `Couldn't update stop: ${err.message}` : 'Couldn’t update stop',
+        );
+      }
+    },
+    [sessionId, position],
+  );
+
+  // Bridge events from the hosted chart lines: drag → update_stops; close
+  // button → close; lineApiStatus → availability note.
+  const onLineMessage = useCallback(
+    (msg: ChartLineMessage) => {
+      if (msg.type === 'tpMoved') {
+        updateStop('take_profit', msg.price);
+      } else if (msg.type === 'slMoved') {
+        updateStop('stop_loss', msg.price);
+      } else if (msg.type === 'closePosition') {
+        closePosition();
+      } else if (msg.type === 'lineApiStatus') {
+        if (!msg.ok) {
+          // eslint-disable-next-line no-console
+          console.warn('[TVChart] line API unavailable (gated):', msg.detail);
+          setLineApiUnavailable(true);
+        } else {
+          setLineApiUnavailable(false);
+        }
+      }
+    },
+    [updateStop, closePosition],
+  );
 
   // One-at-a-time gate: Buy/Sell + the stepper are disabled while a position
   // is open or a trade request is in flight.
@@ -588,77 +722,44 @@ export default function ChartScreen() {
                 a real layout sibling below (not a floating overlay), so the
                 chart is slightly shorter than full-bleed by design. */}
             <View style={styles.chartFill}>
+              {/* Phase 4B: the position + TP/SL now render as TradingView
+                  lines ON the chart (via the imperative handle). The old
+                  top-left corner readout box is gone. Live P&L updates on the
+                  position line on every advance; drag the TP/SL lines to adjust
+                  (synced to the backend via update_stops). */}
               <TradingViewChart
                 ref={chartRef}
                 symbol={selectedSymbol}
                 interval={selectedInterval}
                 sessionId={sessionId}
                 onIntervalChange={handleIntervalChange}
+                onLineMessage={onLineMessage}
               />
-
-              {/* Position readout — compact overlay top-left of the chart,
-                  positioned UNDER the TV toolbar so it doesn't cover it.
-                  Hidden when flat. Recomputes its P&L on every render, so it
-                  updates whenever currentPrice changes (each advance). */}
-              {position && (
-                <View style={styles.readout} pointerEvents="box-none">
-                  <View style={styles.readoutRow}>
-                    <Text
-                      style={[
-                        styles.readoutSide,
-                        { color: position.side === 'buy' ? colors.green : colors.red },
-                      ]}
-                    >
-                      {position.side === 'buy' ? 'LONG' : 'SHORT'}
-                    </Text>
-                    <NumericText style={styles.readoutQty}>
-                      {`${position.lots} ${selectedSymbol}`}
-                    </NumericText>
-                  </View>
-                  <View style={styles.readoutRow}>
-                    <Text style={styles.readoutMetaLabel}>@</Text>
-                    <NumericText style={styles.readoutEntry}>
-                      {position.entry_price}
-                    </NumericText>
-                  </View>
-                  <NumericText
-                    bold
-                    style={[
-                      styles.readoutPnl,
-                      { color: (unrealizedPnl ?? 0) >= 0 ? colors.green : colors.red },
-                    ]}
-                  >
-                    {`${(unrealizedPnl ?? 0) >= 0 ? '+' : '-'}$${Math.abs(
-                      unrealizedPnl ?? 0,
-                    ).toFixed(2)}`}
-                  </NumericText>
-                  <Pressable
-                    onPress={closePosition}
-                    disabled={tradeBusy}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    style={({ pressed }) => [
-                      styles.closeBtn,
-                      pressed && !tradeBusy && styles.actionBtnPressed,
-                      tradeBusy && styles.actionBtnDisabled,
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityLabel="Close position"
-                  >
-                    <Text style={styles.closeBtnLabel}>Close</Text>
-                  </Pressable>
-                </View>
-              )}
             </View>
 
             {/* Thin status strip directly above the action row. Takes zero
                 height when there's nothing to show, so the row stays put.
-                advanceError wins over the end-of-session note when both
-                could apply (an error is the more urgent signal). */}
-            {(advanceError || done) && (
+                Priority: advanceError > tradeResult (realized close/TP/SL) >
+                lineApiUnavailable note > end-of-session. */}
+            {(advanceError || tradeResult || lineApiUnavailable || done) && (
               <View style={styles.statusStrip}>
                 {advanceError ? (
                   <Text style={styles.advanceErrorText} numberOfLines={1}>
                     {advanceError}
+                  </Text>
+                ) : tradeResult ? (
+                  <Text
+                    style={[
+                      styles.tradeResultText,
+                      { color: tradeResult.includes('-$') ? colors.red : colors.green },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {tradeResult}
+                  </Text>
+                ) : lineApiUnavailable ? (
+                  <Text style={styles.endOfSessionText} numberOfLines={1}>
+                    Chart lines unavailable on this build — trading still works
                   </Text>
                 ) : (
                   <Text style={styles.endOfSessionText} numberOfLines={1}>
@@ -675,6 +776,25 @@ export default function ChartScreen() {
                 stepper are gated to one-at-a-time (disabled while a position
                 is open). Next Bar + FF share the single `advance()` path. */}
             <View style={styles.actionRow}>
+              {/* Compact close affordance — only shown while a position is
+                  open (replaces the old big corner box's Close button). */}
+              {position && (
+                <Pressable
+                  onPress={closePosition}
+                  disabled={tradeBusy}
+                  hitSlop={6}
+                  style={({ pressed }) => [
+                    styles.closeChip,
+                    pressed && !tradeBusy && styles.actionBtnPressed,
+                    tradeBusy && styles.actionBtnDisabled,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close position"
+                >
+                  <Ionicons name="close" size={14} color={colors.textPrimary} />
+                  <Text style={styles.closeChipLabel}>Close</Text>
+                </Pressable>
+              )}
               <ActionButton
                 label="Sell"
                 bg={colors.red}
@@ -785,6 +905,12 @@ const styles = StyleSheet.create({
     color: colors.red,
     fontSize: 13,
   },
+  // Brief realized-P&L result after a close / TP-SL auto-close. Green/red set
+  // inline based on the sign.
+  tradeResultText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
   // Full-width bottom action row — a real layout sibling below the chart,
   // above the app tab bar. Sell / Buy / Next Bar flex equally; FF is fixed.
   actionRow: {
@@ -838,58 +964,21 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // Position readout — absolute overlay, top-left of the chart area, offset
-  // down so it sits UNDER the TV toolbar (which lives at the top of the
-  // WebView). Hidden when flat.
-  readout: {
-    position: 'absolute',
-    top: 48,
-    left: 8,
-    backgroundColor: 'rgba(0,0,0,0.72)',
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    minWidth: 120,
-  },
-  readoutRow: {
+  // Compact close affordance in the action row — only shown while a position
+  // is open. Replaces the old big corner readout box's Close button.
+  closeChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-  },
-  readoutSide: {
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.4,
-  },
-  readoutQty: {
-    color: colors.textPrimary,
-    fontSize: 12,
-  },
-  readoutMetaLabel: {
-    color: colors.textSecondary,
-    fontSize: 11,
-  },
-  readoutEntry: {
-    color: colors.textSecondary,
-    fontSize: 12,
-  },
-  readoutPnl: {
-    marginTop: 4,
-    fontSize: 16,
-  },
-  closeBtn: {
-    marginTop: 8,
-    alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 8,
+    justifyContent: 'center',
+    gap: 3,
+    height: 41,
+    paddingHorizontal: 10,
+    borderRadius: 11,
     backgroundColor: colors.cardAlt,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  closeBtnLabel: {
+  closeChipLabel: {
     color: colors.textPrimary,
     fontSize: 12,
     fontWeight: '700',
