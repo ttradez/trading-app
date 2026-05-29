@@ -234,7 +234,7 @@ class AdvanceRequest(BaseModel):
 
 
 class TradeRequest(BaseModel):
-    action: str                       # "open" | "close"
+    action: str                       # "open" | "close" | "update_stops"
     side: Optional[str] = None        # "buy" | "sell"
     lots: Optional[float] = None
     stop_loss: Optional[float] = None
@@ -746,8 +746,37 @@ def place_trade(session_id: str, req: TradeRequest):
         conn.close()
         return {"trade": trade, "balance": round(balance, 2)}
 
+    elif req.action == "update_stops":
+        # Adjust SL/TP on an already-open position (drag-to-adjust from the
+        # chart's TP/SL lines). Mutates the position in the open_positions
+        # JSON blob and persists. Only the stop(s) explicitly present in the
+        # request body are changed — a field omitted from the request is left
+        # untouched (so moving just the SL doesn't wipe the TP). pydantic's
+        # `model_fields_set` is the set of fields the client actually sent.
+        if not req.position_id:
+            conn.close()
+            raise HTTPException(status_code=400, detail="position_id required")
+        pos = next((p for p in positions if p["id"] == req.position_id), None)
+        if not pos:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Position not found")
+
+        sent = req.model_fields_set
+        if "stop_loss" in sent:
+            pos["stop_loss"] = req.stop_loss
+        if "take_profit" in sent:
+            pos["take_profit"] = req.take_profit
+
+        conn.execute(
+            "UPDATE trading_sessions SET open_positions = ? WHERE session_id = ?",
+            (json.dumps(positions), session_id),
+        )
+        conn.commit()
+        conn.close()
+        return {"position": pos}
+
     conn.close()
-    raise HTTPException(status_code=400, detail="action must be 'open' or 'close'")
+    raise HTTPException(status_code=400, detail="action must be 'open', 'close', or 'update_stops'")
 
 
 @app.post("/sessions/{session_id}/end")
