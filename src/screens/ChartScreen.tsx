@@ -9,6 +9,7 @@ import Button from '../components/ui/Button';
 import { colors } from '../theme';
 import { CHART_BACKEND_URL } from '../config/chartBackend';
 import { tvIntervalToApiTimeframe } from '../lib/chartIntervals';
+import { useAuthStore } from '../store/authStore';
 
 /**
  * ChartScreen — the live Chart tab. Hosts the TradingView WebView
@@ -26,6 +27,14 @@ export default function ChartScreen() {
   const [selectedInterval] = useState('5');
   const [pickerOpen, setPickerOpen] = useState(false);
 
+  // The logged-in Firebase user. App.tsx's onAuthStateChanged listener
+  // writes this exact `uid` both into the auth store (setUser) AND into
+  // the backend `users` table (upsertUser) — so the value read here is
+  // guaranteed to match the FK target of trading_sessions.uid. Read
+  // reactively so a late async-auth hydration re-runs the effect below.
+  const uid = useAuthStore((s) => s.uid);
+  const username = useAuthStore((s) => s.username);
+
   // Replay session state. The chart only mounts once `sessionId` is set.
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
@@ -41,20 +50,32 @@ export default function ChartScreen() {
   useEffect(() => {
     let cancelled = false;
 
+    // Defensive fallback: in practice auth gates entry to MainTabs, so by
+    // the time the Chart tab mounts there's always a signed-in user. But if
+    // the uid hasn't resolved yet (async auth hydration) we must NOT call
+    // /sessions/start — the session's uid FKs to users(uid) and a missing/
+    // empty uid throws a FOREIGN KEY constraint 500. Leave sessionId null so
+    // the chart area shows the "Sign in to trade" state below. The effect
+    // re-runs once uid resolves (uid is in the dep array).
+    if (!uid) {
+      setSessionLoading(false);
+      setSessionError(null);
+      setSessionId(null);
+      return;
+    }
+
     setSessionLoading(true);
     setSessionError(null);
     // Clear the previous session id so the chart unmounts while the new
     // session is being created (avoids showing stale-symbol candles).
     setSessionId(null);
 
-    // TODO: wire real Firebase uid/username. They're one line away — the
-    // app already tracks the auth user in `useAuthStore` (src/store/authStore.ts):
-    //   const { uid, username } = useAuthStore.getState();
-    // (NOTE: state shape is flat — `uid`/`username` live on the store root,
-    // there is no `.user` wrapper.) Using placeholders per the 3B-1 spec.
+    // Real logged-in Firebase identity. App.tsx syncs this same uid to the
+    // backend `users` table via upsertUser, so it satisfies the FK on
+    // trading_sessions.uid.
     const body = {
-      uid: 'dev_user',
-      username: 'Dev',
+      uid,
+      username,
       symbol: selectedSymbol,
       timeframe: tvIntervalToApiTimeframe(selectedInterval),
       account_size: 50000,
@@ -88,7 +109,7 @@ export default function ChartScreen() {
     return () => {
       cancelled = true;
     };
-  }, [selectedSymbol, selectedInterval, sessionAttempt]);
+  }, [selectedSymbol, selectedInterval, sessionAttempt, uid, username]);
 
   const retrySession = useCallback(() => {
     setSessionAttempt((n) => n + 1);
@@ -111,13 +132,19 @@ export default function ChartScreen() {
       </View>
 
       <View style={styles.chartWrap}>
-        {sessionLoading && (
+        {!uid && (
+          <View style={styles.chartCenter}>
+            <Text style={styles.signInText}>Sign in to trade</Text>
+          </View>
+        )}
+
+        {uid && sessionLoading && (
           <View style={styles.chartCenter}>
             <ActivityIndicator size="large" color={colors.gold} />
           </View>
         )}
 
-        {!sessionLoading && sessionError && (
+        {uid && !sessionLoading && sessionError && (
           <View style={styles.chartCenter}>
             <Text style={styles.errorText}>{sessionError}</Text>
             <Button
@@ -129,7 +156,7 @@ export default function ChartScreen() {
           </View>
         )}
 
-        {!sessionLoading && !sessionError && sessionId && (
+        {uid && !sessionLoading && !sessionError && sessionId && (
           <TradingViewChart
             symbol={selectedSymbol}
             interval={selectedInterval}
@@ -188,6 +215,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     marginBottom: 16,
+  },
+  signInText: {
+    color: 'rgba(255,255,255,0.60)',
+    fontSize: 14,
+    textAlign: 'center',
   },
   retryBtn: {
     minWidth: 140,
