@@ -25,6 +25,55 @@ import { useAuthStore } from '../store/authStore';
  * reads session candles from GET /sessions/{id}. Next Bar (3B-2) and
  * date-anonymity (3B-1b) build on this foundation but are not in scope.
  */
+
+/**
+ * One cell of the bottom action row. `label` and `icon` are both
+ * optional: Sell/Buy/Next Bar are text, FF is icon-only. Flexed cells
+ * (`flex`) share the remaining width; FF uses a fixed compact width.
+ */
+function ActionButton({
+  label,
+  icon,
+  bg,
+  textColor,
+  onPress,
+  disabled,
+  flex,
+  fixedWidth,
+  accessibilityLabel,
+}: {
+  label?: string;
+  icon?: keyof typeof Ionicons.glyphMap;
+  bg: string;
+  textColor: string;
+  onPress: () => void;
+  disabled?: boolean;
+  flex?: number;
+  fixedWidth?: number;
+  accessibilityLabel?: string;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [
+        styles.actionBtn,
+        { backgroundColor: bg },
+        flex != null && { flex },
+        fixedWidth != null && { width: fixedWidth },
+        pressed && !disabled && styles.actionBtnPressed,
+        disabled && styles.actionBtnDisabled,
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityState={{ disabled: !!disabled }}
+    >
+      {icon ? <Ionicons name={icon} size={18} color={textColor} /> : null}
+      {label ? <Text style={[styles.actionLabel, { color: textColor }]}>{label}</Text> : null}
+    </Pressable>
+  );
+}
+
 export default function ChartScreen() {
   const [selectedSymbol, setSelectedSymbol] = useState('NQ');
   const [selectedInterval] = useState('5');
@@ -139,69 +188,103 @@ export default function ChartScreen() {
     setAdvancing(false);
   }, [sessionId]);
 
-  // Advance the replay one bar and append the newly-revealed candle(s) to the
-  // chart. The advance API returns one of two shapes:
+  // Advance the replay `count` bar(s) and append the newly-revealed candle(s)
+  // to the chart. Single reusable path for BOTH Next Bar (count:1) and FF
+  // (count:5) — no duplicate advance logic. The advance API returns one of
+  // two shapes:
   //   normal:      { candles: [...newly revealed], done: false, auto_closed: [...] }
   //   end-of-data: { candles: [], done: true }   ← no `auto_closed` key
-  // We push every candle in `candles` (usually one) and flip `done` when the
-  // server says so. `auto_closed` is logged only — trade UI is out of scope.
-  const advanceBar = useCallback(async () => {
-    if (!sessionId || advancing || done) return; // debounce + end-of-data guard
+  // We push every candle in `candles` and flip `done` when the server says so.
+  // `auto_closed` is logged only — trade UI is out of scope.
+  //
+  // The `advancing` in-flight guard covers BOTH callers: while a request is
+  // outstanding, a second Next Bar / FF tap is ignored so we can't double-fire.
+  const advance = useCallback(
+    async (count: number) => {
+      if (!sessionId || advancing || done) return; // debounce + end-of-data guard
 
-    setAdvancing(true);
-    setAdvanceError(null);
-    try {
-      const res = await fetch(`${CHART_BACKEND_URL}/sessions/${sessionId}/advance`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ count: 1 }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+      setAdvancing(true);
+      setAdvanceError(null);
+      try {
+        const res = await fetch(`${CHART_BACKEND_URL}/sessions/${sessionId}/advance`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ count }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
 
-      const candles: any[] = Array.isArray(data?.candles) ? data.candles : [];
-      for (const c of candles) {
-        const bar: ChartBar = {
-          time: c.time * 1000, // API unix seconds → TV ms
-          open: c.open,
-          high: c.high,
-          low: c.low,
-          close: c.close,
-          volume: c.volume,
-        };
-        chartRef.current?.pushBar(bar);
+        const candles: any[] = Array.isArray(data?.candles) ? data.candles : [];
+        for (const c of candles) {
+          const bar: ChartBar = {
+            time: c.time * 1000, // API unix seconds → TV ms
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume,
+          };
+          chartRef.current?.pushBar(bar);
+        }
+
+        // auto_closed is out of scope this phase — log and move on. The
+        // end-of-data shape omits the key, so default to [] (no choke).
+        // eslint-disable-next-line no-console
+        console.log('[advance] auto_closed', data?.auto_closed ?? []);
+
+        if (data?.done === true) setDone(true);
+      } catch (err: any) {
+        // Non-crashing: surface a brief message, keep the button usable.
+        setAdvanceError(
+          err && err.message ? `Couldn't advance: ${err.message}` : 'Couldn’t advance',
+        );
+      } finally {
+        setAdvancing(false);
       }
-
-      // auto_closed is out of scope this phase — log and move on. The
-      // end-of-data shape omits the key, so default to [] (no choke).
-      // eslint-disable-next-line no-console
-      console.log('[advance] auto_closed', data?.auto_closed ?? []);
-
-      if (data?.done === true) setDone(true);
-    } catch (err: any) {
-      // Non-crashing: surface a brief message, keep the button usable.
-      setAdvanceError(
-        err && err.message ? `Couldn't advance: ${err.message}` : 'Couldn’t advance',
-      );
-    } finally {
-      setAdvancing(false);
-    }
-  }, [sessionId, advancing, done]);
+    },
+    [sessionId, advancing, done],
+  );
 
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.symbol}>{selectedSymbol}</Text>
-        <Pressable
-          onPress={() => setPickerOpen(true)}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          style={styles.watchlistBtn}
-          accessibilityRole="button"
-          accessibilityLabel="Open watchlist"
-        >
-          <Ionicons name="bookmarks-outline" size={20} color={colors.gold} />
-          <Text style={styles.watchlistLabel}>Watchlist</Text>
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable
+            onPress={() => {
+              /* Phase 3D: news for current replay date */
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={styles.headerIconBtn}
+            accessibilityRole="button"
+            accessibilityLabel="News"
+          >
+            <Ionicons name="newspaper-outline" size={22} color="rgba(255,255,255,0.6)" />
+          </Pressable>
+
+          <Pressable
+            onPress={() => {
+              /* Phase 3C: Asia/London/NY session zone selector */
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={styles.headerIconBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Session"
+          >
+            <Ionicons name="time-outline" size={22} color="rgba(255,255,255,0.6)" />
+          </Pressable>
+
+          <Pressable
+            onPress={() => setPickerOpen(true)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={styles.watchlistBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Open watchlist"
+          >
+            <Ionicons name="bookmarks-outline" size={20} color={colors.gold} />
+            <Text style={styles.watchlistLabel}>Watchlist</Text>
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.chartWrap}>
@@ -231,9 +314,9 @@ export default function ChartScreen() {
 
         {uid && !sessionLoading && !sessionError && sessionId && (
           <View style={styles.chartLayout}>
-            {/* Chart fills ALL vertical space; the advance controls float
-                over its bottom as an absolute overlay (see advanceRow) so
-                they don't steal chart height. */}
+            {/* Chart fills the space above the bottom action row. The row is
+                a real layout sibling below (not a floating overlay), so the
+                chart is slightly shorter than full-bleed by design. */}
             <View style={styles.chartFill}>
               <TradingViewChart
                 ref={chartRef}
@@ -243,39 +326,67 @@ export default function ChartScreen() {
               />
             </View>
 
-            {/* Compact floating control row, absolutely positioned over the
-                chart's bottom edge. Left side reserved for Phase 4 position
-                buttons; Next Bar is right-aligned via marginLeft:'auto'. The
-                End-of-session / advanceError text sits left-aligned in the
-                row so it stays visible (not clipped behind the button). */}
-            <View style={styles.advanceRow}>
-              {/* Phase 4: Buy / Sell position buttons go here */}
+            {/* Thin status strip directly above the action row. Takes zero
+                height when there's nothing to show, so the row stays put.
+                advanceError wins over the end-of-session note when both
+                could apply (an error is the more urgent signal). */}
+            {(advanceError || done) && (
+              <View style={styles.statusStrip}>
+                {advanceError ? (
+                  <Text style={styles.advanceErrorText} numberOfLines={1}>
+                    {advanceError}
+                  </Text>
+                ) : (
+                  <Text style={styles.endOfSessionText} numberOfLines={1}>
+                    End of session
+                  </Text>
+                )}
+              </View>
+            )}
 
-              {advanceError ? (
-                <Text style={styles.advanceErrorText} numberOfLines={1}>
-                  {advanceError}
-                </Text>
-              ) : done ? (
-                <Text style={styles.endOfSessionText} numberOfLines={1}>
-                  End of session
-                </Text>
-              ) : null}
-
-              <Pressable
-                onPress={advanceBar}
+            {/* Bottom action row — full-width, pinned below the chart and
+                above the app tab bar. Sell / Buy / Next Bar flex; FF is a
+                fixed compact icon button. Next Bar + FF share the single
+                `advance()` path (counts 1 and 5). */}
+            <View style={styles.actionRow}>
+              <ActionButton
+                label="Sell"
+                bg={colors.red}
+                textColor={colors.textPrimary}
+                flex={1}
+                accessibilityLabel="Sell"
+                onPress={() => {
+                  /* Phase 4: open short/sell position */
+                }}
+              />
+              <ActionButton
+                label="Buy"
+                bg={colors.green}
+                textColor={colors.textInverse}
+                flex={1}
+                accessibilityLabel="Buy"
+                onPress={() => {
+                  /* Phase 4: open long/buy position */
+                }}
+              />
+              <ActionButton
+                label="Next Bar"
+                bg={colors.gold}
+                textColor={colors.textInverse}
+                flex={1}
                 disabled={done || advancing}
-                style={({ pressed }) => [
-                  styles.nextBarBtn,
-                  pressed && !done && !advancing && styles.nextBarBtnPressed,
-                  (done || advancing) && styles.nextBarBtnDisabled,
-                ]}
-                accessibilityRole="button"
                 accessibilityLabel="Advance to next bar"
-                accessibilityState={{ disabled: done || advancing }}
-              >
-                <Ionicons name="play-skip-forward" size={16} color={colors.textInverse} />
-                <Text style={styles.nextBarLabel}>Next Bar</Text>
-              </Pressable>
+                onPress={() => advance(1)}
+              />
+              <ActionButton
+                icon="play-forward"
+                bg={colors.gold}
+                textColor={colors.textInverse}
+                fixedWidth={52}
+                disabled={done || advancing}
+                accessibilityLabel="Fast-forward five bars"
+                onPress={() => advance(5)}
+              />
             </View>
           </View>
         )}
@@ -309,6 +420,17 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: -0.3,
   },
+  // Right-side header cluster: News + Session icon buttons followed by the
+  // gold Watchlist button. Small gaps keep tap targets distinct.
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  headerIconBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   watchlistBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -320,55 +442,47 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   chartWrap: { flex: 1 },
-  // The chart fills the whole area; the advance controls float over its
-  // bottom as an absolute overlay (advanceRow) so they steal no height.
+  // Vertical stack: chart (flex) → status strip (auto) → action row (auto).
   chartLayout: { flex: 1 },
   chartFill: { flex: 1 },
-  // Compact floating control row over the chart's bottom edge. Small insets
-  // keep it light and minimize occlusion of the time axis below. Next Bar is
-  // pushed to the right via its own marginLeft:'auto'; the left side is free
-  // for Phase 4 position buttons. No backing panel — keep it a light float.
-  advanceRow: {
-    position: 'absolute',
-    left: 12,
-    right: 12,
-    bottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  // Compact gold pill (~35% smaller than the 52pt 3B-2 button): keeps the
-  // gold fill + black text + leading icon, just tighter padding/typography.
-  nextBarBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 'auto',
-    paddingVertical: 10,
+  // Thin status strip above the action row — only rendered when there's
+  // something to show, so it costs zero height otherwise.
+  statusStrip: {
     paddingHorizontal: 16,
-    borderRadius: 999,
-    backgroundColor: colors.gold,
-    gap: 6,
+    paddingTop: 4,
+    paddingBottom: 2,
   },
-  nextBarBtnPressed: { opacity: 0.85 },
-  nextBarBtnDisabled: { opacity: 0.5 },
-  nextBarLabel: {
-    color: colors.textInverse,
-    fontSize: 15,
-    fontWeight: '600',
-    letterSpacing: 0.2,
-  },
-  // End-of-session / error text: left-aligned in the row, allowed to shrink
-  // so the floating button is never pushed off-screen.
   endOfSessionText: {
-    flexShrink: 1,
     color: 'rgba(255,255,255,0.50)',
     fontSize: 13,
   },
   advanceErrorText: {
-    flexShrink: 1,
     color: colors.red,
     fontSize: 13,
+  },
+  // Full-width bottom action row — a real layout sibling below the chart,
+  // above the app tab bar. Sell / Buy / Next Bar flex equally; FF is fixed.
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 48,
+    borderRadius: 12,
+    gap: 6,
+  },
+  actionBtnPressed: { opacity: 0.85 },
+  actionBtnDisabled: { opacity: 0.5 },
+  actionLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   chartCenter: {
     ...StyleSheet.absoluteFillObject,
