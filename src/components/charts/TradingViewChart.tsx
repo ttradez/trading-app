@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet } from 'react-native';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { colors } from '../../theme';
-import { BASE_URL } from '../../services/api';
+import { CHART_BACKEND_URL } from '../../config/chartBackend';
 
 /**
  * TradingView Advanced Charts host (Phase 2 — hosted Vercel URL + real datafeed).
@@ -28,7 +28,7 @@ export default function TradingViewChart({ symbol, interval }: Props) {
   };
 
   const chartUrl =
-    'https://pt-chart-host.vercel.app/?backend=' + encodeURIComponent(BASE_URL) +
+    'https://pt-chart-host.vercel.app/?backend=' + encodeURIComponent(CHART_BACKEND_URL) +
     '&symbol=' + encodeURIComponent(symbol ?? 'NQ') +
     '&interval=' + encodeURIComponent(interval ?? '5');
 
