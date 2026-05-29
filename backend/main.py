@@ -138,14 +138,51 @@ def _pick_random_start(conn, symbol: str, timeframe: str) -> int:
     disorienting because the price levels look unfamiliar. We weight the
     distribution so ~70% of sessions land in the last 3 years and only ~10%
     pick anything older than 8 years.
+
+    Future-supply bound: the picked T_0 must leave AT LEAST `MIN_FUTURE_1M`
+    minutes of unrevealed 1m base data after it, so that /advance can keep
+    revealing candles for a long session on any TF. Without this, the recency
+    bias collapses the distribution to the last few days of data — fine for
+    1m (thousands of presses) but exhausted in <10 presses on 1h/1D. The
+    1m base is the source of truth for all TFs (resample_with_forming reads
+    1m), so bounding the future in 1m units works for every TF.
     """
     cutoff = int((datetime.now(timezone.utc) - timedelta(days=30)).timestamp())
+
+    # Ensure ≥ MIN_FUTURE_1M 1m candles remain after T_0. 100_000 1m candles
+    # in CME futures (~5,000 trading minutes/week) ≈ 20 weeks of replay data,
+    # which gives:
+    #   • 1m   : 100,000 presses
+    #   • 5m   :  20,000 presses
+    #   • 1h   :   1,666 presses
+    #   • 4h   :     416 presses
+    #   • 1D   :     ~100 presses
+    #   • 1W   :     ~20 presses
+    # Long enough for any realistic session on any TF. Computed in candle
+    # COUNT (via OFFSET), not wall-clock seconds, so that sparse / gapped
+    # data near the end of the table doesn't undercut the buffer.
+    MIN_FUTURE_1M = 100_000
+
+    # Latest pickable 1m candle = the one MIN_FUTURE_1M back from the end.
+    future_cap_row = conn.execute(
+        """
+        SELECT time FROM candles
+        WHERE symbol = ? AND timeframe = '1m'
+        ORDER BY time DESC LIMIT 1 OFFSET ?
+        """,
+        (symbol, MIN_FUTURE_1M),
+    ).fetchone()
+    if not future_cap_row:
+        raise HTTPException(status_code=404, detail="No data for this symbol")
+    future_cap = future_cap_row[0]
+    pick_ceiling = min(cutoff, future_cap)
+
     row = conn.execute(
         """
         SELECT min(time), max(time) FROM candles
         WHERE symbol = ? AND timeframe = ? AND time < ?
         """,
-        (symbol, timeframe, cutoff),
+        (symbol, timeframe, pick_ceiling),
     ).fetchone()
     if not row or row[0] is None:
         raise HTTPException(status_code=404, detail="No data for this symbol/timeframe")
@@ -163,6 +200,12 @@ def _pick_random_start(conn, symbol: str, timeframe: str) -> int:
     ).fetchone()
     if offset_row:
         min_t = max(min_t, offset_row[0])
+
+    # Safety: if the dataset is so short that the history+future bounds
+    # collapsed the pickable range, widen by ignoring the future cap (rather
+    # than throwing) — small datasets just won't have a long future.
+    if min_t > max_t:
+        max_t = max(min_t, row[1])
 
     # Exponential weighting toward recent: pick uniform in [0, 1), apply
     # power < 1 to bias toward 1.0 (recent). Then map to [min_t, max_t].
