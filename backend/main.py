@@ -255,8 +255,19 @@ class SeekRequest(BaseModel):
 
 
 @app.get("/sessions/{session_id}")
-def get_session(session_id: str):
-    """Resume endpoint — called on app reopen to restore session state without leaking real dates."""
+def get_session(session_id: str, timeframe: Optional[str] = Query(None)):
+    """Resume endpoint — called on app reopen to restore session state without
+    leaking real dates. Also the hot path for TF-aware getBars from the hosted
+    chart: when ?timeframe= is passed, we resample around the session's
+    current_time at THAT tf (deterministic per request) and persist it so
+    /advance keeps revealing at the same TF. When omitted, we serve at the
+    stored sess["timeframe"] (legacy / resume behavior)."""
+    # TF-aware path: validate against the canonical set, then reuse the same
+    # resample + persist the timeframe handler uses. This eliminates the race
+    # where the hosted chart's getBars beats a separately-fired POST /timeframe.
+    if timeframe is not None and timeframe not in TF_SECONDS:
+        raise HTTPException(status_code=400, detail="Invalid timeframe")
+
     conn = get_conn()
     sess = conn.execute(
         "SELECT * FROM trading_sessions WHERE session_id = ?", (session_id,)
@@ -265,15 +276,18 @@ def get_session(session_id: str):
         conn.close()
         raise HTTPException(status_code=404, detail="Session not found")
 
+    # Pick which TF to query at: the request's override or the session's stored TF.
+    effective_tf = timeframe if timeframe is not None else sess["timeframe"]
+
     # Reconstruct the bar-indexed candle history from hidden_start up to current_time
-    rows = _get_candles_up_to(conn, sess["symbol"], sess["timeframe"], sess["current_time"], 500)
+    rows = _get_candles_up_to(conn, sess["symbol"], effective_tf, sess["current_time"], 500)
     # Self-heal: pre-existing sessions stored current_time as bar.start under
     # the old convention. The new convention treats current_time as bar.end,
     # so the query returns nothing. Shift forward by tf_seconds and migrate.
     if not rows:
         s_heal = TF_SECONDS.get(sess["timeframe"], 86400)
         new_t = sess["current_time"] + s_heal
-        rows = _get_candles_up_to(conn, sess["symbol"], sess["timeframe"], new_t, 500)
+        rows = _get_candles_up_to(conn, sess["symbol"], effective_tf, new_t, 500)
         if rows:
             conn.execute(
                 "UPDATE trading_sessions SET current_time = ? WHERE session_id = ?",
@@ -282,13 +296,24 @@ def get_session(session_id: str):
             conn.commit()
             sess = dict(sess); sess["current_time"] = new_t  # reflect for the rest of this request
 
+    # If a TF override was supplied and produced candles, persist it so subsequent
+    # /advance reveals at the right TF. This collapses the old POST /timeframe
+    # + GET dance into one race-free GET. Skip the write when the TF didn't change.
+    if timeframe is not None and rows and timeframe != sess["timeframe"]:
+        conn.execute(
+            "UPDATE trading_sessions SET timeframe = ? WHERE session_id = ?",
+            (timeframe, session_id),
+        )
+        conn.commit()
+        sess = dict(sess); sess["timeframe"] = timeframe
+
     bars_at_start = conn.execute(
         "SELECT COUNT(*) FROM candles WHERE symbol=? AND timeframe=? AND time<=?",
-        (sess["symbol"], sess["timeframe"], sess["hidden_start"]),
+        (sess["symbol"], effective_tf, sess["hidden_start"]),
     ).fetchone()[0]
     bars_at_current = conn.execute(
         "SELECT COUNT(*) FROM candles WHERE symbol=? AND timeframe=? AND time<=?",
-        (sess["symbol"], sess["timeframe"], sess["current_time"]),
+        (sess["symbol"], effective_tf, sess["current_time"]),
     ).fetchone()[0]
     conn.close()
 
@@ -305,7 +330,7 @@ def get_session(session_id: str):
     return {
         "session_id": session_id,
         "symbol": sess["symbol"],
-        "timeframe": sess["timeframe"],
+        "timeframe": effective_tf,
         "account_size": sess["account_size"],
         "balance": sess["balance"],
         "status": sess["status"],

@@ -342,48 +342,22 @@ export default function ChartScreen() {
 
   // Phase 3B-3 → in-place TF switch: the user tapped a different timeframe in
   // the hosted chart's top toolbar. By the time this fires, TV's internal
-  // resolution is ALREADY `newInterval` (that's what emitted onIntervalChanged).
-  // We switch the session's timeframe IN PLACE via POST /sessions/{id}/timeframe
-  // — the server re-fetches candles around the SAME current_time, so the period
-  // is preserved (no new random pick) — then refresh the chart with resetData().
-  // resetData() makes TV re-run getBars at its current resolution (the new TF),
-  // which re-fetches the new-TF candles and remaps them with __resolutionMs
-  // recomputed from that resolution. No session restart, no remount, no
-  // full-screen spinner.
+  // resolution is ALREADY `newInterval` and TV's datafeed has auto-invoked
+  // getBars at the new resolution. The hosted getBars passes the resolution
+  // as ?timeframe= on /sessions/{id}, so the backend resamples around the
+  // SAME current_time at the new TF AND persists session.timeframe in one
+  // race-free request. There's nothing this handler needs to do server-side
+  // any more — just track the selected interval for our local UI state.
   //
   // Loop-safety: the hosted page subscribes to onIntervalChanged INSIDE
   // onChartReady (so the initial load doesn't re-emit) and the `=== selectedInterval`
   // guard below is a second line of defence — no switch loop.
-  //
-  // Fallback for a later phase: if resetData() ever proves insufficient to
-  // re-fetch (e.g. TV serves cached bars at the old resolution), we could ALSO
-  // inject `window.tvWidget.activeChart().setResolution(newInterval)`. We do NOT
-  // call it here because the user already set the resolution via the toolbar, so
-  // resetData() alone re-fetches at the new TF. Adding setResolution would be
-  // redundant (and could double-fire onIntervalChanged).
   const handleIntervalChange = useCallback(
-    async (newInterval: string) => {
+    (newInterval: string) => {
       if (newInterval === selectedInterval) return;
-      if (!sessionId) return;
-      const tf = tvIntervalToApiTimeframe(newInterval);
-      try {
-        const res = await fetch(`${CHART_BACKEND_URL}/sessions/${sessionId}/timeframe`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ timeframe: tf }),
-        });
-        if (!res.ok) throw new Error('timeframe switch failed: ' + res.status);
-        // Refresh the chart in place — re-fetches new-TF candles for the same
-        // period. No remount, no full-screen spinner.
-        chartRef.current?.resetData();
-        setSelectedInterval(newInterval);
-      } catch (e) {
-        // Brief, non-crashing message; keep the current view. Reuses the
-        // existing transient advanceError UI strip rather than a full-screen state.
-        setAdvanceError('Could not switch timeframe');
-      }
+      setSelectedInterval(newInterval);
     },
-    [selectedInterval, sessionId],
+    [selectedInterval],
   );
 
   // Reset advance state when the session changes (new symbol/interval, or a
