@@ -1,4 +1,4 @@
-import React, { forwardRef, useImperativeHandle, useRef } from 'react';
+import React, { forwardRef, useImperativeHandle, useMemo, useRef } from 'react';
 import { StyleSheet, View, ActivityIndicator } from 'react-native';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { colors } from '../../theme';
@@ -131,11 +131,32 @@ function TradingViewChart(
     );
   }
 
-  const chartUrl =
-    'https://pt-chart-host.vercel.app/?backend=' + encodeURIComponent(CHART_BACKEND_URL) +
-    '&symbol=' + encodeURIComponent(symbol ?? 'NQ') +
-    '&interval=' + encodeURIComponent(interval ?? '5') +
-    '&session=' + encodeURIComponent(sessionId ?? '');
+  // The WebView `source.uri` is FROZEN against the live `interval` prop: a
+  // `source` change alone reloads a WebView, so if the URL carried the live
+  // interval, every TF switch (which does setSelectedInterval) would change the
+  // uri and reload the chart (blue pull-to-refresh bar + camera reset). We key
+  // the memo ONLY on [symbol, sessionId] (CHART_BACKEND_URL is a stable module
+  // constant) and read the `interval` prop's value at compute time. So:
+  //  - symbol change → new sessionId → memo recomputes → uri reflects the
+  //    then-current interval (session starts at the selected TF).
+  //  - TF switch only → deps unchanged → cached uri returned → no reload; the
+  //    new TF is applied via injection (resetData) instead.
+  // EDGE (not solved, rare): the interval baked into the uri is frozen at
+  // session-creation. If the WebView ever spontaneously reloaded (crash
+  // recovery) AFTER a TF switch, it'd re-init at the session-creation interval
+  // while the server session is at the switched TF. WebViews don't reload
+  // spontaneously, so this is left unhandled.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const chartUrl = useMemo(
+    () =>
+      'https://pt-chart-host.vercel.app/?backend=' + encodeURIComponent(CHART_BACKEND_URL) +
+      '&symbol=' + encodeURIComponent(symbol ?? 'NQ') +
+      '&interval=' + encodeURIComponent(interval ?? '5') +
+      '&session=' + encodeURIComponent(sessionId ?? ''),
+    // interval intentionally OMITTED — see comment above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [symbol, sessionId],
+  );
 
   return (
     // `key={`${symbol}-${sessionId}`}` forces a full WebView remount when the
@@ -152,6 +173,11 @@ function TradingViewChart(
       key={`${symbol}-${sessionId}`}
       source={{ uri: chartUrl }}
       style={styles.web}
+      // Kill the iOS pull-to-refresh control: the blue "Refreshing…" bar was
+      // the pull-to-refresh spinner appearing during reloads. We never want a
+      // user-driven reload of the chart WebView (TF switches refresh in place
+      // via resetData), so disable it entirely.
+      pullToRefreshEnabled={false}
       originWhitelist={['*']}
       allowFileAccess
       allowFileAccessFromFileURLs
