@@ -227,6 +227,34 @@ TF_SECONDS = {
 }
 
 
+def _get_tf_step(timeframe: str) -> int:
+    """Single source of truth for the nominal step at a given timeframe.
+    Used by `_resample_with_forming` (to test bucket-containment) and `/advance`
+    (to seed `new_current` when the table can't provide the real next-bucket
+    boundary). For 1D/1W the REAL bucket spans aren't strict multiples of this —
+    use `_next_bucket_after` to find the actual next bucket from the table.
+    """
+    return TF_SECONDS.get(timeframe, 86400)
+
+
+def _next_bucket_after(conn, symbol: str, timeframe: str, from_time: int):
+    """Return the candle table's NEXT bucket whose `time > from_time`, or None
+    if we've run off the end. Table-driven — works regardless of CME-aligned
+    1D/1W spacing, weekend gaps, etc. The shared boundary lookup that both
+    `/advance` (for picking the next bucket to reveal) and the post-advance
+    `new_current` calculation use, so the two stay in sync.
+    """
+    return conn.execute(
+        """
+        SELECT time, open, high, low, close, volume
+        FROM candles
+        WHERE symbol = ? AND timeframe = ? AND time > ?
+        ORDER BY time ASC LIMIT 1
+        """,
+        (symbol, timeframe, from_time),
+    ).fetchone()
+
+
 @app.get("/news")
 def get_news(symbol: str = "", before: int = 0, limit: int = 50):
     """Historical news up to (and including) `before` unix-seconds. Plug a real
@@ -245,7 +273,7 @@ def _get_candles_up_to(conn, symbol: str, timeframe: str, up_to: int, limit: int
     can seek the (symbol, timeframe, time) index — putting `time + ?` in the
     WHERE forces a scan, which crushes 1m where the table is huge.
     """
-    s = TF_SECONDS.get(timeframe, 86400)
+    s = _get_tf_step(timeframe)
     cutoff = up_to - s
     rows = conn.execute(
         """
@@ -281,7 +309,7 @@ def _resample_with_forming(conn, symbol: str, timeframe: str, current_time: int,
     computed as `(current_time // tf_seconds) * tf_seconds` — that would land
     off-grid and break the rebuild.
     """
-    s = TF_SECONDS.get(timeframe, 86400)
+    s = _get_tf_step(timeframe)
     # 1m base: no resample, just hand back rows up to current_time.
     if timeframe == "1m":
         rows = conn.execute(
@@ -652,33 +680,20 @@ def advance_session(session_id: str, req: AdvanceRequest):
         conn.close()
         raise HTTPException(status_code=400, detail="Session ended")
 
-    s = TF_SECONDS.get(sess["timeframe"], 86400)
+    s = _get_tf_step(sess["timeframe"])
     # Reveal the next `count` COMPLETE buckets at this TF, where "next" means
-    # the buckets whose `time >= current_time`. Table-driven so it works on
-    # every TF including 1D, whose buckets are CME-aligned (NOT N*86400) —
-    # the candles table is the source of truth for where the next bucket
-    # starts.
+    # the buckets whose `time >= current_time`. The chart's hosted `pushBar`
+    # ignores the bar's real time and uses a synthetic contiguous index, so
+    # every returned bucket appends as a new visible bar regardless of any
+    # overlap with GET's forming bucket at the boundary case.
     #
-    # Why `time >= current_time` (not `time > current_time - s`):
-    # GET's `_resample_with_forming` shows a FORMING bucket whose `time` ≤
-    # current_time (its bucket-start, ≤ cursor). Re-emitting that same bar
-    # here would not reveal a NEW bucket — the chart's pushBar would slot
-    # it next to the forming bucket and the user wouldn't see progress.
-    # `time >= current_time` skips that straddling/forming bucket and
-    # returns the first bucket whose start is at or past the cursor — i.e.
-    # the next NEWLY-revealed bucket. On X-grid boundaries the bucket
-    # starting AT current_time is returned (e.g. a fresh 5m session whose
-    # cursor sits exactly on a 5m boundary). When current_time is mid-
-    # bucket (e.g. session started on 1D then user switched to 5m), the
-    # bar starting at the next boundary is returned and the previously-
-    # straddling bucket's "stale forming" close persists on the chart
-    # until the next getBars — this is the documented trade-off
-    # (`_resample_with_forming` stays untouched).
-    #
-    # After advance, `new_current = last_row.time + s` sits on an X-grid
-    # boundary (the END of the newly-revealed bucket). The subsequent GET
-    # finds no bucket containing it and the forming-bucket logic kicks in
-    # naturally for the next bucket whose start == new_current.
+    # `time >= current_time` rather than `time > current_time` is required
+    # so the bucket whose start sits AT the cursor (e.g. fresh session with
+    # ct = hidden_start + s landing on a TF boundary) gets revealed on the
+    # first press. `_resample_with_forming` paints that same bucket as the
+    # FORMING bar in GET, which is fine — pushBar appends synthetically and
+    # the next GET correctly shows the post-advance forming bar based on
+    # the updated `current_time`.
     rows = conn.execute(
         """
         SELECT time, open, high, low, close, volume
@@ -693,19 +708,32 @@ def advance_session(session_id: str, req: AdvanceRequest):
         conn.close()
         return {"candles": [], "done": True}
 
-    # Set current_time to the END of the last newly-revealed bar's period,
-    # so all timeframes can compute consistent visibility from this single value.
-    new_current = rows[-1]["time"] + s
+    # Table-driven `new_current` is THE fix for non-uniform 1D/1W buckets.
+    # 1D buckets are CME-aligned and don't span exactly N*86400 (typical
+    # diffs are 86000–87000, weekend gaps are ~259000). Computing
+    # `new_current = last.time + s_nominal` would overshoot the next
+    # bucket's actual start whenever the real span < s_nominal, so the
+    # subsequent advance's `WHERE time >= new_current` would skip the
+    # bucket(s) in between. Looking up the next bucket from the candles
+    # table — the SAME table-driven boundary lookup `_resample_with_forming`
+    # uses to find its containing bucket — keeps both endpoints aligned.
+    # For uniform-step TFs (1m..4h) `next_following.time == last.time + s`
+    # so this preserves the original behavior. When we've run off the end
+    # of the data (no next bucket), fall back to `last.time + s_nominal`.
+    next_following = _next_bucket_after(conn, sess["symbol"], sess["timeframe"], rows[-1]["time"])
+    new_current = next_following["time"] if next_following is not None else rows[-1]["time"] + s
 
-    # Count bars revealed so far. With the end-of-period convention, a bar at
-    # time t is revealed iff t + s <= current_time, i.e. t <= current_time - s.
+    # Count bars revealed so far. With the end-of-period convention, the last
+    # revealed bar's time IS rows[-1].time. Use it directly as the upper bound
+    # (table-driven, no `- s` arithmetic which over-counts for 1D/1W where the
+    # nominal step exceeds the real bucket span).
     bars_at_start = conn.execute(
         "SELECT COUNT(*) FROM candles WHERE symbol=? AND timeframe=? AND time<=?",
         (sess["symbol"], sess["timeframe"], sess["hidden_start"]),
     ).fetchone()[0]
     bars_at_new_current = conn.execute(
         "SELECT COUNT(*) FROM candles WHERE symbol=? AND timeframe=? AND time<=?",
-        (sess["symbol"], sess["timeframe"], new_current - s),
+        (sess["symbol"], sess["timeframe"], rows[-1]["time"]),
     ).fetchone()[0]
 
     conn.execute(
@@ -721,6 +749,10 @@ def advance_session(session_id: str, req: AdvanceRequest):
     # be missed on the first advance after a TF switch. The response
     # `candles` array stays as `rows` (just the NEW buckets) so the chart
     # appends exactly `count` new bars via pushBar.
+    #
+    # Walk range: `time > old_ct - s_nominal` catches a possible straddling
+    # bucket whose start is within `s` of the old cursor; `time <= rows[-1].time`
+    # is the table-driven upper bound (matches `bars_at_new_current`).
     walk_rows = conn.execute(
         """
         SELECT time, open, high, low, close, volume
@@ -728,7 +760,7 @@ def advance_session(session_id: str, req: AdvanceRequest):
         WHERE symbol = ? AND timeframe = ? AND time > ? AND time <= ?
         ORDER BY time ASC
         """,
-        (sess["symbol"], sess["timeframe"], sess["current_time"] - s, new_current - s),
+        (sess["symbol"], sess["timeframe"], sess["current_time"] - s, rows[-1]["time"]),
     ).fetchall()
 
     positions = json.loads(sess["open_positions"])
