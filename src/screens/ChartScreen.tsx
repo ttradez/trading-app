@@ -68,7 +68,7 @@ function ActionButton({
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled: !!disabled }}
     >
-      {icon ? <Ionicons name={icon} size={18} color={textColor} /> : null}
+      {icon ? <Ionicons name={icon} size={16} color={textColor} /> : null}
       {label ? <Text style={[styles.actionLabel, { color: textColor }]}>{label}</Text> : null}
     </Pressable>
   );
@@ -436,7 +436,7 @@ export default function ChartScreen() {
                 icon="play-forward"
                 bg={colors.gold}
                 textColor={colors.textInverse}
-                fixedWidth={52}
+                fixedWidth={44}
                 disabled={done || advancing}
                 accessibilityLabel="Fast-forward five bars"
                 onPress={() => advance(5)}
@@ -527,14 +527,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 48,
-    borderRadius: 12,
+    height: 41,
+    borderRadius: 11,
     gap: 6,
   },
   actionBtnPressed: { opacity: 0.85 },
   actionBtnDisabled: { opacity: 0.5 },
   actionLabel: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     letterSpacing: 0.2,
   },
