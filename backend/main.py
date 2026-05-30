@@ -710,9 +710,13 @@ def seek_session_open(session_id: str, req: SeekSessionRequest):
 
     Forward-only — if today's target has already passed at the current cursor
     we advance to the same time on the next day. DST is handled correctly via
-    `zoneinfo.ZoneInfo('America/New_York')`. After computing the ET target we
-    snap to the first available bar at-or-after that instant on the session's
-    stored TF — weekend / holiday gaps roll forward to the next trading bar.
+    `zoneinfo.ZoneInfo('America/New_York')`. The landing bar's ET wall-clock
+    MUST literally equal target_hh:target_mm — we search 1m candles day-by-day
+    forward (up to 30 days), verify the bar's HH:MM after each hit, and skip
+    days where the target minute has no data. If no matching bar exists within
+    30 days we soft-fail with `success: false, reason: ...` — never silently
+    land at a different wall-clock (the bug that made NY 09:30 jumps roll to
+    19:53 reopen bars when the dataset has no 09:30 ET data).
 
     Critical: we walk every bar between the OLD and NEW cursor through the
     same TP/SL auto-close pipeline as `/advance`, so a multi-day jump can't
@@ -741,38 +745,60 @@ def seek_session_open(session_id: str, req: SeekSessionRequest):
     old_current = sess["current_time"]
     s = _get_tf_step(sess["timeframe"])
 
-    # Compute the next future ET datetime matching target_hh:target_mm.
-    # `zoneinfo` is DST-aware: replace(hour, ...) lands on the wall-clock time
-    # whether we're in EST or EDT, and the .timestamp() converts back to UTC
-    # using the correct offset for that date.
+    # Search at 1m precision (the dataset's base granularity) regardless of the
+    # session's stored TF — this is the only way to guarantee the landing bar
+    # ACTUALLY reads target_hh:target_mm ET. The session can still be on 5m/1h/
+    # etc.; the cursor moves at 1m precision and `_resample_with_forming` handles
+    # per-TF rendering of the forming bucket that contains the landing minute.
+    BASE_TF = "1m"
+    TOLERANCE_SEC = 60       # strict: bar must START at target HH:MM (one 1m bucket)
+    MAX_DAYS_FORWARD = 30    # cap the day-by-day forward search
+
+    # Day-by-day forward loop. For each candidate day we compute the ET wall-clock
+    # at target_hh:target_mm (DST-aware via zoneinfo), then look for a 1m bar
+    # whose `time` falls inside [candidate_unix, candidate_unix + 60). If found,
+    # we VERIFY the bar's ET HH:MM literally equals the target — that closes the
+    # loophole where the old algorithm silently returned the next bar after a
+    # data gap (e.g. asked for 09:30 ET, landed at 19:53 ET because 09:30 has
+    # no data in this dataset).
     cur_et = datetime.fromtimestamp(old_current, tz=ET)
-    target_et = cur_et.replace(
-        hour=req.target_hh, minute=req.target_mm, second=0, microsecond=0
-    )
-    if target_et <= cur_et:
-        target_et = target_et + timedelta(days=1)
-    target_unix = int(target_et.timestamp())
+    row = None
+    for day_offset in range(MAX_DAYS_FORWARD):
+        candidate = cur_et.replace(
+            hour=req.target_hh, minute=req.target_mm, second=0, microsecond=0
+        ) + timedelta(days=day_offset)
+        if candidate <= cur_et:
+            # Only day_offset == 0 can be at-or-before cursor — skip past today
+            # so the jump is always forward-only.
+            continue
+        candidate_unix = int(candidate.timestamp())
+        candidate_row = conn.execute(
+            """
+            SELECT time, open, high, low, close, volume
+            FROM candles
+            WHERE symbol = ? AND timeframe = ? AND time >= ? AND time < ?
+            ORDER BY time ASC LIMIT 1
+            """,
+            (sess["symbol"], BASE_TF, candidate_unix, candidate_unix + TOLERANCE_SEC),
+        ).fetchone()
+        if candidate_row is not None:
+            bar_et = datetime.fromtimestamp(candidate_row["time"], tz=ET)
+            if bar_et.hour == req.target_hh and bar_et.minute == req.target_mm:
+                row = candidate_row
+                break
+        # else: this day's HH:MM has no 1m bar — try next day.
 
-    # Find the first available bar at-or-after the target on the session's TF.
-    # Weekend/holiday gaps just roll forward to the next trading bar.
-    row = conn.execute(
-        """
-        SELECT time, open, high, low, close, volume
-        FROM candles
-        WHERE symbol = ? AND timeframe = ? AND time >= ?
-        ORDER BY time ASC LIMIT 1
-        """,
-        (sess["symbol"], sess["timeframe"], target_unix),
-    ).fetchone()
-    if not row:
+    if row is None:
         conn.close()
-        return {"success": False, "reason": "no data after target"}
+        return {
+            "success": False,
+            "reason": f"no {req.target_hh:02d}:{req.target_mm:02d} ET bar found within {MAX_DAYS_FORWARD} days",
+        }
 
-    # End-of-bucket convention (matches /advance after 829c56b): the cursor
-    # sits at the END of the target bar. For non-uniform 1D/1W spacing use the
-    # table-driven next-bucket lookup; fall back to nominal step at the tail.
-    next_following = _next_bucket_after(conn, sess["symbol"], sess["timeframe"], row["time"])
-    new_current = next_following["time"] if next_following is not None else row["time"] + s
+    # End-of-1m-bucket: cursor sits at the moment AFTER the target minute is
+    # fully revealed. `_resample_with_forming` handles per-TF rendering at any
+    # higher TF (the forming bucket containing this minute will be drawn).
+    new_current = row["time"] + 60
 
     if new_current <= old_current:
         # Snap landed on or before the existing cursor — nothing to reveal.
