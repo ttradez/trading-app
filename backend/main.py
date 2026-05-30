@@ -556,6 +556,16 @@ class SeekRequest(BaseModel):
     target_time: int   # unix seconds — backend snaps to the nearest valid bar
 
 
+class SeekSessionRequest(BaseModel):
+    """Fast-forward to the next ET wall-clock time matching `target_hh:target_mm`.
+    Phase A defaults supplied by the RN dropdown: NY=09:30, London=03:00,
+    Asia=20:00. Forward-only — backend always picks the NEXT occurrence
+    strictly after the current cursor, then snaps to the first available bar
+    at-or-after that ET instant (handles weekend/holiday gaps for free)."""
+    target_hh: int   # 0-23, ET wall-clock hour
+    target_mm: int   # 0-59
+
+
 @app.get("/sessions/{session_id}")
 def get_session(session_id: str, timeframe: Optional[str] = Query(None)):
     """Resume endpoint — called on app reopen to restore session state without
@@ -690,6 +700,194 @@ def seek_session(session_id: str, req: SeekRequest):
         "timeframe": sess["timeframe"],
         "candles": candles,
         "current_bar": len(candles) - 1,
+    }
+
+
+@app.post("/sessions/{session_id}/seek_session")
+def seek_session_open(session_id: str, req: SeekSessionRequest):
+    """Phase 3C: fast-forward the replay cursor to the next ET wall-clock
+    instant matching `target_hh:target_mm` (NY/London/Asia session opens).
+
+    Forward-only — if today's target has already passed at the current cursor
+    we advance to the same time on the next day. DST is handled correctly via
+    `zoneinfo.ZoneInfo('America/New_York')`. After computing the ET target we
+    snap to the first available bar at-or-after that instant on the session's
+    stored TF — weekend / holiday gaps roll forward to the next trading bar.
+
+    Critical: we walk every bar between the OLD and NEW cursor through the
+    same TP/SL auto-close pipeline as `/advance`, so a multi-day jump can't
+    silently skip past a position's stop or target. Response mirrors
+    /advance's `auto_closed` shape for the RN handler to reuse.
+
+    The RN side refreshes the chart via Path B (`resetData()`), which triggers
+    a fresh GET /sessions/{id}?timeframe= at the new cursor — no per-bar
+    pushBar walk, scales to multi-day jumps cleanly.
+    """
+    conn = get_conn()
+    sess = conn.execute(
+        "SELECT * FROM trading_sessions WHERE session_id = ?", (session_id,)
+    ).fetchone()
+    if not sess:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Session not found")
+    if sess["status"] != "active":
+        conn.close()
+        raise HTTPException(status_code=400, detail="Session ended")
+
+    if not (0 <= req.target_hh <= 23) or not (0 <= req.target_mm <= 59):
+        conn.close()
+        raise HTTPException(status_code=400, detail="Invalid target time")
+
+    old_current = sess["current_time"]
+    s = _get_tf_step(sess["timeframe"])
+
+    # Compute the next future ET datetime matching target_hh:target_mm.
+    # `zoneinfo` is DST-aware: replace(hour, ...) lands on the wall-clock time
+    # whether we're in EST or EDT, and the .timestamp() converts back to UTC
+    # using the correct offset for that date.
+    cur_et = datetime.fromtimestamp(old_current, tz=ET)
+    target_et = cur_et.replace(
+        hour=req.target_hh, minute=req.target_mm, second=0, microsecond=0
+    )
+    if target_et <= cur_et:
+        target_et = target_et + timedelta(days=1)
+    target_unix = int(target_et.timestamp())
+
+    # Find the first available bar at-or-after the target on the session's TF.
+    # Weekend/holiday gaps just roll forward to the next trading bar.
+    row = conn.execute(
+        """
+        SELECT time, open, high, low, close, volume
+        FROM candles
+        WHERE symbol = ? AND timeframe = ? AND time >= ?
+        ORDER BY time ASC LIMIT 1
+        """,
+        (sess["symbol"], sess["timeframe"], target_unix),
+    ).fetchone()
+    if not row:
+        conn.close()
+        return {"success": False, "reason": "no data after target"}
+
+    # End-of-bucket convention (matches /advance after 829c56b): the cursor
+    # sits at the END of the target bar. For non-uniform 1D/1W spacing use the
+    # table-driven next-bucket lookup; fall back to nominal step at the tail.
+    next_following = _next_bucket_after(conn, sess["symbol"], sess["timeframe"], row["time"])
+    new_current = next_following["time"] if next_following is not None else row["time"] + s
+
+    if new_current <= old_current:
+        # Snap landed on or before the existing cursor — nothing to reveal.
+        # Treat as a no-op rather than rewinding the replay.
+        conn.close()
+        return {
+            "success": False,
+            "reason": "target already revealed",
+        }
+
+    # Auto-close walk between old and new current_time. Same query shape /advance
+    # uses: `time > old_ct - s_nominal` catches a straddling bucket that just
+    # completed; `time <= row["time"]` is the table-driven upper bound (the
+    # target bar's start time).
+    walk_rows = conn.execute(
+        """
+        SELECT time, open, high, low, close, volume
+        FROM candles
+        WHERE symbol = ? AND timeframe = ? AND time > ? AND time <= ?
+        ORDER BY time ASC
+        """,
+        (sess["symbol"], sess["timeframe"], old_current - s, row["time"]),
+    ).fetchall()
+
+    positions = json.loads(sess["open_positions"])
+    closed_trades = json.loads(sess["closed_trades"])
+    balance = sess["balance"]
+    spec = CONTRACT_SPECS.get(sess["symbol"], {"pip": 1, "contractSize": 1})
+    closed_now = []
+    for pos in positions[:]:
+        for r in walk_rows:
+            hit_sl = hit_tp = False
+            if pos["side"] == "buy":
+                if pos.get("stop_loss") and r["low"] <= pos["stop_loss"]:
+                    hit_sl = True
+                elif pos.get("take_profit") and r["high"] >= pos["take_profit"]:
+                    hit_tp = True
+            else:
+                if pos.get("stop_loss") and r["high"] >= pos["stop_loss"]:
+                    hit_sl = True
+                elif pos.get("take_profit") and r["low"] <= pos["take_profit"]:
+                    hit_tp = True
+            if hit_sl or hit_tp:
+                exit_price = pos["stop_loss"] if hit_sl else pos["take_profit"]
+                direction = 1 if pos["side"] == "buy" else -1
+                pips = (exit_price - pos["entry_price"]) / spec["pip"] * direction
+                pnl = pips * spec["pip"] * spec["contractSize"] * pos["lots"]
+                r_multiple = None
+                if pos.get("stop_loss"):
+                    risk_pips = abs(pos["entry_price"] - pos["stop_loss"]) / spec["pip"]
+                    if risk_pips > 0:
+                        r_multiple = round(pips / risk_pips, 2)
+
+                trade = {
+                    "id": str(uuid.uuid4()),
+                    "position_id": pos["id"],
+                    "session_id": session_id,
+                    "uid": sess["uid"],
+                    "symbol": sess["symbol"],
+                    "side": pos["side"],
+                    "lots": pos["lots"],
+                    "entry_price": pos["entry_price"],
+                    "exit_price": exit_price,
+                    "stop_loss": pos.get("stop_loss"),
+                    "take_profit": pos.get("take_profit"),
+                    "opened_at": pos["opened_at"],
+                    "closed_at": r["time"],
+                    "pnl": round(pnl, 2),
+                    "pips": round(pips, 1),
+                    "r_multiple": r_multiple,
+                    "hit": "sl" if hit_sl else "tp",
+                    "news_snapshot": "[]",
+                }
+                balance += pnl
+                closed_trades.append(trade)
+                closed_now.append(trade)
+                positions.remove(pos)
+
+                conn.execute(
+                    """
+                    INSERT INTO trades
+                      (id, uid, session_id, symbol, side, lots, entry_price, exit_price,
+                       stop_loss, take_profit, opened_at, closed_at, pnl, pips, r_multiple, news_snapshot)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (trade["id"], sess["uid"], session_id, trade["symbol"], trade["side"],
+                     trade["lots"], trade["entry_price"], trade["exit_price"],
+                     trade.get("stop_loss"), trade.get("take_profit"),
+                     trade["opened_at"], trade["closed_at"],
+                     trade["pnl"], trade["pips"], trade.get("r_multiple"), "[]"),
+                )
+                break
+
+    # Count bars revealed across the jump (diagnostics only; the RN path uses
+    # resetData() so it doesn't depend on this number).
+    bars_revealed = conn.execute(
+        "SELECT COUNT(*) FROM candles WHERE symbol=? AND timeframe=? AND time > ? AND time <= ?",
+        (sess["symbol"], sess["timeframe"], old_current, row["time"]),
+    ).fetchone()[0]
+
+    conn.execute(
+        "UPDATE trading_sessions SET current_time = ?, open_positions = ?, closed_trades = ?, balance = ? WHERE session_id = ?",
+        (new_current, json.dumps(positions), json.dumps(closed_trades), balance, session_id),
+    )
+    if closed_now:
+        _update_account_stats(conn, sess["uid"])
+    conn.commit()
+    conn.close()
+
+    return {
+        "success": True,
+        "new_current_time": new_current,
+        "target_bar_time": row["time"],
+        "bars_revealed": bars_revealed,
+        "auto_closed": closed_now,
     }
 
 
