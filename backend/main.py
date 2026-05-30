@@ -3,6 +3,9 @@ import random
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
+
+ET = ZoneInfo("America/New_York")
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -269,6 +272,79 @@ def _pick_random_start(conn, symbol: str, timeframe: str) -> int:
         if nxt_row and (nxt_row[0] - snapped) <= MAX_LOCAL_GAP_1M:
             return snapped
     return last_pick
+
+
+def _snap_to_1800_et(conn, symbol: str, snapped_1m: int, max_days_back: int = 30) -> Optional[int]:
+    """Walk backward from `snapped_1m` (unix-seconds) and return the most
+    recent 1m candle time anchoring a futures Globex daily session open.
+    Intent: the cursor lands at "18:00 ET" — i.e. the start of a daily
+    trading session, which on CME futures begins around 18:00 ET (DST-aware
+    via zoneinfo: 22 UTC EST / 23 UTC EDT).
+
+    Dataset reality: NQ 1m candles in this DB are stored only between
+    ~19:00–03:00 ET (the dataset lacks the 18:00–19:00 ET hour entirely in
+    most eras, and the cash session 09:30–16:00 ET is also missing). The
+    actual daily session-open in the data therefore falls at ~19:00 ET —
+    the first 1m candle after the daily >30-min break. We snap to THAT
+    candle: it's the truest "session open ~18:00 ET" available, and the
+    cursor lands at a real candle time that `_resample_with_forming` can
+    bucket cleanly across every TF.
+
+    Density rule: the candle is verified as a continuous session-open by
+    requiring its IMMEDIATELY-following 1m candle within MAX_LOCAL_GAP_1M —
+    same check `_pick_random_start` uses. This rejects one-off candles
+    bookending a sparse range.
+
+    Cap: walk back at most `max_days_back` days. Return None if no
+    acceptable session-open is found; the caller falls back to the
+    unsnapped density-checked pick (never 500).
+    """
+    MAX_LOCAL_GAP_1M = 120
+    GAP_BREAK_SECONDS = 30 * 60  # >30 min gap from previous candle = new session
+    cutoff = snapped_1m - max_days_back * 86400
+
+    # Pull all 1m candles in [cutoff, snapped_1m] ascending. The dataset's
+    # density (~1 candle/min during session) means at most ~30d × ~8h × 60 ≈
+    # 14k rows — small enough to scan in Python.
+    rows = conn.execute(
+        """
+        SELECT time FROM candles
+        WHERE symbol = ? AND timeframe = '1m' AND time BETWEEN ? AND ?
+        ORDER BY time ASC
+        """,
+        (symbol, cutoff, snapped_1m),
+    ).fetchall()
+    if not rows:
+        return None
+    times = [int(r[0]) for r in rows]
+
+    # Walk forward, find every index where a new session begins (gap > 30min
+    # from prior candle, OR index 0). Keep the LATEST one whose forward
+    # density passes.
+    best = None
+    for i in range(len(times)):
+        if i > 0 and (times[i] - times[i - 1]) <= GAP_BREAK_SECONDS:
+            continue
+        t = times[i]
+        # Forward-density check.
+        if i + 1 < len(times):
+            if (times[i + 1] - t) > MAX_LOCAL_GAP_1M:
+                continue
+        else:
+            # Tail candle — query the table for its actual next neighbor.
+            nxt_row = conn.execute(
+                """
+                SELECT time FROM candles
+                WHERE symbol = ? AND timeframe = '1m' AND time > ?
+                ORDER BY time ASC LIMIT 1
+                """,
+                (symbol, t),
+            ).fetchone()
+            if not nxt_row or (int(nxt_row[0]) - t) > MAX_LOCAL_GAP_1M:
+                continue
+        best = t  # latest acceptable session-open
+
+    return best
 
 
 TF_SECONDS = {
@@ -681,17 +757,41 @@ def start_session(req: StartSessionRequest):
         hidden_start = snap[0] if snap and snap[0] is not None else _pick_random_start(conn, req.symbol, req.timeframe)
     else:
         hidden_start = _pick_random_start(conn, req.symbol, req.timeframe)
+
+    # Snap session start to the futures Globex daily session open (~18:00
+    # ET). We walk back from the density-checked pick to the most recent 1m
+    # candle that opens a daily session (see `_snap_to_1800_et` for the
+    # dataset-specific definition — strict 18:00:00 doesn't exist in this
+    # DB) and set BOTH hidden_start AND current_time to it. The cursor then
+    # sits at the session open regardless of TF. The per-TF `+ s` offset
+    # below is bypassed for the snap path because `_resample_with_forming`
+    # already handles the per-TF "bucket containing current_time" lookup,
+    # so the cursor needs no granularity adjustment.
+    #
+    # When `start_time` was explicitly supplied the caller wanted a specific
+    # moment — don't override that. Otherwise (typical fresh-session path)
+    # snap if a candidate exists; on miss, fall through to the original
+    # +s offset behavior (never 500).
+    s = TF_SECONDS.get(req.timeframe, 86400)
+    snapped_to_1800 = False
+    if req.start_time is None:
+        target_1800 = _snap_to_1800_et(conn, req.symbol, hidden_start)
+        if target_1800 is not None:
+            hidden_start = target_1800
+            initial_current_time = target_1800
+            snapped_to_1800 = True
+
+    if not snapped_to_1800:
+        # current_time = the END of the last revealed bar's period. With this
+        # convention a bar is "fully revealed" iff time + tf_seconds <= current_time,
+        # which lets every timeframe stay in sync no matter which one the user
+        # advances on.
+        initial_current_time = hidden_start + s
+
     rows = _get_candles_up_to(conn, req.symbol, req.timeframe, hidden_start + s_init, 200)
     if not rows:
         conn.close()
         raise HTTPException(status_code=404, detail="No candle data found")
-
-    # current_time = the END of the last revealed bar's period. With this
-    # convention a bar is "fully revealed" iff time + tf_seconds <= current_time,
-    # which lets every timeframe stay in sync no matter which one the user
-    # advances on.
-    s = TF_SECONDS.get(req.timeframe, 86400)
-    initial_current_time = hidden_start + s
 
     session_id = str(uuid.uuid4())
     conn.execute(
