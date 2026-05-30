@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -11,7 +11,7 @@ import TradingViewChart, {
 import SymbolPickerSheet from '../components/SymbolPickerSheet';
 import Button from '../components/ui/Button';
 import NumericText from '../components/NumericText';
-import { colors } from '../theme';
+import { colors, surface, borders } from '../theme';
 import { CHART_BACKEND_URL } from '../config/chartBackend';
 import { tvIntervalToApiTimeframe } from '../lib/chartIntervals';
 import { useAuthStore } from '../store/authStore';
@@ -212,6 +212,18 @@ export default function ChartScreen() {
   const [tradeResult, setTradeResult] = useState<string | null>(null);
   const tradeResultTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Phase 3C: Sessions dropdown (NY/London/Asia). The header time-outline
+  // button opens a small Modal anchored top-right. Tapping a row fires a
+  // POST /sessions/{id}/seek_session that fast-forwards the replay cursor
+  // to the next ET wall-clock time matching that session's open, then
+  // calls chartRef.current?.resetData() to re-fetch the visible window
+  // at the new cursor (Path B — same path TF switching uses, scales to
+  // multi-day jumps without a per-bar pushBar walk).
+  const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
+  const [jumping, setJumping] = useState(false);
+  const [jumpError, setJumpError] = useState<string | null>(null);
+  const jumpErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Show a brief realized-P&L result line, auto-clearing after 4s. Reused by
   // both auto-close (TP/SL hit) and manual close.
   const flashResult = useCallback((text: string) => {
@@ -223,9 +235,18 @@ export default function ChartScreen() {
   useEffect(
     () => () => {
       if (tradeResultTimer.current) clearTimeout(tradeResultTimer.current);
+      if (jumpErrorTimer.current) clearTimeout(jumpErrorTimer.current);
     },
     [],
   );
+
+  // Brief jump-error caption, auto-clearing after 4s. Mirrors flashResult's
+  // single-timer pattern. Surfaced in the same status strip as advanceError.
+  const flashJumpError = useCallback((text: string) => {
+    setJumpError(text);
+    if (jumpErrorTimer.current) clearTimeout(jumpErrorTimer.current);
+    jumpErrorTimer.current = setTimeout(() => setJumpError(null), 4000);
+  }, []);
 
   // Start a fresh replay session whenever the symbol or interval changes.
   // The `cancelled` guard drops a slow response from a stale symbol so it
@@ -468,6 +489,76 @@ export default function ChartScreen() {
     [sessionId, advancing, done, position, currentPrice, contractSize, flashResult],
   );
 
+  // Phase 3C: jump the replay forward to the next ET wall-clock time matching
+  // one of the three session opens. Hardcoded defaults (Phase A): NY=09:30 ET,
+  // London=03:00 ET, Asia=20:00 ET. The backend handles DST + weekend/holiday
+  // roll-forward + auto-close walking across the jumped range; we just refresh
+  // the chart via resetData() so it re-fetches the visible window at the new
+  // cursor (Path B). Mirrors /advance's auto_closed handling so a TP/SL hit
+  // during the jump correctly clears the position + flashes the realized P&L.
+  const handleSessionJump = useCallback(
+    async (label: 'NY' | 'London' | 'Asia') => {
+      if (!sessionId || jumping) return;
+      const targets = {
+        NY:     { hh:  9, mm: 30 },
+        London: { hh:  3, mm:  0 },
+        Asia:   { hh: 20, mm:  0 },
+      } as const;
+      setSessionMenuOpen(false);
+      setJumping(true);
+      setJumpError(null);
+      try {
+        const t = targets[label];
+        const res = await fetch(`${CHART_BACKEND_URL}/sessions/${sessionId}/seek_session`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target_hh: t.hh, target_mm: t.mm }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!data?.success) {
+          // Backend rolled off the end of data, or target already revealed.
+          flashJumpError(`Could not jump to ${label}`);
+          return;
+        }
+
+        // Auto-close handling — same shape /advance returns, same RN
+        // pattern. If our open position was auto-closed during the walk,
+        // clear it from the chart + flash realized P&L.
+        const autoClosed: any[] = Array.isArray(data?.auto_closed) ? data.auto_closed : [];
+        if (autoClosed.length > 0) {
+          // eslint-disable-next-line no-console
+          console.log('[trade] auto_closed during jump', autoClosed);
+        }
+        const mine = position
+          ? autoClosed.find((tr) => tr?.position_id === position.id)
+          : null;
+        if (mine) {
+          setPosition(null);
+          chartRef.current?.clearTrade();
+          const pnl = typeof mine.pnl === 'number' ? mine.pnl : 0;
+          const hitLabel = mine.hit === 'tp' ? 'TP hit' : mine.hit === 'sl' ? 'SL hit' : 'Closed';
+          flashResult(`${hitLabel} ${pnl >= 0 ? '+' : '-'}$${Math.abs(pnl).toFixed(2)}`);
+        }
+
+        // Path B refresh — let the chart re-fetch the new visible window at
+        // the session's stored TF via the existing TF-aware getBars path.
+        // No per-bar pushBar walk; scales cleanly to multi-day jumps.
+        chartRef.current?.resetData();
+
+        // A successful jump invalidates the end-of-data flag and any prior
+        // advance error — the cursor moved, Next Bar should be live again.
+        setDone(false);
+        setAdvanceError(null);
+      } catch (err: any) {
+        flashJumpError(`Could not jump to ${label}`);
+      } finally {
+        setJumping(false);
+      }
+    },
+    [sessionId, jumping, position, flashResult, flashJumpError],
+  );
+
   // Open a position. Buy = LONG (side:"buy"), Sell = SHORT (side:"sell").
   // We send entry_price = currentPrice so the recorded entry matches the
   // price on screen (the last revealed close). One-at-a-time gate: ignored
@@ -641,13 +732,12 @@ export default function ChartScreen() {
           </Pressable>
 
           <Pressable
-            onPress={() => {
-              /* Phase 3C: Asia/London/NY session zone selector */
-            }}
+            onPress={() => setSessionMenuOpen(true)}
+            disabled={!sessionId || jumping}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            style={styles.headerIconBtn}
+            style={[styles.headerIconBtn, (jumping || !sessionId) && styles.headerIconBtnDisabled]}
             accessibilityRole="button"
-            accessibilityLabel="Session"
+            accessibilityLabel="Jump to session"
           >
             <Ionicons name="time-outline" size={22} color="rgba(255,255,255,0.6)" />
           </Pressable>
@@ -713,13 +803,22 @@ export default function ChartScreen() {
 
             {/* Thin status strip directly above the action row. Takes zero
                 height when there's nothing to show, so the row stays put.
-                Priority: advanceError > tradeResult (realized close/TP/SL) >
-                lineApiUnavailable note > end-of-session. */}
-            {(advanceError || tradeResult || lineApiUnavailable || done) && (
+                Priority: jumpError > advanceError > tradeResult (realized
+                close/TP/SL) > jumping caption > lineApiUnavailable note >
+                end-of-session. */}
+            {(jumpError || advanceError || tradeResult || jumping || lineApiUnavailable || done) && (
               <View style={styles.statusStrip}>
-                {advanceError ? (
+                {jumpError ? (
+                  <Text style={styles.advanceErrorText} numberOfLines={1}>
+                    {jumpError}
+                  </Text>
+                ) : advanceError ? (
                   <Text style={styles.advanceErrorText} numberOfLines={1}>
                     {advanceError}
+                  </Text>
+                ) : jumping ? (
+                  <Text style={styles.endOfSessionText} numberOfLines={1}>
+                    Jumping…
                   </Text>
                 ) : tradeResult ? (
                   <Text
@@ -820,6 +919,54 @@ export default function ChartScreen() {
         }}
         onClose={() => setPickerOpen(false)}
       />
+
+      {/* Phase 3C: Sessions dropdown — small popup anchored top-right under
+          the header icon row. Three rows (NY / London / Asia) with the
+          hardcoded ET wall-clock subtitle. Modal + backdrop dismiss; the
+          dropdown shape (vs full bottom-sheet) is appropriate for three
+          items. Brand-locked surfaces — surface.l3 + borders.card. */}
+      <Modal
+        visible={sessionMenuOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSessionMenuOpen(false)}
+      >
+        <Pressable style={styles.sessionMenuBackdrop} onPress={() => setSessionMenuOpen(false)}>
+          {/* Inner pressable swallows taps on the popup itself so the backdrop
+              dismiss doesn't fire when the user taps inside the menu. */}
+          <Pressable style={styles.sessionMenu} onPress={() => {}}>
+            <Pressable
+              style={({ pressed }) => [styles.sessionMenuRow, pressed && styles.sessionMenuRowPressed]}
+              onPress={() => handleSessionJump('NY')}
+              accessibilityRole="button"
+              accessibilityLabel="Jump to New York open"
+            >
+              <Text style={styles.sessionMenuLabel}>New York</Text>
+              <Text style={styles.sessionMenuSub}>09:30 ET</Text>
+            </Pressable>
+            <View style={styles.sessionMenuDivider} />
+            <Pressable
+              style={({ pressed }) => [styles.sessionMenuRow, pressed && styles.sessionMenuRowPressed]}
+              onPress={() => handleSessionJump('London')}
+              accessibilityRole="button"
+              accessibilityLabel="Jump to London open"
+            >
+              <Text style={styles.sessionMenuLabel}>London</Text>
+              <Text style={styles.sessionMenuSub}>03:00 ET</Text>
+            </Pressable>
+            <View style={styles.sessionMenuDivider} />
+            <Pressable
+              style={({ pressed }) => [styles.sessionMenuRow, pressed && styles.sessionMenuRowPressed]}
+              onPress={() => handleSessionJump('Asia')}
+              accessibilityRole="button"
+              accessibilityLabel="Jump to Asia open"
+            >
+              <Text style={styles.sessionMenuLabel}>Asia</Text>
+              <Text style={styles.sessionMenuSub}>20:00 ET</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -849,6 +996,60 @@ const styles = StyleSheet.create({
   headerIconBtn: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Mid-jump: dim the Session icon so it visually disables. Matches the
+  // generic actionBtnDisabled opacity used by the bottom action row.
+  headerIconBtnDisabled: {
+    opacity: 0.4,
+  },
+  // ── Phase 3C: Sessions dropdown ────────────────────────────────────────
+  // Backdrop matches SymbolPickerSheet's 0.6-black scrim. The menu itself
+  // anchors near the top-right (under the header icon row); the outer
+  // backdrop Pressable uses flex-start + flex-end to position it. Brand-
+  // locked: surface.l3 surface, borders.card outline, no raw hex.
+  sessionMenuBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'flex-end',
+    justifyContent: 'flex-start',
+    paddingTop: 56,        // clear the SafeArea + header (≈56pt to the icon row baseline)
+    paddingRight: 12,
+  },
+  sessionMenu: {
+    minWidth: 180,
+    backgroundColor: surface.l3,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: borders.card,
+    overflow: 'hidden',
+  },
+  sessionMenuRow: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  sessionMenuRowPressed: {
+    backgroundColor: colors.cardAlt,
+  },
+  sessionMenuLabel: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  // Subtitle = the hardcoded ET wall-clock for Phase A. Phase B can swap
+  // this for user-configurable times without touching the layout.
+  sessionMenuSub: {
+    color: 'rgba(255,255,255,0.50)',
+    fontSize: 12,
+    fontWeight: '500',
+    letterSpacing: 0.2,
+  },
+  sessionMenuDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: borders.hairline,
   },
   watchlistBtn: {
     flexDirection: 'row',
