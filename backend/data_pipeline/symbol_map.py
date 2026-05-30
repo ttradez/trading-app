@@ -5,20 +5,40 @@ All display names use generic instrument labels — never exchange-specific.
 
 # Maps our internal symbol → user-facing display name
 DISPLAY_NAMES = {
-    "SPX":  "S&P 500",
-    "NDX":  "NASDAQ 100",
-    "DJI":  "Dow Jones",
+    "SPX":  "S&P 500 Index",
+    "NDX":  "NASDAQ 100 Index",
+    "DJI":  "Dow Jones Index",
     "DAX":  "DAX 40",
     "FTSE": "FTSE 100",
     "N225": "Nikkei 225",
     "ES":   "S&P 500 E-Mini",
-    "NQ":   "NASDAQ E-Mini",
-    "YM":   "Dow E-Mini",
+    "NQ":   "NASDAQ 100 E-Mini",
+    "YM":   "Dow Jones E-Mini",
     "CL":   "Crude Oil (WTI)",
     "GC":   "Gold",
     "SI":   "Silver",
     "NG":   "Natural Gas",
     "ZB":   "T-Bond Futures",
+}
+
+# Maps our internal symbol → category grouping for the watchlist UI.
+# Spot indexes are kept distinct from index futures so that, for example,
+# NDX (spot) and NQ (E-Mini future) don't read as duplicate "NQ" rows.
+CATEGORIES = {
+    "SPX":  "Indexes",
+    "NDX":  "Indexes",
+    "DJI":  "Indexes",
+    "ES":   "Index Futures",
+    "NQ":   "Index Futures",
+    "YM":   "Index Futures",
+    "DAX":  "Index Futures",
+    "FTSE": "Index Futures",
+    "N225": "Index Futures",
+    "GC":   "Metals",
+    "SI":   "Metals",
+    "CL":   "Energy",
+    "NG":   "Energy",
+    "ZB":   "Bonds",
 }
 
 # pip = minimum price increment; contractSize = notional per lot

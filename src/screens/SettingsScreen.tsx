@@ -20,6 +20,7 @@ import { useJournalStore } from '../store/journalStore';
 import { useTradeJournalStore } from '../store/tradeJournalStore';
 import { useDailySetupStore } from '../store/dailySetupStore';
 import { useWatchlistStore } from '../store/watchlistStore';
+import { useSymbolFavoritesStore } from '../store/symbolFavoritesStore';
 import { useBadgeStore } from '../store/badgeStore';
 import { useXpStore } from '../store/xpStore';
 import { useChallengeStore } from '../store/challengeStore';
@@ -422,6 +423,7 @@ export default function SettingsScreen({ navigation }: any) {
                     useTradeJournalStore.getState().reset();
                     useDailySetupStore.getState().reset();
                     useWatchlistStore.getState().reset();
+                    useSymbolFavoritesStore.getState().reset();
                     useBadgeStore.getState().reset();
                     useXpStore.getState().reset();
                     useChallengeStore.getState().reset();

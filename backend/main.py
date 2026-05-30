@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from db import get_conn, init_db
-from data_pipeline.symbol_map import CONTRACT_SPECS, DISPLAY_NAMES
+from data_pipeline.symbol_map import CONTRACT_SPECS, DISPLAY_NAMES, CATEGORIES
 
 app = FastAPI(title="Pocket Trade API")
 
@@ -47,6 +47,11 @@ def get_markets():
             "name": DISPLAY_NAMES.get(symbol, symbol),
             "pip": spec["pip"],
             "contractSize": spec["contractSize"],
+            # Category drives the section grouping in the watchlist picker.
+            # Falls back to "Other" so any newly-added contract that hasn't
+            # been classified yet still renders (under its own section)
+            # instead of disappearing.
+            "category": CATEGORIES.get(symbol, "Other"),
         })
     return markets
 
