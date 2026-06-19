@@ -13,10 +13,11 @@
  * confirm the URLs render and replace the GITHUB_USER placeholder.
  */
 
-// TODO: replace GITHUB_USER below with the actual GitHub username
-// where this repo is hosted. The placeholder will return a 404 until
-// then.
-const GITHUB_USER = 'GITHUB_USER';
+// Repo hosted at github.com/ttradez/trading-app — legal docs render
+// via GitHub Pages from the /docs folder on the main branch. Confirm
+// at https://ttradez.github.io/trading-app/PRIVACY_POLICY after
+// enabling Pages in repo Settings.
+const GITHUB_USER = 'ttradez';
 const REPO        = 'trading-app';
 const BRANCH      = 'main';
 
