@@ -51,3 +51,11 @@ backend/data_pipeline/raw/
 # generated native folders
 /ios
 /android
+
+# archived dev artifacts (logo backups, sparse Databento CSVs we set aside,
+# etc.) — kept locally so a future re-ingest reference doesn't get lost,
+# but should NEVER ship in production bundles
+/_archive/
+
+# Play Store submit credential (never commit Google Play service account)
+play-store-service-account.json

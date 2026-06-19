@@ -2,10 +2,20 @@
 SQLite database bootstrap for Pocket Trade.
 All tables are created here; main.py imports `get_conn` and `init_db`.
 """
+import os
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / "pocket_trade.db"
+# DB file location. In dev, falls back to the local file beside this
+# module. In production (Railway, see backend/DEPLOY_RAILWAY.md) the
+# POCKET_TRADE_DB_PATH env var points at a path on the mounted volume
+# (typically /data/pocket_trade.db) so the candle DB survives deploys.
+DB_PATH = Path(
+    os.environ.get(
+        "POCKET_TRADE_DB_PATH",
+        str(Path(__file__).parent / "pocket_trade.db"),
+    )
+)
 
 
 def get_conn() -> sqlite3.Connection:
@@ -28,7 +38,8 @@ def init_db() -> None:
         username     TEXT NOT NULL UNIQUE,
         email        TEXT NOT NULL,
         created_at   INTEGER NOT NULL DEFAULT (unixepoch()),
-        ads_removed  INTEGER NOT NULL DEFAULT 0  -- 1 = paid IAP
+        ads_removed  INTEGER NOT NULL DEFAULT 0,  -- 1 = paid IAP
+        xp           INTEGER NOT NULL DEFAULT 0
     );
 
     -- ── Accounts (per-user running stats) ────────────────────────────────────
@@ -59,6 +70,9 @@ def init_db() -> None:
     CREATE INDEX IF NOT EXISTS idx_candles ON candles (symbol, timeframe, time DESC);
 
     -- ── Trading sessions (anti-cheat engine) ─────────────────────────────────
+    -- `end_time` (nullable): when set, /advance stops returning new bars
+    -- once the cursor would exceed it (user-defined "Pick dates" session
+    -- bound). NULL preserves the original open-ended replay behavior.
     CREATE TABLE IF NOT EXISTS trading_sessions (
         session_id     TEXT PRIMARY KEY,
         uid            TEXT NOT NULL REFERENCES users(uid),
@@ -72,8 +86,29 @@ def init_db() -> None:
         closed_trades  TEXT NOT NULL DEFAULT '[]',   -- JSON
         status         TEXT NOT NULL DEFAULT 'active',
         created_at     INTEGER NOT NULL DEFAULT (unixepoch()),
-        ended_at       INTEGER
+        ended_at       INTEGER,
+        end_time       INTEGER,            -- user-defined replay end bound (nullable)
+        journaled      INTEGER NOT NULL DEFAULT 0,  -- 0 = not journaled, 1 = journaled
+        -- Shadow flag: 1 = session was auto-spawned by the chart-screen
+        -- watchlist picker so the chart could render a different symbol
+        -- at the same time as the user's real session. These are hidden
+        -- from the Continue list and DELETEd when the user exits the
+        -- chart back to SessionsScreen. 0 = user-initiated session.
+        is_shadow      INTEGER NOT NULL DEFAULT 0
     );
+
+    -- ── XP events ────────────────────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS xp_events (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        uid        TEXT NOT NULL REFERENCES users(uid),
+        session_id TEXT NOT NULL,
+        amount     INTEGER NOT NULL,
+        reason     TEXT NOT NULL,
+        breakdown  TEXT NOT NULL,            -- JSON
+        created_at REAL NOT NULL,            -- wall-clock unix seconds
+        UNIQUE(session_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_xp_events_uid ON xp_events(uid, created_at DESC);
 
     -- ── Closed trades (denormalized for journal + stats) ─────────────────────
     CREATE TABLE IF NOT EXISTS trades (
@@ -168,6 +203,40 @@ def init_db() -> None:
     );
     CREATE INDEX IF NOT EXISTS idx_feed ON public_feed (posted_at DESC);
     """)
+
+    # ── Defensive migrations ────────────────────────────────────────────────
+    # Existing DBs predating the `end_time` column won't pick it up via
+    # CREATE TABLE IF NOT EXISTS — add it idempotently here. SQLite has no
+    # ADD COLUMN IF NOT EXISTS, so we probe PRAGMA table_info and skip if
+    # the column already exists. Nullable, no default → no rewrite of
+    # existing rows; current_time-bounded sessions stay open-ended.
+    existing_cols = {
+        row["name"] for row in conn.execute("PRAGMA table_info(trading_sessions)").fetchall()
+    }
+    if "end_time" not in existing_cols:
+        conn.execute("ALTER TABLE trading_sessions ADD COLUMN end_time INTEGER")
+    if "journaled" not in existing_cols:
+        # NOT NULL DEFAULT 0 — SQLite allows this on ADD COLUMN because the
+        # constant default applies to existing rows without a rewrite.
+        conn.execute(
+            "ALTER TABLE trading_sessions ADD COLUMN journaled INTEGER NOT NULL DEFAULT 0"
+        )
+    if "is_shadow" not in existing_cols:
+        # Shadow sessions are watchlist-picker-auto-spawned views that
+        # mirror the user's real session at the same timestamp on a
+        # different symbol. Hidden from the Continue list; DELETE'd
+        # on chart-exit. Default 0 so existing sessions stay user-initiated.
+        conn.execute(
+            "ALTER TABLE trading_sessions ADD COLUMN is_shadow INTEGER NOT NULL DEFAULT 0"
+        )
+
+    user_cols = {
+        row["name"] for row in conn.execute("PRAGMA table_info(users)").fetchall()
+    }
+    if "xp" not in user_cols:
+        conn.execute(
+            "ALTER TABLE users ADD COLUMN xp INTEGER NOT NULL DEFAULT 0"
+        )
 
     conn.commit()
     conn.close()

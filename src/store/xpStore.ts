@@ -6,6 +6,7 @@ import { useCelebrationStore } from './celebrationStore';
 import {
   getRankForXP, RankId, SubTier,
 } from '../data/rankConfig';
+import { getUserXp, XpEvent, RankObj } from '../services/api';
 
 /**
  * XP + rank progression.
@@ -27,9 +28,11 @@ import {
 export interface RankUp {
   type: 'rank' | 'sub_tier';
   newRank: RankId;
-  newSubTier: SubTier;
+  /** null when promoting INTO the Funded cap (no division). */
+  newSubTier: SubTier | null;
   previousRank: RankId;
-  previousSubTier: SubTier;
+  /** null when the previous beat was the Funded cap. */
+  previousSubTier: SubTier | null;
 }
 
 export interface XpProgress {
@@ -45,11 +48,24 @@ export interface XpProgress {
 interface XpState {
   currentXP: number;
   currentRank: RankId;
-  currentSubTier: SubTier;
+  /** null when at the Funded cap (no division). */
+  currentSubTier: SubTier | null;
   tradesToday: number;
   todayDate: string;
-  dailySetupCompletedToday: boolean;
   firstTradeToday: boolean;
+
+  /** Backend-sourced XP total (authoritative). Server cache, not
+   *  accrued locally. Hydrated by `refreshServerXp()` on screen
+   *  mount and by `applySessionEnd()` after POST /sessions/.../end.
+   *  `null` = never fetched yet — UI falls back to local `currentXP`
+   *  so first-render isn't blank. */
+  serverXp: number | null;
+  /** Backend-sourced rank object (Phase 2). Hydrated alongside
+   *  `serverXp` by `refreshServerXp` and by `applySessionEnd` when
+   *  the /end response carries it. UI falls back to the local
+   *  `getRankForXP` derivation while this is `null`. */
+  serverRank: RankObj | null;
+  lastSessionXpAward: { amount: number; breakdown: XpEvent['breakdown'] } | null;
 
   /** Add XP from `source` (source is logged, not persisted), then
    *  re-check rank. Returns promotion info if a beat was crossed. */
@@ -63,21 +79,33 @@ interface XpState {
    *  soft-capped base (+10, halved to +5 after 20/day) and whether
    *  this is the first trade of the day. */
   registerTrade: () => { base: number; isFirstOfDay: boolean };
-  /** Returns true the first time it's called on a given day (used
-   *  to gate the once-per-day Daily Setup XP). */
-  tryClaimDailySetup: () => boolean;
   getCurrentProgress: () => XpProgress;
+  /** Pull the latest XP total from the backend and cache it as
+   *  `serverXp`. Call on screen mount where the XP bar lives. */
+  refreshServerXp: (uid: string) => Promise<void>;
+  /** Apply the XP delta returned by POST /sessions/{id}/end. The
+   *  `rank` arg is optional — Phase 2 backends carry it; older
+   *  responses skip it and we leave `serverRank` untouched (the
+   *  next `refreshServerXp` will reconcile). */
+  applySessionEnd: (
+    xp_total: number,
+    xp_awarded: number,
+    xp_breakdown: XpEvent['breakdown'],
+    rank?: RankObj | null,
+  ) => void;
   reset: () => void;
 }
 
 const INITIAL = {
   currentXP: 0,
-  currentRank: 'gambler' as RankId,
-  currentSubTier: 1 as SubTier,
+  currentRank: 'paper' as RankId,
+  currentSubTier: 1 as SubTier | null,
   tradesToday: 0,
   todayDate: getTodayYMD(),
-  dailySetupCompletedToday: false,
   firstTradeToday: false,
+  serverXp: null as number | null,
+  serverRank: null as RankObj | null,
+  lastSessionXpAward: null as { amount: number; breakdown: XpEvent['breakdown'] } | null,
 };
 
 const SOFT_CAP_TRADES = 20;
@@ -91,7 +119,6 @@ export const useXpStore = create<XpState>()(
           set({
             todayDate: today,
             tradesToday: 0,
-            dailySetupCompletedToday: false,
             firstTradeToday: false,
           });
         }
@@ -104,7 +131,6 @@ export const useXpStore = create<XpState>()(
           set({
             todayDate: getTodayYMD(),
             tradesToday: 0,
-            dailySetupCompletedToday: false,
             firstTradeToday: false,
           }),
 
@@ -160,13 +186,6 @@ export const useXpStore = create<XpState>()(
           return { base, isFirstOfDay };
         },
 
-        tryClaimDailySetup: () => {
-          ensureToday();
-          if (get().dailySetupCompletedToday) return false;
-          set({ dailySetupCompletedToday: true });
-          return true;
-        },
-
         getCurrentProgress: () => {
           const r = getRankForXP(get().currentXP);
           const isMaxed = r.next === null;
@@ -183,6 +202,45 @@ export const useXpStore = create<XpState>()(
             nextSubTier: r.next ? r.next.subTier : null,
             isMaxed,
           };
+        },
+
+        refreshServerXp: async (uid: string) => {
+          if (!uid) return;
+          try {
+            const res = await getUserXp(uid);
+            set((s) => ({
+              serverXp: res.xp_total,
+              // Local currentXP includes challenge grants that never
+              // reached the server (the challenge-XP path is local-
+              // only today). Don't let a smaller server total pull
+              // local progress backwards — only ratchet UP. Same
+              // reason readers use Math.max(serverXp, currentXP)
+              // below: never lose locally-credited XP.
+              currentXP: Math.max(s.currentXP, res.xp_total),
+              // Phase 2 backend returns `rank` alongside xp_total;
+              // older responses won't include it — keep whatever the
+              // store had instead of clobbering with undefined.
+              ...(res.rank ? { serverRank: res.rank } : {}),
+            }));
+          } catch (e) {
+            // eslint-disable-next-line no-console
+            console.log('refreshServerXp failed', (e as Error)?.message);
+          }
+        },
+
+        applySessionEnd: (xp_total, xp_awarded, xp_breakdown, rank) => {
+          set((s) => ({
+            serverXp: xp_total,
+            // Keep currentXP ≥ session total so subsequent challenge
+            // additions stack on top instead of being clamped under
+            // a stale local value.
+            currentXP: Math.max(s.currentXP, xp_total),
+            // Only overwrite `serverRank` when the call site supplied
+            // one; pre-Phase-2 /end responses don't and we'd rather
+            // leave the cached value than blank it out.
+            ...(rank ? { serverRank: rank } : {}),
+            lastSessionXpAward: { amount: xp_awarded, breakdown: xp_breakdown },
+          }));
         },
 
         reset: () => set({ ...INITIAL, todayDate: getTodayYMD() }),

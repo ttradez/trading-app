@@ -138,7 +138,7 @@ export default function TradeJournalModal({
     >
       <KeyboardAvoidingView
         style={styles.overlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <Pressable style={styles.backdropPress} onPress={onSkip}>
           <Pressable

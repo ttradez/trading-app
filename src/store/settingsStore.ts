@@ -26,10 +26,16 @@ interface SettingsState {
    *  default — trains the "plan the trade, trade the plan" habit
    *  and enriches the journal with intent alongside outcome. */
   preTradeChecklistEnabled: boolean;
+  /** Show the post-close trade-result card (P&L hero + share +
+   *  journal nav). On by default. User-toggled from the card itself
+   *  (top-of-card switch) or from Settings. When off, trades still
+   *  close + record to journal/Stats — the card just doesn't appear. */
+  tradeResultCardEnabled: boolean;
 
   setHapticsEnabled: (v: boolean) => void;
   setDefaultContractSize: (n: number) => void;
   setPreTradeChecklistEnabled: (v: boolean) => void;
+  setTradeResultCardEnabled: (v: boolean) => void;
   reset: () => void;
 }
 
@@ -37,6 +43,7 @@ const DEFAULTS = {
   hapticsEnabled: true,
   defaultContractSize: 1,
   preTradeChecklistEnabled: true,
+  tradeResultCardEnabled: true,
 };
 
 export const useSettingsStore = create<SettingsState>()(
@@ -49,6 +56,8 @@ export const useSettingsStore = create<SettingsState>()(
         set({ defaultContractSize }),
       setPreTradeChecklistEnabled: (preTradeChecklistEnabled) =>
         set({ preTradeChecklistEnabled }),
+      setTradeResultCardEnabled: (tradeResultCardEnabled) =>
+        set({ tradeResultCardEnabled }),
 
       reset: () => set({ ...DEFAULTS }),
     }),

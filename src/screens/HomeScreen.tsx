@@ -1,30 +1,23 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, Pressable,
+  View, Text, ScrollView, StyleSheet, Pressable, Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { LightbulbIcon as PhLightbulb } from 'phosphor-react-native';
-import Svg, {
-  Defs, RadialGradient, Rect, Stop,
-} from 'react-native-svg';
+import { useNavigation } from '@react-navigation/native';
 
 import { useStreakStore } from '../store/streakStore';
 import { useJournalStore } from '../store/journalStore';
-import { useIsTodaySetupComplete } from '../store/dailySetupStore';
 import { useWatchlistStore, savedSetupStartUnixSeconds } from '../store/watchlistStore';
 import { useBadgeStore } from '../store/badgeStore';
 import { BADGES, Badge } from '../data/badges';
 import { buildBadgeContext, getBadgeProgress } from '../utils/badgeChecker';
 import { useXpStore } from '../store/xpStore';
+import { useAuthStore } from '../store/authStore';
 import { getRankForXP } from '../data/rankConfig';
 import { useChallengeStore, ChallengeInstance } from '../store/challengeStore';
-import {
-  getTodaySetup, setupStartUnixSeconds, SetupDifficulty,
-} from '../data/dailySetups';
 
 import SectionHeader from '../components/SectionHeader';
-import Button from './../components/ui/Button';
 import NumericText from '../components/NumericText';
 import DailyChallengeTile from '../components/DailyChallengeTile';
 import {
@@ -37,20 +30,18 @@ import { isoWeekId, WeeklyRecap } from '../utils/weeklyRecap';
 import LongTermGoalsCollapsible from '../components/LongTermGoalsCollapsible';
 import RankStrip from '../components/RankStrip';
 import DashboardHeader from '../components/DashboardHeader';
-import PressableCard from '../components/PressableCard';
+import StartSessionHero from '../components/StartSessionHero';
 import { colors as DT } from '../theme/tokens';
-import { surface } from '../theme';
 
 /**
  * Home — the "what to do right now" surface (5-tab restructure).
  *
  * Splits out from the old monolithic Dashboard. Account hero +
- * key metrics moved to Stats; Setup Library moved to Learn.
- * What stays here: identity header, Today's Mission, Daily
- * Challenges scroller, Long-term Goals collapsed row, RankStrip,
- * daily time-goal ring, and the conditional Saved Setups row
- * (kept here because it's a "do this next" affordance, not a
- * performance metric).
+ * key metrics moved to Stats. What stays here: identity header,
+ * Daily Challenges scroller, Long-term Goals collapsed row,
+ * RankStrip, daily time-goal ring, and the conditional Saved
+ * Setups row (kept here because it's a "do this next" affordance,
+ * not a performance metric).
  *
  * Visual treatment unchanged from the prior DashboardScreen — this
  * pass is purely content migration + nav restructure. Visual polish
@@ -59,12 +50,9 @@ import { surface } from '../theme';
 
 const BG          = '#000000';
 // Secondary cards on Home — L1 in the layered surface system.
-// Today's Mission overrides this back up to L3 via `missionElevated`.
 const CARD_BG     = '#0A0A0A';
 const CARD_BORDER = '#1F1F1F';
-const GOLD        = '#FFB800';
 const GREEN       = '#00D395';
-const RED         = '#FF4757';
 const WHITE       = '#FFFFFF';
 
 const MONTHS_SHORT = [
@@ -82,28 +70,6 @@ function formatSavedDate(ymd: string): string {
 // src/components/TrainingTimeRing.tsx. The standalone Home card
 // was retired in the polish pass.
 
-// ── Today's Mission radial gold ambient ────────────────────────────
-
-function MissionGlow({ width, height }: { width: number; height: number }) {
-  if (width <= 0) return null;
-  return (
-    <Svg
-      width={width}
-      height={height}
-      style={StyleSheet.absoluteFill}
-      pointerEvents="none"
-    >
-      <Defs>
-        <RadialGradient id="missionGlow" cx="50%" cy="35%" rx="65%" ry="55%">
-          <Stop offset="0" stopColor={GOLD} stopOpacity="0.06" />
-          <Stop offset="1" stopColor={GOLD} stopOpacity="0" />
-        </RadialGradient>
-      </Defs>
-      <Rect x={0} y={0} width={width} height={height} fill="url(#missionGlow)" />
-    </Svg>
-  );
-}
-
 // ── Screen ─────────────────────────────────────────────────────────
 
 export default function HomeScreen({ navigation }: any) {
@@ -111,10 +77,6 @@ export default function HomeScreen({ navigation }: any) {
   // training-minutes / daily-goal ring lives in DashboardHeader
   // now, so we no longer read them here).
   const streakCount  = useStreakStore((s) => s.currentStreak);
-
-  // Daily mission
-  const todaySetup = useMemo(() => getTodaySetup(), []);
-  const setupComplete = useIsTodaySetupComplete();
 
   // Saved setups (watchlist) — conditional row.
   const savedSetups = useWatchlistStore((s) => s.savedSetups);
@@ -125,9 +87,42 @@ export default function HomeScreen({ navigation }: any) {
   // Trade entries — dependency for the next-badge memo.
   const entries = useJournalStore((s) => s.entries);
 
-  // Real XP / rank progression.
-  const currentXP = useXpStore((s) => s.currentXP);
-  const rankInfo = useMemo(() => getRankForXP(currentXP), [currentXP]);
+  // Real XP / rank progression. Backend XP (via DashboardHeader's
+  // refreshServerXp on mount) is the source of truth; this screen's
+  // RankStrip falls back to the local mirror until the first fetch
+  // lands. Phase 2: when the backend rank object is present, override
+  // the label + progress numbers with the server's authoritative
+  // values (the new ladder has 7 tiers vs the local 5). The visual
+  // chip (`rank`, `subTier`) keeps using the local derivation so the
+  // legacy RankBanner visual still renders correctly.
+  const currentXP   = useXpStore((s) => s.currentXP);
+  const serverXp    = useXpStore((s) => s.serverXp);
+  const serverRank  = useXpStore((s) => s.serverRank);
+  // Server XP can lag behind currentXP when challenge grants are
+  // local-only — use max so progress is monotonic in the UI.
+  const xpForRank   = Math.max(serverXp ?? 0, currentXP);
+  const localRank   = useMemo(() => getRankForXP(xpForRank), [xpForRank]);
+  const rankInfo = useMemo(() => {
+    if (!serverRank) return localRank;
+    return {
+      ...localRank,
+      label: serverRank.level_name,
+      xpInTier: serverRank.xp_into_level,
+      xpNeededForNext: serverRank.is_max
+        ? 0
+        : serverRank.xp_into_level + serverRank.xp_for_next,
+      next: serverRank.is_max || !serverRank.next_level_name
+        ? null
+        : { ...(localRank.next ?? {} as any), label: serverRank.next_level_name },
+    } as typeof localRank;
+  }, [serverRank, localRank]);
+
+  // Pull authoritative XP from backend on mount + whenever uid changes.
+  const uid = useAuthStore((s) => s.uid);
+  const refreshServerXp = useXpStore((s) => s.refreshServerXp);
+  useEffect(() => {
+    if (uid) refreshServerXp(uid);
+  }, [uid, refreshServerXp]);
 
   // Closest-to-completion next badge for RankStrip.
   const nextBadge = useMemo(() => {
@@ -199,22 +194,11 @@ export default function HomeScreen({ navigation }: any) {
             its absence costs zero layout. */}
         <SundayWrapBanner onOpen={openBannerRecap} />
 
-        {/* ── Today's Mission ─────────────────────────────────── */}
+        {/* ── Start Session hero (primary action) ────────────── */}
         <View style={styles.firstSectionGap}>
-          <TodaysMissionCard
-            todaySetup={todaySetup}
-            setupComplete={setupComplete}
-            onTrade={() =>
-              navigation.navigate('Chart', {
-                dailySetup: {
-                  symbol: todaySetup.symbol,
-                  timeframe: todaySetup.timeframe,
-                  startTs: setupStartUnixSeconds(todaySetup),
-                  date: todaySetup.date,
-                  key: `${todaySetup.id}-${Date.now()}`,
-                },
-              })
-            }
+          <StartSessionHero
+            streakDays={streakCount}
+            onPress={() => navigation.navigate('Chart')}
           />
         </View>
 
@@ -223,17 +207,28 @@ export default function HomeScreen({ navigation }: any) {
           <DailyChallengesStrip />
         </View>
 
+        {/* ── Challenges banner — "see all" entry below the dailies */}
+        <View style={styles.sectionGap}>
+          <ChallengesBanner />
+        </View>
+
         {/* ── Long-term Goals (collapsed row) ────────────────── */}
         <View style={styles.sectionGap}>
           <LongTermGoalsRow />
         </View>
 
         {/* ── Rank strip ─────────────────────────────────────── */}
+        {/* Phase 2: the strip taps into the rank-journey screen
+            (Clash-Royale-style ladder) instead of the badges tab. */}
         <View style={styles.sectionGap}>
           <RankStrip
             rankInfo={rankInfo}
             nextBadge={nextBadge}
-            onPress={goToBadges}
+            // Tap-through now lands on the Ranks BOTTOM TAB (which
+            // defaults to the Journey sub-tab with the new vertical
+            // ladder). The old `Journey` stack route still exists but
+            // wraps the deprecated JourneyRoad — slated for cleanup.
+            onPress={() => navigation.navigate('Ranks')}
           />
         </View>
 
@@ -306,122 +301,21 @@ export default function HomeScreen({ navigation }: any) {
           dismissBannerRecap();
           navigation.navigate('Journal', { openEntryId: tradeId });
         }}
-        onOpenLesson={(setupId) =>
-          navigation.navigate('SetupDetail', { setupId })
-        }
         onStartSession={() => navigation.navigate('Chart')}
       />
     </SafeAreaView>
   );
 }
 
-// ── Today's Mission card ───────────────────────────────────────────
-
-function TodaysMissionCard({
-  todaySetup, setupComplete, onTrade,
-}: {
-  todaySetup: ReturnType<typeof getTodaySetup>;
-  setupComplete: boolean;
-  onTrade: () => void;
-}) {
-  const [size, setSize] = React.useState({ w: 0, h: 0 });
-  return (
-    // Whole card is now tappable — same action as the Primary CTA
-    // inside. The inner Button's onPress still fires on direct
-    // taps in its hit area; outer taps trigger via PressableCard.
-    // Press feedback (scale + bg lift) provides the universal
-    // tactile signal from the polish-pass spec.
-    <PressableCard
-      onPress={setupComplete ? undefined : onTrade}
-      baseBg={DT.surfaceElevated}
-      pressedBg={DT.surfaceElevated}
-      accessibilityLabel={
-        setupComplete ? 'Today\'s mission completed' : 'Today\'s mission — trade this setup'
-      }
-      style={[
-        styles.card,
-        styles.missionCard,
-        styles.missionElevated,
-        setupComplete && styles.missionCardDone,
-      ]}
-    >
-      <View
-        onLayout={(e) => {
-          const { width, height } = e.nativeEvent.layout;
-          setSize({ w: width, h: height });
-        }}
-        style={{ flexDirection: 'row', flex: 1 }}
-      >
-      <MissionGlow width={size.w} height={size.h} />
-      {setupComplete && <View style={styles.missionAccent} />}
-      <View style={styles.missionInner}>
-        <View style={styles.missionTopRow}>
-          <Text style={styles.missionLabel}>TODAY'S MISSION</Text>
-          <DifficultyBadge difficulty={todaySetup.difficulty} />
-        </View>
-
-        <Text style={styles.missionTitle}>{todaySetup.title}</Text>
-        <Text style={styles.missionSubtitle}>
-          {todaySetup.symbol} · {todaySetup.setupType}
-        </Text>
-        <Text style={styles.missionDescription}>
-          {todaySetup.description}
-        </Text>
-        {/* Tip — wrapped in its own inset card so it reads as a
-            distinct quote/aside, not as continuation prose. Gold@6%
-            background + gold@16% border, gold@90% glyph + text. */}
-        <View style={styles.missionTipCard}>
-          <PhLightbulb
-            size={16}
-            weight="fill"
-            color="rgba(255,184,0,0.9)"
-            style={styles.missionTipIcon}
-          />
-          <Text style={[styles.missionTip, styles.missionTipText]}>
-            {todaySetup.tip}
-          </Text>
-        </View>
-
-        <View style={styles.missionCtaWrap}>
-          {setupComplete ? (
-            <View style={styles.missionCtaDone}>
-              <Text style={styles.missionCtaTextDone}>Completed ✓</Text>
-            </View>
-          ) : (
-            <Button
-              label="Trade this setup"
-              variant="primary"
-              hero
-              onPress={onTrade}
-            />
-          )}
-        </View>
-      </View>
-      </View>
-    </PressableCard>
-  );
-}
-
-function DifficultyBadge({ difficulty }: { difficulty: SetupDifficulty }) {
-  const color =
-    difficulty === 'beginner' ? GREEN :
-    difficulty === 'advanced' ? RED : GOLD;
-  const label =
-    difficulty.charAt(0).toUpperCase() + difficulty.slice(1);
-  return (
-    <View style={[styles.diffBadge, { borderColor: color }]}>
-      <Text style={[styles.diffBadgeText, { color }]}>{label}</Text>
-    </View>
-  );
-}
-
 // ── Daily Challenges horizontal scroller ───────────────────────────
 
 function DailyChallengesStrip() {
-  const dailies   = useChallengeStore((s) => s.activeDailies);
-  const skipsUsed = useChallengeStore((s) => s.skipsUsedThisWeek);
-  const skipDaily = useChallengeStore((s) => s.skipDaily);
-  const userRank  = useXpStore((s) => s.currentRank);
+  const navigation = useNavigation<any>();
+  const dailies        = useChallengeStore((s) => s.activeDailies);
+  const skipsUsed      = useChallengeStore((s) => s.skipsUsedThisWeek);
+  const skipDaily      = useChallengeStore((s) => s.skipDaily);
+  const claimChallenge = useChallengeStore((s) => s.claimChallenge);
+  const userRank       = useXpStore((s) => s.currentRank);
 
   const allComplete =
     dailies.length > 0 && dailies.every((d) => d.completed);
@@ -454,10 +348,75 @@ function DailyChallengesStrip() {
                 : undefined
             }
             swapAvailable={canSwap}
+            // Tap-to-claim: grant XP, then drop the user on the Ranks
+            // tab so they see their XP bar fill toward the next rank.
+            onClaim={
+              d.completed && !d.claimed
+                ? () => {
+                    claimChallenge(d.challengeId);
+                    try { navigation.navigate('Ranks'); }
+                    catch { /* non-fatal */ }
+                  }
+                : undefined
+            }
           />
         ))}
       </ScrollView>
     </View>
+  );
+}
+
+// ── Challenges banner ──────────────────────────────────────────────
+//
+// "See all" entry point below the dailies strip — opens the full
+// ChallengesScreen (active rows + rank-locked preview). Lives
+// alongside the 3-tile strip rather than replacing it so quick-view
+// stays on Home while the screen handles the full browse.
+
+function ChallengesBanner() {
+  const navigation = useNavigation<any>();
+  const dailies = useChallengeStore((s) => s.activeDailies);
+  const weekly  = useChallengeStore((s) => s.activeWeekly);
+  const monthly = useChallengeStore((s) => s.activeMonthly);
+
+  const activeTotal = dailies.length + (weekly ? 1 : 0) + (monthly ? 1 : 0);
+  const completedTotal =
+    dailies.filter((d) => d.completed).length +
+    (weekly?.completed ? 1 : 0) +
+    (monthly?.completed ? 1 : 0);
+  const allDone = activeTotal > 0 && completedTotal === activeTotal;
+
+  return (
+    <Pressable
+      onPress={() => navigation.navigate('Challenges')}
+      style={({ pressed }) => [
+        styles.challengesBanner,
+        pressed && { opacity: 0.85 },
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel="Open Challenges"
+    >
+      <View style={styles.challengesIconWrap}>
+        <Ionicons name="trophy" size={26} color="#FFB800" />
+      </View>
+
+      <View style={styles.challengesBannerBody}>
+        <Text style={styles.challengesBannerTitle}>CHALLENGES</Text>
+        <Text style={styles.challengesBannerSub} numberOfLines={1}>
+          {activeTotal === 0
+            ? 'Start a session to unlock today\'s set'
+            : allDone
+              ? 'All current challenges complete ✓'
+              : `${completedTotal} / ${activeTotal} complete · climb the ranks`}
+        </Text>
+      </View>
+
+      <Ionicons
+        name="chevron-forward"
+        size={20}
+        color="rgba(255,255,255,0.45)"
+      />
+    </Pressable>
   );
 }
 
@@ -483,105 +442,6 @@ const styles = StyleSheet.create({
   // the at-risk chip if it's visible) — see firstSectionGap.
   sectionGap: { marginTop: 24 },
   firstSectionGap: { marginTop: 16 },
-  card: {
-    backgroundColor: CARD_BG,
-    borderColor: CARD_BORDER,
-    borderWidth: 1,
-    borderTopColor: DT.hairlineHighlight,
-    borderRadius: 16,
-  },
-
-  // Today's Mission
-  missionCard: {
-    flexDirection: 'row',
-    overflow: 'hidden',
-  },
-  missionElevated: { backgroundColor: DT.surfaceElevated },
-  missionCardDone: { borderColor: GREEN },
-  missionAccent: { width: 3, backgroundColor: GREEN },
-  missionInner: { flex: 1, padding: 20 },
-  missionTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  missionLabel: {
-    color: GOLD,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.5,
-  },
-  // Refined: 1px border, label-size text at 13pt, 4/10 padding per
-  // the polish-pass spec. Reads as a proper meta chip rather than
-  // a chunky button.
-  diffBadge: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  diffBadgeText: {
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.4,
-  },
-  missionTitle: {
-    marginTop: 14,
-    color: WHITE,
-    fontSize: 20,
-    fontWeight: '800',
-    letterSpacing: -0.4,
-  },
-  missionSubtitle: {
-    marginTop: 4,
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  missionDescription: {
-    marginTop: 12,
-    color: 'rgba(255,255,255,0.75)',
-    fontSize: 14,
-    fontWeight: '400',
-    lineHeight: 21,
-  },
-  // Inset gold tip card — sits between the description paragraph
-  // and the Primary CTA. Gold@6% bg + gold@16% border per spec.
-  missionTipCard: {
-    marginTop: 14,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: 'rgba(255, 184, 0, 0.06)',
-    borderColor: 'rgba(255, 184, 0, 0.16)',
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-  },
-  missionTipIcon: { marginRight: 8, marginTop: 2 },
-  missionTip: {
-    color: 'rgba(255,184,0,0.9)',
-    fontSize: 13,
-    fontStyle: 'italic',
-    lineHeight: 19,
-  },
-  missionTipText: { flex: 1 },
-  missionCtaWrap: { marginTop: 18 },
-  missionCtaDone: {
-    height: 52,
-    borderRadius: 999,
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: GREEN,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  missionCtaTextDone: {
-    color: GREEN,
-    fontSize: 16,
-    fontWeight: '600',
-    letterSpacing: 0.2,
-  },
 
   sectionHeader: {
     marginBottom: 12,
@@ -601,6 +461,52 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
 
+  // ── Challenges banner (Home CTA) ────────────────────────────────
+  challengesBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(20,20,20,0.92)',
+    borderColor: 'rgba(255,184,0,0.35)',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    marginTop: 4,
+    shadowColor: '#FFB800',
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 6,
+  },
+  challengesIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,184,0,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,184,0,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  challengesBannerBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  challengesBannerTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 2.4,
+    marginBottom: 2,
+  },
+  challengesBannerSub: {
+    color: 'rgba(255,255,255,0.62)',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+
   // Saved Setups
   savedCount: {
     color: 'rgba(255,255,255,0.5)',
@@ -612,7 +518,12 @@ const styles = StyleSheet.create({
     paddingRight: 4,
   },
   savedCard: {
-    width: 160,
+    // Responsive width — was hardcoded 160dp, which made budget Android
+    // devices (Galaxy A05s ≈ 320dp) only show one card at a time, hiding
+    // the horizontal-scroll affordance. min(160, 42% of screen) keeps
+    // two cards visible with a small peek on every device class we
+    // care about (iPhone Pro Max, Pixel, Galaxy A-series).
+    width: Math.min(160, Dimensions.get('window').width * 0.42),
     backgroundColor: CARD_BG,
     borderColor: CARD_BORDER,
     borderWidth: 1,

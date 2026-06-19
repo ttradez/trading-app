@@ -1,5 +1,11 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Modal } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, Alert, Dimensions } from 'react-native';
+
+// Narrow-phone breakpoint: anything ≤360dp wide gets a tighter action-row
+// layout so Sell / qty stepper / Buy / Next Bar / FF all fit on Galaxy
+// A-series and other budget Android devices. iPhone Pro Max (414dp) keeps
+// the original spacious layout.
+const NARROW_PHONE = Dimensions.get('window').width <= 360;
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -9,35 +15,60 @@ import TradingViewChart, {
   type TradingViewChartHandle,
 } from '../components/charts/TradingViewChart';
 import SymbolPickerSheet from '../components/SymbolPickerSheet';
+import SessionTimesConfigModal from '../components/SessionTimesConfigModal';
+import TradeFillToast, { TradeFillToastData } from '../components/TradeFillToast';
+import NewsPanel from '../components/NewsPanel';
+import TradeResultCard, { TradeResultData } from '../components/TradeResultCard';
+import { useNavigation } from '@react-navigation/native';
+import { useJournalStore, JournalEntry } from '../store/journalStore';
+// expo-file-system v19 split the surface: the new `File`/`Directory`
+// objects live at the package root, but the imperative
+// `writeAsStringAsync` + `cacheDirectory` we need are under /legacy.
+import * as FileSystem from 'expo-file-system/legacy';
+import SessionsScreen from './SessionsScreen';
 import Button from '../components/ui/Button';
 import NumericText from '../components/NumericText';
 import { colors, surface, borders } from '../theme';
 import { CHART_BACKEND_URL } from '../config/chartBackend';
-import { tvIntervalToApiTimeframe } from '../lib/chartIntervals';
+import { apiTimeframeToTvInterval, tvIntervalToApiTimeframe } from '../lib/chartIntervals';
 import { useAuthStore } from '../store/authStore';
+import { useSessionTimesStore } from '../store/sessionTimesStore';
+import { computePnl, POINT_VALUE } from '../data/tradeMath';
+import {
+  detectAfterTradeClose, detectAfterSessionEnd,
+} from '../utils/challengeDetection';
+import { useSessionStatsStore } from '../store/sessionStatsStore';
+import { useSettingsStore } from '../store/settingsStore';
+import { useTrainingTimer } from '../hooks/useTrainingTimer';
 
 /**
- * An open replay position as returned by POST /sessions/{id}/trade
- * (action:"open"). We track tp/sl locally so drag-to-adjust can sync them
- * back to the backend via the `update_stops` action and keep the chart lines
- * in sync.
+ * Session-local open position. Lives in React state only; NO backend
+ * persistence yet (the trading mechanic is being rebuilt session-locally
+ * before we re-wire to the API). Closing computes realizedPnl via
+ * `computePnl` in `src/data/tradeMath.ts`. Resets to null whenever the
+ * active session id changes.
  */
-interface OpenPosition {
-  id: string;
-  side: 'buy' | 'sell';
-  lots: number;
-  entry_price: number;
-  stop_loss: number | null;
-  take_profit: number | null;
-}
-
-/**
- * Default TP/SL offset as a fraction of entry (~0.25%). Scales sensibly across
- * instruments. Side rules (applied at open):
- *   LONG  (buy):  TP ABOVE entry (entry * 1+OFFSET), SL BELOW (entry * 1−OFFSET)
- *   SHORT (sell): TP BELOW entry (entry * 1−OFFSET), SL ABOVE (entry * 1+OFFSET)
- */
-const STOP_OFFSET = 0.0025;
+type SessionPosition = {
+  side: 'long' | 'short';
+  entryPrice: number;
+  contracts: number;
+  symbol: string;
+  status: 'open' | 'closed';
+  exitPrice: number | null;
+  realizedPnl: number | null;
+  /** Index of the last revealed candle in the candles array at open. */
+  entryBarIndex: number;
+  /** Unix seconds of the last revealed candle at open. */
+  entryBarTime: number;
+  /**
+   * User-set TP/SL prices coming back from the chart-host's draggable
+   * chips. Stored only — no auto-fill logic yet (next step). null until
+   * the user drops the chip for the first time; the chart-host shows
+   * its own default placement until then.
+   */
+  tpPrice: number | null;
+  slPrice: number | null;
+};
 
 /**
  * ChartScreen — the live Chart tab. Hosts the TradingView WebView
@@ -144,6 +175,18 @@ function QtyStepper({
 }
 
 export default function ChartScreen() {
+  // Training timer — accumulates session time toward the user's
+  // onboarding-picked daily goal. Crossing the goal auto-completes
+  // the day in streakStore (currentStreak++), which is what drives
+  // the fire-icon count on the Home header. This was previously only
+  // mounted on the legacy TradingScreen, so chart-screen sessions
+  // never accrued streak progress.
+  useTrainingTimer();
+
+  // Used by TradeResultCard's "Journal Trade" action to navigate to the
+  // Journal tab. We pull from the navigation container at render-time so
+  // the screen doesn't have to be wired with a typed prop.
+  const navigation = useNavigation<any>();
   const [selectedSymbol, setSelectedSymbol] = useState('NQ');
   const [selectedInterval, setSelectedInterval] = useState('D');
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -160,6 +203,14 @@ export default function ChartScreen() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
+
+  // The active session's backend `current_time` (unix seconds). Mirrors
+  // sess["current_time"] read from GET /sessions/{id}. Used to time-sync
+  // a freshly-picked symbol's shadow session to the user's primary replay
+  // cursor so switching markets does NOT jump backward to a random date.
+  // Stored in a ref so reads from inside callbacks don't go stale on
+  // re-render, and writes don't force a re-render of the chart.
+  const currentSessionTimeRef = useRef<number | null>(null);
 
   // A monotonic token to force a session restart on Retry. Bumping it
   // re-runs the effect below with the same symbol/interval.
@@ -183,6 +234,12 @@ export default function ChartScreen() {
   // session-start candles and updated on every /advance. Drives both the
   // open `entry_price` and the live unrealized P&L.
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
+  // Mirror of lastBarRef.current.time as React state so child components
+  // (e.g. NewsPanel) re-render on each /advance — useRef updates don't.
+  // Used to drive the News panel's current replay-day + past/upcoming
+  // split. Always kept in sync with lastBarRef at every update site.
+  const [currentBarTimeSec, setCurrentBarTimeSec] = useState<number | null>(null);
+  const [newsOpen, setNewsOpen] = useState(false);
 
   // Contract multiplier for the active symbol (from /markets). Backend uses
   // it for realized P&L; we use the SAME value for the unrealized readout so
@@ -195,11 +252,20 @@ export default function ChartScreen() {
   // position is open — you can't resize mid-position.
   const [qty, setQty] = useState(1);
 
-  // The single open position (one-at-a-time gate). The backend's
-  // open_positions is an ARRAY and would allow more, but the UI gates to one
-  // for now. null = flat.
-  const [position, setPosition] = useState<OpenPosition | null>(null);
+  // The single open position (one-at-a-time gate). Session-local — no
+  // backend persistence yet. null = flat. While `position !== null` Buy/
+  // Sell are disabled and a Close chip appears in their place.
+  const [position, setPosition] = useState<SessionPosition | null>(null);
+  // Kept for compatibility with prior code (chart-line + advance hooks)
+  // but no longer toggled by open/close since both are now synchronous.
   const [tradeBusy, setTradeBusy] = useState(false);
+  // The last bar that's been "ticked" — drives the live unrealized P&L.
+  // Held alongside currentPrice (which is the close of the last revealed
+  // candle); these are conceptually the same in replay.
+  // We also track the most-recent revealed bar index/time for entryBarIndex
+  // / entryBarTime capture at open. These come from the chart push-bar
+  // path below, not from a separate candles state.
+  const lastBarRef = useRef<{ index: number; time: number } | null>(null);
 
   // Phase 4B: position + TP/SL now render as TradingView lines (no corner box).
   //  - lineApiUnavailable: set true if the hosted page reports the line API is
@@ -210,6 +276,24 @@ export default function ChartScreen() {
   //    hit on advance) or manual close. Auto-clears after a few seconds.
   const [lineApiUnavailable, setLineApiUnavailable] = useState(false);
   const [tradeResult, setTradeResult] = useState<string | null>(null);
+  // TP/SL auto-close toast. Set in the advance loop when a bar's
+  // high/low crosses the stored tpPrice/slPrice; the TradeFillToast
+  // component handles the slide-in animation + 4s auto-dismiss +
+  // tap-× early dismiss. NOT set on manual closes.
+  const [fillToast, setFillToast] = useState<TradeFillToastData | null>(null);
+  // Post-trade result card — shown after every close (manual + TP/SL auto).
+  // Replaces the TradeFillToast popup for closes so we don't stack two
+  // popups on top of each other.
+  const [tradeResultCard, setTradeResultCard] = useState<TradeResultData | null>(null);
+  // One-shot resolver for the next chartScreenshot bridge message. Set
+  // by `captureChartScreenshot()` before injecting the JS, called by the
+  // onLineMessage handler when the chart-host posts back. Plain ref
+  // (not state) because nothing about its value drives a re-render.
+  const pendingChartShot = useRef<((uri: string | null) => void) | null>(null);
+  // Same shape as pendingChartShot but for the polished trade-card
+  // composite (window.ptCaptureTradeCard). Separate resolver so we
+  // can have both captures in flight at the same trade-close moment.
+  const pendingTradeCardShot = useRef<((uri: string | null) => void) | null>(null);
   const tradeResultTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Phase 3C: Sessions dropdown (NY/London/Asia). The header time-outline
@@ -223,6 +307,15 @@ export default function ChartScreen() {
   const [jumping, setJumping] = useState(false);
   const [jumpError, setJumpError] = useState<string | null>(null);
   const jumpErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Phase B: the Sessions dropdown's three row labels and the seek_session
+  // POST both read these from the persisted store. The "⚙ Edit session
+  // times" row opens the config sheet.
+  const [tzModalVisible, setTzModalVisible] = useState(false);
+  const sessionTz = useSessionTimesStore((s) => s.tz);
+  const sessionNewYork = useSessionTimesStore((s) => s.newyork);
+  const sessionLondon = useSessionTimesStore((s) => s.london);
+  const sessionAsia = useSessionTimesStore((s) => s.asia);
 
   // Show a brief realized-P&L result line, auto-clearing after 4s. Reused by
   // both auto-close (TP/SL hit) and manual close.
@@ -248,62 +341,60 @@ export default function ChartScreen() {
     jumpErrorTimer.current = setTimeout(() => setJumpError(null), 4000);
   }, []);
 
-  // Start a fresh replay session whenever the symbol or interval changes.
-  // The `cancelled` guard drops a slow response from a stale symbol so it
-  // can't overwrite a newer session (cancel-on-unmount / cancel-on-change).
+  // Seed currentPrice whenever the active sessionId changes (resume from
+  // SessionsScreen OR brand-new session from CreateSessionSheet). The
+  // earlier auto-create-on-mount POST /sessions/start has moved to the
+  // CreateSessionSheet; here we just GET the existing session so the
+  // chart screen has a current revealed price for opens / unrealized
+  // P&L before the user advances. The `cancelled` guard drops a slow
+  // response from a stale session so it can't overwrite a newer one.
   useEffect(() => {
     let cancelled = false;
 
-    // Defensive fallback: in practice auth gates entry to MainTabs, so by
-    // the time the Chart tab mounts there's always a signed-in user. But if
-    // the uid hasn't resolved yet (async auth hydration) we must NOT call
-    // /sessions/start — the session's uid FKs to users(uid) and a missing/
-    // empty uid throws a FOREIGN KEY constraint 500. Leave sessionId null so
-    // the chart area shows the "Sign in to trade" state below. The effect
-    // re-runs once uid resolves (uid is in the dep array).
     if (!uid) {
       setSessionLoading(false);
       setSessionError(null);
-      setSessionId(null);
+      return;
+    }
+    // No active session selected → SessionsScreen is rendered in place
+    // of the chart UI, nothing to fetch.
+    if (!sessionId) {
+      setSessionLoading(false);
+      setSessionError(null);
       return;
     }
 
     setSessionLoading(true);
     setSessionError(null);
-    // Clear the previous session id so the chart unmounts while the new
-    // session is being created (avoids showing stale-symbol candles).
-    setSessionId(null);
 
-    // Real logged-in Firebase identity. App.tsx syncs this same uid to the
-    // backend `users` table via upsertUser, so it satisfies the FK on
-    // trading_sessions.uid.
-    const body = {
-      uid,
-      username,
-      symbol: selectedSymbol,
-      timeframe: tvIntervalToApiTimeframe(selectedInterval),
-      account_size: 50000,
-      start_time: null,
-    };
-
-    fetch(`${CHART_BACKEND_URL}/sessions/start`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
+    fetch(`${CHART_BACKEND_URL}/sessions/${sessionId}`)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
       .then((data) => {
         if (cancelled) return;
-        setSessionId(data.session_id);
         // Seed the current revealed price from the last loaded candle's close.
-        // The session-start effect used to discard candles; now we keep the
-        // last close so opens/unrealized P&L have a price before any advance.
         const candles: any[] = Array.isArray(data?.candles) ? data.candles : [];
         if (candles.length > 0) {
-          setCurrentPrice(candles[candles.length - 1].close);
+          const last = candles[candles.length - 1];
+          setCurrentPrice(last.close);
+          // Capture index/time of the last revealed bar so a Buy/Sell tap
+          // before any /advance still records a real entryBarIndex+time.
+          const lastIdx = candles.length - 1;
+          const lastTime = typeof last.time === 'number' ? last.time : 0;
+          lastBarRef.current = { index: lastIdx, time: lastTime };
+          setCurrentBarTimeSec(lastTime || null);
+        }
+        // Resume restores the persisted symbol/interval so the chart
+        // mounts at the same TF the session was last viewed on.
+        if (typeof data?.symbol === 'string' && data.symbol !== selectedSymbol) {
+          setSelectedSymbol(data.symbol);
+        }
+        // Cache the backend's authoritative current_time so the picker
+        // can time-sync shadow sessions to it on the next symbol switch.
+        if (typeof data?.current_time === 'number') {
+          currentSessionTimeRef.current = data.current_time;
         }
         setSessionLoading(false);
         setSessionError(null);
@@ -311,27 +402,238 @@ export default function ChartScreen() {
       .catch((err) => {
         if (cancelled) return;
         setSessionError(
-          err && err.message ? `Couldn't start session: ${err.message}` : 'Couldn’t start session',
+          err && err.message ? `Couldn't load session: ${err.message}` : 'Couldn’t load session',
         );
         setSessionLoading(false);
-        // Keep sessionId null on failure so the chart stays unmounted.
       });
 
     return () => {
       cancelled = true;
     };
-    // selectedInterval is intentionally OMITTED: a TF change is handled in
-    // place via POST /sessions/{id}/timeframe + resetData() (see
-    // handleIntervalChange), NOT by restarting the session. The effect still
-    // runs on symbol change / initial mount / Retry (sessionAttempt) and reads
-    // the CURRENT selectedInterval from its closure, so a new symbol's session
-    // starts at whatever TF is currently selected.
+    // selectedSymbol / selectedInterval are intentionally OMITTED: a TF
+    // change is handled in place via POST /sessions/{id}/timeframe; a
+    // symbol change is owned by the SessionsScreen create flow (which
+    // hands back a new session_id). The effect only re-fires when the
+    // active session itself changes, when the user retries after an
+    // error, or when uid (re-)resolves.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSymbol, sessionAttempt, uid, username]);
+  }, [sessionId, sessionAttempt, uid]);
 
   const retrySession = useCallback(() => {
     setSessionAttempt((n) => n + 1);
   }, []);
+
+  // Per-symbol session cache. Keys are uppercase symbol strings (e.g.
+  // "YM"), values are the server session_ids the user is currently
+  // running for that contract. Lets the picker resume the same session
+  // when the user cycles back to a market they've already visited
+  // instead of spawning a fresh random session (which would change the
+  // candles every time they came back).
+  //
+  // Lives in a ref so cache writes don't trigger re-renders — it's a
+  // pure side-effect lookup, not display state. Bounded to the
+  // ChartScreen lifetime: cleared on handleReturnToSessions so a
+  // round-trip through SessionsScreen starts cleanly.
+  const sessionsBySymbolRef = useRef<Map<string, string>>(new Map());
+
+  // The session_id the user CAME IN on for this chart-screen visit —
+  // i.e. the one explicitly chosen via SessionsScreen or just created
+  // via CreateSessionSheet. Picker-spawned sessions (visiting other
+  // markets via the watchlist) accumulate alongside it in the cache,
+  // but only this one is the user's "real" session. On exit, the
+  // picker-spawned ones get DELETEd from the backend so they don't
+  // pollute the Continue list.
+  const entrySessionIdRef = useRef<string | null>(null);
+
+  // Handler shared by SessionsScreen (resume tap) and CreateSessionSheet
+  // (new-session success). Sets the active sessionId + persisted
+  // symbol/timeframe so the chart mounts on the chosen session. The
+  // GET-/sessions/{id}/ seeding effect above runs as a side-effect of
+  // sessionId changing.
+  const handleSessionSelected = useCallback(
+    (sid: string, sym: string, tf: string) => {
+      // Convert the API timeframe ('5m', '1D'…) back to a TV interval
+      // ('5', 'D'…) so the chart toolbar lines up on mount. We only
+      // map the keys we actually ship in CreateSessionSheet today,
+      // falling back to 'D' for anything unrecognized.
+      const tvInterval = apiTimeframeToTvInterval(tf);
+      setSelectedSymbol(sym);
+      setSelectedInterval(tvInterval);
+      // Record this symbol -> sessionId binding so a future picker tap
+      // on the same symbol resumes this exact session. Always-write so
+      // restarting a session on the same symbol via SessionsScreen
+      // replaces the stale cache entry.
+      sessionsBySymbolRef.current.set(sym, sid);
+      // Lock in the entry session on the FIRST handleSessionSelected
+      // call of this chart-screen visit. Picker-spawned sessions call
+      // through here too, but they arrive AFTER the entry is set, so
+      // they never overwrite. handleReturnToSessions clears this back
+      // to null so a round-trip through SessionsScreen re-locks
+      // cleanly on the next chart entry.
+      if (entrySessionIdRef.current === null) {
+        entrySessionIdRef.current = sid;
+      }
+      // Bookend any prior session-stats run BEFORE starting fresh.
+      // This handles the case where the user closed the app
+      // mid-session and the persisted store still has a `currentSession`.
+      // No-op when nothing is active.
+      const prior = useSessionStatsStore.getState().endSession();
+      if (prior) detectAfterSessionEnd(prior);
+      // Begin stats tracking for the new chart session. The challenge
+      // engine reads this on every trade close + at session-end. We
+      // also pass the session_id so per-session trade tallies land
+      // in `perSession` for the Continue card on SessionsScreen.
+      useSessionStatsStore.getState().startSession(sid);
+      setSessionId(sid);
+    },
+    [],
+  );
+
+  // Symbol-picker onSelect handler — fired when the user taps a market
+  // in SymbolPickerSheet. Behaviour:
+  //
+  //   - Same symbol as current → close the picker (no-op).
+  //
+  //   - Different symbol, NOT yet visited this chart-screen visit →
+  //       Spawn a SHADOW session (is_shadow=true) anchored at the user's
+  //       current replay time via start_time = currentSessionTime. The
+  //       backend's /users/{uid}/sessions hides shadows from the
+  //       Continue list, so the picker doesn't pollute the user's real
+  //       session list. handleReturnToSessions later DELETES the
+  //       shadows when the user exits the chart.
+  //
+  //   - Different symbol, ALREADY visited (cache hit) →
+  //       Resume the cached session, but first POST /seek to sync its
+  //       cursor to the user's current replay time. This makes the
+  //       chart show the picked market at the SAME date the user is
+  //       on — no jumping back to a random older time.
+  //
+  // The currentSessionTimeRef is fed by the session-load effect, which
+  // reads `current_time` from GET /sessions/{id}. It's the user's
+  // authoritative replay cursor across markets.
+  const handlePickerSelect = useCallback(
+    async (symbol: string) => {
+      if (symbol === selectedSymbol) {
+        setPickerOpen(false);
+        return;
+      }
+      const tf = tvIntervalToApiTimeframe(selectedInterval);
+      const anchorTime = currentSessionTimeRef.current;
+
+      // Cache resume — sync the cached target session to the user's
+      // current replay cursor first, then bind the chart to it.
+      const cached = sessionsBySymbolRef.current.get(symbol);
+      if (cached) {
+        try {
+          if (anchorTime !== null) {
+            await fetch(`${CHART_BACKEND_URL}/sessions/${cached}/seek`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ target_time: anchorTime }),
+            });
+          }
+        } catch {
+          // Seek failure is non-fatal — the cached session keeps
+          // whatever cursor it had. Worse: time drift between
+          // markets. Better: not blocking the switch.
+        }
+        handleSessionSelected(cached, symbol, tf);
+        setPickerOpen(false);
+        return;
+      }
+
+      // First-visit path — spawn a shadow session anchored at the
+      // user's current replay cursor (so the chart opens at the SAME
+      // date, not a random one). is_shadow keeps it out of the Continue
+      // list and earmarks it for cleanup on chart exit.
+      try {
+        const res = await fetch(`${CHART_BACKEND_URL}/sessions/start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            uid,
+            username,
+            symbol,
+            timeframe: tf,
+            account_size: 50000,
+            // anchorTime is the user's current replay cursor. Pass it
+            // as start_time so the new session opens at the same date.
+            // Falls back to null (random start) only when the primary
+            // session hasn't surfaced a current_time yet, which only
+            // happens on first chart mount before /sessions/{id} returns.
+            start_time: anchorTime,
+            is_shadow: true,
+          }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!data?.session_id) throw new Error('Missing session_id');
+        const srvSym = typeof data.symbol === 'string' ? data.symbol : symbol;
+        const srvTf  = typeof data.timeframe === 'string' ? data.timeframe : tf;
+        // handleSessionSelected writes the cache entry — no need to
+        // duplicate that here.
+        handleSessionSelected(data.session_id, srvSym, srvTf);
+        setPickerOpen(false);
+      } catch (err: any) {
+        // DO NOT mutate selectedSymbol on failure — that would trigger
+        // the session-load overwrite path (lines 377-379) and leave
+        // the user in an inconsistent state. Leave the picker open so
+        // they can retry or cancel out.
+        Alert.alert(
+          "Couldn't switch market",
+          err?.message
+            ? `Failed to switch to ${symbol}: ${err.message}`
+            : `Failed to switch to ${symbol}.`,
+        );
+      }
+    },
+    [selectedSymbol, selectedInterval, uid, username, handleSessionSelected],
+  );
+
+  // Return to SessionsScreen from the chart — clears active session +
+  // ALL trade state so we don't render stale chart lines / P&L the next
+  // time the user picks a session.
+  const handleReturnToSessions = useCallback(() => {
+    // Finalize the session stats BEFORE wiping local state so the
+    // session-end challenge engine sees the real numbers.
+    const rec = useSessionStatsStore.getState().endSession();
+    if (rec) detectAfterSessionEnd(rec);
+
+    setSessionId(null);
+    setSessionError(null);
+    setSessionLoading(false);
+    setPosition(null);
+    setCurrentPrice(null);
+    setDone(false);
+    setAdvanceError(null);
+    setTradeResult(null);
+    lastBarRef.current = null;
+    setCurrentBarTimeSec(null);
+    chartRef.current?.clearTrade();
+
+    // Backend cleanup — delete the sessions the picker auto-spawned
+    // when the user browsed other markets via the watchlist. Without
+    // this, those scratch sessions accumulate in the Continue list
+    // and the user sees N sessions where they only ever intended to
+    // start one. The session they CAME IN on (entrySessionIdRef) is
+    // preserved — that's their real session.
+    //
+    // Fire-and-forget: failure here doesn't block navigation back.
+    // The worst case is one stale session sticking around until the
+    // backend's own cleanup picks it up.
+    const entrySid = entrySessionIdRef.current;
+    if (uid) {
+      sessionsBySymbolRef.current.forEach((sid) => {
+        if (sid === entrySid) return;
+        fetch(
+          `${CHART_BACKEND_URL}/sessions/${sid}?uid=${encodeURIComponent(uid)}`,
+          { method: 'DELETE' },
+        ).catch(() => {});
+      });
+    }
+    sessionsBySymbolRef.current.clear();
+    entrySessionIdRef.current = null;
+  }, [uid]);
 
   // Fetch the contract multiplier for the active symbol from /markets. The
   // SymbolPickerSheet fetches /markets for its UI; here we only need the
@@ -374,11 +676,48 @@ export default function ChartScreen() {
   // onChartReady (so the initial load doesn't re-emit) and the `=== selectedInterval`
   // guard below is a second line of defence — no switch loop.
   const handleIntervalChange = useCallback(
-    (newInterval: string) => {
+    async (newInterval: string) => {
       if (newInterval === selectedInterval) return;
       setSelectedInterval(newInterval);
+
+      // RN's currentPrice / lastBarRef.time / currentBarTimeSec were
+      // all seeded from the OLD TF's last-bar close (via session-load
+      // or /advance). The chart-host independently re-fetches at the
+      // new TF on intervalChanged, so the visual chart now shows a
+      // possibly-different last close than RN remembers — symptom:
+      // enter on 1h at 21,336, switch to 1m where the last 1m close
+      // is 21,336.50, and RN's P&L stays $0 against the stale entry
+      // even though the chart's "current price" disagrees.
+      //
+      // Fix: refetch the session at the new TF and re-seed RN from
+      // the new last bar. Pass ?timeframe= explicitly so we don't
+      // race the chart-host's getBars persisting the same field.
+      if (!sessionId) return;
+      try {
+        const tf = tvIntervalToApiTimeframe(newInterval);
+        const res = await fetch(
+          `${CHART_BACKEND_URL}/sessions/${sessionId}?timeframe=${encodeURIComponent(tf)}`,
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        const candles: any[] = Array.isArray(data?.candles) ? data.candles : [];
+        if (candles.length === 0) return;
+        const last = candles[candles.length - 1];
+        if (typeof last.close === 'number') {
+          setCurrentPrice(last.close);
+        }
+        if (typeof last.time === 'number' && last.time > 0) {
+          const idx = candles.length - 1;
+          lastBarRef.current = { index: idx, time: last.time };
+          setCurrentBarTimeSec(last.time);
+        }
+      } catch {
+        // Non-fatal — the chart-host's own re-fetch will still update
+        // the visual. RN just stays on the pre-switch price until the
+        // next /advance.
+      }
     },
-    [selectedInterval],
+    [selectedInterval, sessionId],
   );
 
   // Reset advance state when the session changes (new symbol/interval, or a
@@ -390,9 +729,13 @@ export default function ChartScreen() {
     setAdvancing(false);
     // A new session means any prior position belonged to the old session —
     // drop it so the readout doesn't carry over. Reset qty to the default.
+    // Also drop the last-bar ref so a Buy/Sell tap before the new session
+    // seeds can't read a stale index from the prior session's candles.
     setPosition(null);
     setQty(1);
     setTradeBusy(false);
+    lastBarRef.current = null;
+    setCurrentBarTimeSec(null);
     // Clear any leftover trade lines + transient result from the prior session.
     chartRef.current?.clearTrade();
     setTradeResult(null);
@@ -425,7 +768,22 @@ export default function ChartScreen() {
         const data = await res.json();
 
         const candles: any[] = Array.isArray(data?.candles) ? data.candles : [];
-        for (const c of candles) {
+
+        // Walk candles one at a time, pushing each to the chart and
+        // checking against the open position's TP/SL on EACH bar (per
+        // spec). If a level is hit, close at the fill price and stop
+        // pushing further bars. Bars after the trigger stay unprocessed
+        // — `done` is suppressed in that case so the user can continue
+        // advancing them next tap.
+        let hitInfo: {
+          reason: 'tp' | 'sl';
+          fillPrice: number;
+          barIdxInBatch: number;
+        } | null = null;
+        let processedCount = 0;
+
+        for (let i = 0; i < candles.length; i++) {
+          const c = candles[i];
           const bar: ChartBar = {
             time: c.time * 1000, // API unix seconds → TV ms
             open: c.open,
@@ -435,48 +793,246 @@ export default function ChartScreen() {
             volume: c.volume,
           };
           chartRef.current?.pushBar(bar);
+          processedCount += 1;
+
+          // TP/SL hit check — only when the position is open. If BOTH
+          // levels fall inside this bar's range, SL wins (worst-case
+          // fill) per spec, hence the SL check runs first.
+          if (position && position.status === 'open') {
+            const tp = position.tpPrice;
+            const sl = position.slPrice;
+            const high = Number(c.high);
+            const low = Number(c.low);
+            let detected: 'tp' | 'sl' | null = null;
+            if (position.side === 'long') {
+              if (sl != null && low <= sl) {
+                hitInfo = { reason: 'sl', fillPrice: sl, barIdxInBatch: i };
+                detected = 'sl';
+              } else if (tp != null && high >= tp) {
+                hitInfo = { reason: 'tp', fillPrice: tp, barIdxInBatch: i };
+                detected = 'tp';
+              }
+            } else {
+              // SHORT
+              if (sl != null && high >= sl) {
+                hitInfo = { reason: 'sl', fillPrice: sl, barIdxInBatch: i };
+                detected = 'sl';
+              } else if (tp != null && low <= tp) {
+                hitInfo = { reason: 'tp', fillPrice: tp, barIdxInBatch: i };
+                detected = 'tp';
+              }
+            }
+            // eslint-disable-next-line no-console
+            console.log(
+              `[tpsl-fill] bar ${i + 1}/${candles.length} side=${position.side}`
+                + ` entry=${position.entryPrice} tp=${tp ?? 'null'} sl=${sl ?? 'null'}`
+                + ` h=${high} l=${low} c=${c.close} hit=${detected ?? 'no'}`,
+            );
+            if (hitInfo) break;
+          } else {
+            // eslint-disable-next-line no-console
+            console.log(
+              `[tpsl-fill] bar ${i + 1}/${candles.length} no-open-position`
+                + ` (positionPresent=${!!position} status=${position?.status ?? 'n/a'})`,
+            );
+          }
         }
 
         // Track the current revealed price = the last newly-revealed close.
         // This drives the live unrealized P&L readout (recomputed on render).
-        const newPrice =
-          candles.length > 0 ? candles[candles.length - 1].close : currentPrice;
-        if (candles.length > 0) {
-          setCurrentPrice(candles[candles.length - 1].close);
+        const lastProcessed =
+          processedCount > 0 ? candles[processedCount - 1] : null;
+        const newPrice = lastProcessed ? lastProcessed.close : currentPrice;
+        if (lastProcessed) {
+          setCurrentPrice(lastProcessed.close);
+          // Advance the last-bar pointer so a Buy/Sell tap right after
+          // this /advance captures the bar that just landed.
+          const prevIdx = lastBarRef.current?.index ?? -1;
+          const newBarTime =
+            typeof lastProcessed.time === 'number' ? lastProcessed.time : 0;
+          lastBarRef.current = {
+            index: prevIdx + processedCount,
+            time: newBarTime,
+          };
+          setCurrentBarTimeSec(newBarTime || null);
         }
 
-        // auto_closed: positions stopped/targeted out as bars revealed. Keep
-        // the existing log. If our open position's id appears, it was closed
-        // server-side (TP/SL hit) — clear the chart lines and flash the brief
-        // realized result. End-of-data shape omits the key → [].
-        const autoClosed: any[] = Array.isArray(data?.auto_closed) ? data.auto_closed : [];
-        // eslint-disable-next-line no-console
-        console.log('[advance] auto_closed', autoClosed);
-        const mine = position
-          ? autoClosed.find((t) => t?.position_id === position.id)
-          : null;
-        if (mine) {
+        // Auto-close on TP/SL hit. Close at the FILL PRICE (not the
+        // bar's close) and flash the realized P&L like the manual close
+        // path. Bars after the trigger were intentionally not pushed.
+        // `closedThisAdvance` GATES the P&L-refresh block below so we
+        // don't re-show the pill we just cleared (that's the bug that
+        // made TP/SL appear to "snap back to the line" — the legacy
+        // refresh fired ptShowPosition right after clearTrade and the
+        // chart-host happily re-created the pill + reset chips to unset).
+        let closedThisAdvance = false;
+        if (hitInfo && position && position.status === 'open') {
+          const realized = computePnl({
+            side: position.side,
+            entryPrice: position.entryPrice,
+            currentPrice: hitInfo.fillPrice,
+            contracts: position.contracts,
+            symbol: position.symbol,
+          });
+          const pointsMove =
+            position.side === 'long'
+              ? hitInfo.fillPrice - position.entryPrice
+              : position.entryPrice - hitInfo.fillPrice;
+
+          // Hold-duration + R-multiple challenge inputs.
+          // opened_at: bar time captured at position open.
+          // closed_at: bar time of the candle that triggered the
+          //            TP/SL fill (c.time from the hitInfo loop).
+          // r_multiple: signed realized R = pointsMove / |entry - SL|.
+          //            Undefined when no SL was set (no R reference).
+          const closeBarTime =
+            typeof candles[hitInfo.barIdxInBatch]?.time === 'number'
+              ? candles[hitInfo.barIdxInBatch].time
+              : 0;
+          let rMultiple: number | undefined;
+          if (position.slPrice != null) {
+            const riskPoints = Math.abs(position.entryPrice - position.slPrice);
+            if (riskPoints > 0) rMultiple = pointsMove / riskPoints;
+          }
+
+          // ── STATS FIRST ────────────────────────────────────────────
+          // Same reasoning as the manual closePosition path: fire the
+          // challenge detection + session-stats overlay BEFORE the
+          // async captures so a slow / failing capture can't strand
+          // the trade out of the Continue card's perSession overlay.
+          const tradeId = `local-${Date.now()}`;
+          detectAfterTradeClose(
+            {
+              id: tradeId,
+              symbol: position.symbol,
+              pnl: realized,
+              opened_at: position.entryBarTime,
+              closed_at: closeBarTime,
+              r_multiple: rMultiple,
+              stop_loss: position.slPrice ?? null,
+              take_profit: position.tpPrice ?? null,
+            },
+            selectedInterval,
+          );
+          useSessionStatsStore.getState().recordTradeClose({
+            pnl: realized,
+            hadStop: position.slPrice != null,
+            hadTp:   position.tpPrice != null,
+          });
+
+          // ── CAPTURES ───────────────────────────────────────────────
+          // Two captures, both fault-tolerant:
+          //   cleanChartUri    — chart with NO overlay markers
+          //                      (journal entry attachment)
+          //   shareCardImageUri — polished 4:5 trade-card composite
+          //                      (Share button output)
+          let cleanChartUri: string | null = null;
+          let cardImageUri:  string | null = null;
+          try {
+            cleanChartUri = await captureChartScreenshot({ noOverlays: true });
+          } catch (e) {
+            // eslint-disable-next-line no-console
+            console.warn('[tpsl-fill] clean chart capture failed:', e);
+          }
+          try {
+            cardImageUri = await captureTradeCardImage({
+              side: position.side,
+              symbol: position.symbol,
+              qty: position.contracts,
+              entryPrice: position.entryPrice,
+              exitPrice: hitInfo.fillPrice,
+              pnlUsd: realized,
+              pointsMove,
+              returnPct: 0,
+              reason: hitInfo.reason,
+              closedAtMs: Date.now(),
+            });
+          } catch (e) {
+            // eslint-disable-next-line no-console
+            console.warn('[tpsl-fill] trade card capture failed:', e);
+          }
+
           setPosition(null);
           chartRef.current?.clearTrade();
-          const pnl = typeof mine.pnl === 'number' ? mine.pnl : 0;
-          const hitLabel = mine.hit === 'tp' ? 'TP hit' : mine.hit === 'sl' ? 'SL hit' : 'Closed';
-          flashResult(`${hitLabel} ${pnl >= 0 ? '+' : '-'}$${Math.abs(pnl).toFixed(2)}`);
-        } else if (position && newPrice != null) {
-          // Position still open — refresh the line's P&L for the new price.
-          const pnl =
-            (newPrice - position.entry_price) *
-            (position.side === 'buy' ? 1 : -1) *
-            contractSize *
-            position.lots;
-          chartRef.current?.showPosition({
+          closedThisAdvance = true;
+          const reasonLabel = hitInfo.reason === 'tp' ? 'TP' : 'SL';
+          flashResult(
+            `${reasonLabel} hit · ${realized >= 0 ? '+' : '-'}$${Math.abs(realized).toFixed(2)}`,
+          );
+          const cardData = {
+            cleanChartUri,
+            shareCardImageUri: cardImageUri,
             side: position.side,
-            qty: position.lots,
-            entry: position.entry_price,
+            symbol: position.symbol,
+            qty: position.contracts,
+            entryPrice: position.entryPrice,
+            exitPrice: hitInfo.fillPrice,
+            pnlUsd: realized,
+            pointsMove,
+            returnPct: 0,
+            reason: hitInfo.reason,
+            closedAtMs: Date.now(),
+          };
+          // Respect the user's "show trade-result card" setting.
+          // When off, the trade still records + the toast flashes —
+          // we just skip the modal.
+          if (useSettingsStore.getState().tradeResultCardEnabled) {
+            setTradeResultCard(cardData);
+          }
+          // Stats refresh — see manual-close path for rationale.
+          recordClosedTradeAsJournalEntry(cardData, {
+            slPrice: position.slPrice,
+            tpPrice: position.tpPrice,
+            entryBarTime: position.entryBarTime,
+          });
+
+          // eslint-disable-next-line no-console
+          console.log(
+            `[tpsl-fill] CLOSED reason=${hitInfo.reason} fillPrice=${hitInfo.fillPrice}`
+              + ` realized=${realized.toFixed(2)} entry=${position.entryPrice}`
+              + ` side=${position.side} qty=${position.contracts}`,
+          );
+        }
+
+        // auto_closed comes from the legacy backend trade flow. We're now
+        // session-local — no backend position exists, so this should
+        // always be empty for our open positions. Left intact so the
+        // replay engine itself isn't disturbed. Log only.
+        const autoClosed: any[] = Array.isArray(data?.auto_closed) ? data.auto_closed : [];
+        if (autoClosed.length > 0) {
+          // eslint-disable-next-line no-console
+          console.log('[advance] auto_closed (ignored — local-only positions)', autoClosed);
+        }
+
+        // Refresh the chart's position line P&L using the shared math
+        // helper so the on-chart line and the readout below agree.
+        // Gated by !closedThisAdvance — otherwise we'd re-show the pill
+        // immediately after auto-close-driven clearTrade and the chips
+        // would visually snap back to their unset state.
+        if (!closedThisAdvance && position && position.status === 'open' && newPrice != null) {
+          const pnl = computePnl({
+            side: position.side,
+            entryPrice: position.entryPrice,
+            currentPrice: newPrice,
+            contracts: position.contracts,
+            symbol: position.symbol,
+          });
+          chartRef.current?.showPosition({
+            side: position.side === 'long' ? 'buy' : 'sell',
+            qty: position.contracts,
+            entry: position.entryPrice,
             pnl,
+            pointValue: POINT_VALUE[position.symbol] ?? 1,
           });
         }
 
-        if (data?.done === true) setDone(true);
+        // Only flip end-of-data when we actually processed every bar
+        // the server sent. A TP/SL hit can leave unprocessed bars in
+        // the batch; we don't want to permanently disable Next Bar
+        // when those bars are still pending.
+        if (data?.done === true && processedCount === candles.length) {
+          setDone(true);
+        }
       } catch (err: any) {
         // Non-crashing: surface a brief message, keep the button usable.
         setAdvanceError(
@@ -489,20 +1045,23 @@ export default function ChartScreen() {
     [sessionId, advancing, done, position, currentPrice, contractSize, flashResult],
   );
 
-  // Phase 3C: jump the replay forward to the next ET wall-clock time matching
-  // one of the three session opens. Hardcoded defaults (Phase A): NY=09:30 ET,
-  // London=03:00 ET, Asia=20:00 ET. The backend handles DST + weekend/holiday
-  // roll-forward + auto-close walking across the jumped range; we just refresh
-  // the chart via resetData() so it re-fetches the visible window at the new
-  // cursor (Path B). Mirrors /advance's auto_closed handling so a TP/SL hit
-  // during the jump correctly clears the position + flashes the realized P&L.
+  // Phase 3C/B: jump the replay forward to the next wall-clock time (in the
+  // user's chosen tz) matching one of the three session opens. Phase A had
+  // hardcoded NY=09:30 ET / London=03:00 ET / Asia=20:00 ET; Phase B reads
+  // both the HH:MM and the IANA tz from `useSessionTimesStore`, so the same
+  // dropdown can mean "09:30 LONDON" or "09:30 TOKYO" without changing the
+  // backend contract. Backend still handles DST + weekend/holiday roll-forward
+  // + auto-close walking across the jumped range; we just refresh the chart
+  // via resetData() so it re-fetches the visible window at the new cursor
+  // (Path B). Mirrors /advance's auto_closed handling so a TP/SL hit during
+  // the jump correctly clears the position + flashes the realized P&L.
   const handleSessionJump = useCallback(
     async (label: 'NY' | 'London' | 'Asia') => {
       if (!sessionId || jumping) return;
       const targets = {
-        NY:     { hh:  9, mm: 30 },
-        London: { hh:  3, mm:  0 },
-        Asia:   { hh: 20, mm:  0 },
+        NY:     sessionNewYork,
+        London: sessionLondon,
+        Asia:   sessionAsia,
       } as const;
       setSessionMenuOpen(false);
       setJumping(true);
@@ -512,7 +1071,7 @@ export default function ChartScreen() {
         const res = await fetch(`${CHART_BACKEND_URL}/sessions/${sessionId}/seek_session`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ target_hh: t.hh, target_mm: t.mm }),
+          body: JSON.stringify({ target_hh: t.hh, target_mm: t.mm, tz: sessionTz }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
@@ -522,29 +1081,30 @@ export default function ChartScreen() {
           return;
         }
 
-        // Auto-close handling — same shape /advance returns, same RN
-        // pattern. If our open position was auto-closed during the walk,
-        // clear it from the chart + flash realized P&L.
+        // Auto-close from the backend is no longer relevant — positions
+        // are session-local and unknown to the server. Logged only so we
+        // can still see what the replay engine reports during jumps.
         const autoClosed: any[] = Array.isArray(data?.auto_closed) ? data.auto_closed : [];
         if (autoClosed.length > 0) {
           // eslint-disable-next-line no-console
-          console.log('[trade] auto_closed during jump', autoClosed);
-        }
-        const mine = position
-          ? autoClosed.find((tr) => tr?.position_id === position.id)
-          : null;
-        if (mine) {
-          setPosition(null);
-          chartRef.current?.clearTrade();
-          const pnl = typeof mine.pnl === 'number' ? mine.pnl : 0;
-          const hitLabel = mine.hit === 'tp' ? 'TP hit' : mine.hit === 'sl' ? 'SL hit' : 'Closed';
-          flashResult(`${hitLabel} ${pnl >= 0 ? '+' : '-'}$${Math.abs(pnl).toFixed(2)}`);
+          console.log('[trade] auto_closed during jump (ignored — local-only positions)', autoClosed);
         }
 
         // Path B refresh — let the chart re-fetch the new visible window at
         // the session's stored TF via the existing TF-aware getBars path.
         // No per-bar pushBar walk; scales cleanly to multi-day jumps.
         chartRef.current?.resetData();
+
+        // The jump moved the replay cursor forward by potentially many
+        // bars, but did NOT push individual bars through the advance
+        // loop, so lastBarRef + currentPrice + currentBarTimeSec are
+        // all stale. Bumping sessionAttempt re-runs the session-load
+        // effect (keyed on [sessionId, sessionAttempt, uid]) which
+        // GETs /sessions/{id}, reads the new last revealed candle,
+        // and writes all three back from a single source of truth.
+        // Without this, the News panel would keep showing the
+        // pre-jump ET date because currentBarTimeSec hadn't moved.
+        setSessionAttempt((n) => n + 1);
 
         // A successful jump invalidates the end-of-data flag and any prior
         // advance error — the cursor moved, Next Bar should be live again.
@@ -556,146 +1116,385 @@ export default function ChartScreen() {
         setJumping(false);
       }
     },
-    [sessionId, jumping, position, flashResult, flashJumpError],
+    [
+      sessionId,
+      jumping,
+      position,
+      flashResult,
+      flashJumpError,
+      sessionTz,
+      sessionNewYork,
+      sessionLondon,
+      sessionAsia,
+    ],
   );
 
-  // Open a position. Buy = LONG (side:"buy"), Sell = SHORT (side:"sell").
-  // We send entry_price = currentPrice so the recorded entry matches the
-  // price on screen (the last revealed close). One-at-a-time gate: ignored
-  // if a position is already open or we don't yet have a price.
+  // Open a session-local position at the EXACT current revealed price.
+  // Buy = 'long', Sell = 'short'. One-at-a-time gate: ignored if a
+  // position is already open or we don't yet have a price.
+  //
+  // NO BACKEND CALL — the legacy POST /sessions/{id}/trade path has
+  // been removed for this step. The mechanic lives in React state only;
+  // a new session resets it.
   const openPosition = useCallback(
-    async (side: 'buy' | 'sell') => {
-      if (!sessionId || position || tradeBusy) return;
-      if (currentPrice == null) return;
-      setTradeBusy(true);
+    (side: 'buy' | 'sell') => {
+      if (!sessionId || position || currentPrice == null) return;
       setAdvanceError(null);
 
-      // Default TP/SL at ~0.25% of entry, placed on the correct sides. The
-      // backend accepts stop_loss/take_profit at open, so we send the defaults
-      // in the open body (no separate update_stops needed on entry).
-      const entry = currentPrice;
-      const up = entry * (1 + STOP_OFFSET);
-      const down = entry * (1 - STOP_OFFSET);
-      const takeProfit = side === 'buy' ? up : down;
-      const stopLoss = side === 'buy' ? down : up;
+      const sidePos: 'long' | 'short' = side === 'buy' ? 'long' : 'short';
+      const last = lastBarRef.current;
+      const newPos: SessionPosition = {
+        tpPrice: null,
+        slPrice: null,
+        side: sidePos,
+        entryPrice: currentPrice,
+        contracts: qty,
+        symbol: selectedSymbol,
+        status: 'open',
+        exitPrice: null,
+        realizedPnl: null,
+        entryBarIndex: last?.index ?? 0,
+        entryBarTime: last?.time ?? 0,
+      };
+      setPosition(newPos);
 
-      try {
-        const res = await fetch(`${CHART_BACKEND_URL}/sessions/${sessionId}/trade`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'open',
-            side,
-            lots: qty,
-            entry_price: entry,
-            stop_loss: stopLoss,
-            take_profit: takeProfit,
-          }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        if (data?.position) {
-          const p: OpenPosition = {
-            id: data.position.id,
-            side: data.position.side,
-            lots: data.position.lots,
-            entry_price: data.position.entry_price,
-            stop_loss: data.position.stop_loss ?? stopLoss,
-            take_profit: data.position.take_profit ?? takeProfit,
-          };
-          setPosition(p);
-          // Draw the position line + draggable TP/SL on the chart. P&L starts
-          // at 0 (entry == current price). These no-op gracefully if the line
-          // API is gated (the hosted page reports lineApiStatus ok:false).
-          chartRef.current?.showPosition({ side: p.side, qty: p.lots, entry: p.entry_price, pnl: 0 });
-          if (p.take_profit != null) chartRef.current?.showTP(p.take_profit);
-          if (p.stop_loss != null) chartRef.current?.showSL(p.stop_loss);
-        }
-      } catch (err: any) {
-        setAdvanceError(
-          err && err.message ? `Couldn't open: ${err.message}` : 'Couldn’t open position',
-        );
-      } finally {
-        setTradeBusy(false);
-      }
-    },
-    [sessionId, position, tradeBusy, currentPrice, qty],
-  );
-
-  // Close the open position. Realized P&L comes back on the {trade} response —
-  // logged here; a closed-trade summary UI is a later phase. Balance is also
-  // returned ({balance}); we don't currently surface balance on this screen,
-  // so there's nothing to update (logged for traceability).
-  const closePosition = useCallback(async () => {
-    if (!sessionId || !position || tradeBusy) return;
-    setTradeBusy(true);
-    setAdvanceError(null);
-    try {
-      const res = await fetch(`${CHART_BACKEND_URL}/sessions/${sessionId}/trade`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'close', position_id: position.id }),
+      // Draw the position line on the chart at entry (P&L starts at 0).
+      // No-op gracefully if the line API is gated.
+      chartRef.current?.showPosition({
+        side,
+        qty,
+        entry: currentPrice,
+        pnl: 0,
+        pointValue: POINT_VALUE[selectedSymbol] ?? 1,
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      // eslint-disable-next-line no-console
-      console.log('[trade] closed', data?.trade);
-      setPosition(null);
-      // Clear the chart lines and flash the realized P&L.
-      chartRef.current?.clearTrade();
-      const pnl = typeof data?.trade?.pnl === 'number' ? data.trade.pnl : null;
-      if (pnl != null) {
-        flashResult(`Closed ${pnl >= 0 ? '+' : '-'}$${Math.abs(pnl).toFixed(2)}`);
-      }
-    } catch (err: any) {
-      setAdvanceError(
-        err && err.message ? `Couldn't close: ${err.message}` : 'Couldn’t close position',
-      );
-    } finally {
-      setTradeBusy(false);
-    }
-  }, [sessionId, position, tradeBusy, flashResult]);
-
-  // Drag-to-adjust: a TP/SL line was moved on the chart. Persist the new stop
-  // to the backend via the STEP-0 `update_stops` action (only the moved stop is
-  // sent — the omitted one is left untouched server-side) and keep RN's local
-  // tp/sl state in sync so close/auto-close math and re-renders agree.
-  const updateStop = useCallback(
-    async (which: 'stop_loss' | 'take_profit', price: number) => {
-      if (!sessionId || !position) return;
-      // Optimistic local sync first so the readout/state is immediately correct.
-      setPosition((prev) =>
-        prev && prev.id === position.id ? { ...prev, [which]: price } : prev,
-      );
-      try {
-        const res = await fetch(`${CHART_BACKEND_URL}/sessions/${sessionId}/trade`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'update_stops',
-            position_id: position.id,
-            [which]: price,
-          }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      } catch (err: any) {
-        setAdvanceError(
-          err && err.message ? `Couldn't update stop: ${err.message}` : 'Couldn’t update stop',
-        );
-      }
     },
-    [sessionId, position],
+    [sessionId, position, currentPrice, qty, selectedSymbol],
   );
 
-  // Bridge events from the hosted chart lines: drag → update_stops; close
-  // button → close; lineApiStatus → availability note.
+  // Async helper that triggers a chart screenshot via the WebView bridge,
+  // waits up to 1.5s for the chart-host to post a `chartScreenshot`
+  // message back, decodes the base64 JPEG dataURL into a temp file via
+  // expo-file-system, and returns the file:// URI. Returns null on any
+  // failure (capture rejected, taint, timeout, write error). The temp
+  // file lives in the app's cache and is overwritten on the next call.
+  //
+  // Why a file URI and not the dataURL directly:
+  //   - `<Image source={{uri: dataURI}} />` and `Share.share` accept
+  //     dataURIs, but `expo-sharing.shareAsync` requires a file path,
+  //     and persisting dataURIs in the journal store would bloat
+  //     AsyncStorage. A real file is the universal handle.
+  const captureChartScreenshot = useCallback(async (
+    opts?: { exitPrice?: number; noOverlays?: boolean },
+  ): Promise<string | null> => {
+    // Resolve any previous pending capture before starting a new one —
+    // safety against overlapping closes.
+    if (pendingChartShot.current) {
+      try { pendingChartShot.current(null); } catch { /* noop */ }
+      pendingChartShot.current = null;
+    }
+
+    const dataURL = await new Promise<string | null>((resolve) => {
+      const timeoutId = setTimeout(() => {
+        if (pendingChartShot.current) {
+          pendingChartShot.current = null;
+          resolve(null);
+        }
+      }, 1500);
+      pendingChartShot.current = (uri) => {
+        clearTimeout(timeoutId);
+        pendingChartShot.current = null;
+        resolve(uri);
+      };
+      try {
+        chartRef.current?.captureChartImage(opts);
+      } catch {
+        clearTimeout(timeoutId);
+        pendingChartShot.current = null;
+        resolve(null);
+      }
+    });
+
+    if (!dataURL) return null;
+    // dataURL format: "data:image/jpeg;base64,<...>"
+    const commaIdx = dataURL.indexOf(',');
+    if (commaIdx < 0) return null;
+    const base64 = dataURL.slice(commaIdx + 1);
+    const filename = `trade-${Date.now()}.jpg`;
+    const path = `${FileSystem.cacheDirectory ?? ''}${filename}`;
+    try {
+      await FileSystem.writeAsStringAsync(path, base64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      return path;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Parallel to captureChartScreenshot — triggers the polished 4:5
+  // trade-card composite the chart-host renders, writes the dataURL
+  // to a temp file, returns the file path. Used as the SHARE image
+  // (and the journal entry's auto-attached image, since the card
+  // embeds the chart-with-overlays inside).
+  const captureTradeCardImage = useCallback(
+    async (cardData: {
+      side: 'long' | 'short';
+      symbol: string;
+      qty: number;
+      entryPrice: number;
+      exitPrice: number;
+      pnlUsd: number;
+      pointsMove: number;
+      returnPct: number;
+      reason: 'tp' | 'sl' | 'manual';
+      closedAtMs: number;
+    }): Promise<string | null> => {
+      if (pendingTradeCardShot.current) {
+        try { pendingTradeCardShot.current(null); } catch { /* noop */ }
+        pendingTradeCardShot.current = null;
+      }
+      const dataURL = await new Promise<string | null>((resolve) => {
+        const timeoutId = setTimeout(() => {
+          if (pendingTradeCardShot.current) {
+            pendingTradeCardShot.current = null;
+            resolve(null);
+          }
+        }, 2000);
+        pendingTradeCardShot.current = (uri) => {
+          clearTimeout(timeoutId);
+          pendingTradeCardShot.current = null;
+          resolve(uri);
+        };
+        try {
+          chartRef.current?.captureTradeCard(cardData);
+        } catch {
+          clearTimeout(timeoutId);
+          pendingTradeCardShot.current = null;
+          resolve(null);
+        }
+      });
+
+      if (!dataURL) return null;
+      const commaIdx = dataURL.indexOf(',');
+      if (commaIdx < 0) return null;
+      const base64 = dataURL.slice(commaIdx + 1);
+      const filename = `card-${Date.now()}.jpg`;
+      const path = `${FileSystem.cacheDirectory ?? ''}${filename}`;
+      try {
+        await FileSystem.writeAsStringAsync(path, base64, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        return path;
+      } catch {
+        return null;
+      }
+    },
+    [],
+  );
+
+  // Auto-write a journal entry for every closed trade so the Stats
+  // screen (equity, win rate, profit factor, etc.) updates after EVERY
+  // trade — not just when the user taps "Journal Trade" on the result
+  // card. Without this, dismissing the card without journaling would
+  // leave the trade invisible to journalStore-driven metrics.
+  //
+  // addEntry de-dupes by tradeId, so the "Journal Trade" button still
+  // works — it navigates to the same tradeId and EntryEditModal opens
+  // the already-existing entry for emotion/notes/grade.
+  //
+  // Position info (sl/tp price + entry bar time) is passed in directly
+  // so the journal entry has accurate stops/targets and open time —
+  // not just the close-time fallbacks the TradeResultCard data carried.
+  const recordClosedTradeAsJournalEntry = useCallback(
+    (
+      d: NonNullable<typeof tradeResultCard>,
+      pos: { slPrice: number | null; tpPrice: number | null; entryBarTime: number },
+    ) => {
+      const tradeId = `local-${d.closedAtMs}`;
+      const openedAtMs = pos.entryBarTime > 0 ? pos.entryBarTime * 1000 : d.closedAtMs;
+      const entry: JournalEntry = {
+        id: tradeId,
+        tradeId,
+        symbol: d.symbol,
+        side: d.side === 'long' ? 'buy' : 'sell',
+        lots: d.qty,
+        entryPrice: d.entryPrice,
+        exitPrice: d.exitPrice,
+        stopLoss: pos.slPrice,
+        takeProfit: pos.tpPrice,
+        pnl: d.pnlUsd,
+        rMultiple: null,
+        rrAchieved: null,
+        riskAmount: null,
+        openedAt: openedAtMs,
+        closedAt: d.closedAtMs,
+        planSetupType: null,
+        planStopPrice: null,
+        planTargetPrice: null,
+        planSkipped: true,
+        setupId: null,
+        rating: null,
+        checklistPassed: false,
+        checklistSkipped: true,
+        intendedStop: 0,
+        intendedTarget: 0,
+        positionSize: d.qty,
+        intendedRisk: 0,
+        intendedRR: 0,
+        notes: '',
+        mistakes: '',
+        wentWell: '',
+        emotion: null,
+        confidence: null,
+        strategy: '',
+        tags: [
+          d.reason === 'tp' ? 'tp-hit'
+            : d.reason === 'sl' ? 'sl-hit'
+            : 'manual-close',
+        ],
+        savedAt: Date.now(),
+        imageUri: d.cleanChartUri,
+      };
+      useJournalStore.getState().addEntry(entry);
+    },
+    [],
+  );
+
+  // Close the open position session-locally. Captures exitPrice from
+  // currentPrice and computes realizedPnl via the shared helper so the
+  // value matches what the live readout was showing one tick ago. Then
+  // clears the position back to null so Buy/Sell re-enable.
+  const closePosition = useCallback(async () => {
+    if (!position || currentPrice == null) return;
+    const realized = computePnl({
+      side: position.side,
+      entryPrice: position.entryPrice,
+      currentPrice,
+      contracts: position.contracts,
+      symbol: position.symbol,
+    });
+    const pointsMove =
+      position.side === 'long'
+        ? currentPrice - position.entryPrice
+        : position.entryPrice - currentPrice;
+
+    // Hold-duration + R-multiple challenge inputs.
+    // opened_at: bar time captured at position open.
+    // closed_at: bar time of the latest revealed candle (best
+    //            available proxy for "now" on the replay clock).
+    // r_multiple: signed realized R = pointsMove / |entry - SL|.
+    //            Undefined when no SL was set.
+    const closeBarTime = lastBarRef.current?.time ?? 0;
+    let rMultiple: number | undefined;
+    if (position.slPrice != null) {
+      const riskPoints = Math.abs(position.entryPrice - position.slPrice);
+      if (riskPoints > 0) rMultiple = pointsMove / riskPoints;
+    }
+
+    // ── STATS FIRST ─────────────────────────────────────────────────
+    // Fire the side-effects that MUST happen on close (challenge
+    // detection + session-stats overlay for the SessionsScreen
+    // Continue card) BEFORE the async chart-host captures below.
+    // Earlier this lived after both `await captureChartScreenshot`
+    // and `await captureTradeCardImage` — if either rejected (slow
+    // tunnel, WebView remount mid-capture, chart-host not responding),
+    // the recordTradeClose never ran and the trade was lost from the
+    // Continue card's "N trades / $X" overlay even though the user
+    // saw it close. Moving these up makes stats independent of the
+    // image pipeline.
+    const tradeId = `local-${Date.now()}`;
+    detectAfterTradeClose(
+      {
+        id: tradeId,
+        symbol: position.symbol,
+        pnl: realized,
+        opened_at: position.entryBarTime,
+        closed_at: closeBarTime,
+        r_multiple: rMultiple,
+        stop_loss: position.slPrice ?? null,
+        take_profit: position.tpPrice ?? null,
+      },
+      selectedInterval,
+    );
+    useSessionStatsStore.getState().recordTradeClose({
+      pnl: realized,
+      hadStop: position.slPrice != null,
+      hadTp:   position.tpPrice != null,
+    });
+
+    // ── CAPTURES ────────────────────────────────────────────────────
+    // Both captures need to land BEFORE setPosition(null) — they read
+    // overlay markers that get wiped by clearTrade. Wrap each in
+    // try/catch so a failure produces null instead of rejecting,
+    // letting the trade close + result card render cleanly.
+    let cleanChartUri: string | null = null;
+    let cardImageUri:  string | null = null;
+    try {
+      cleanChartUri = await captureChartScreenshot({ noOverlays: true });
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[closePosition] clean chart capture failed:', e);
+    }
+    try {
+      cardImageUri = await captureTradeCardImage({
+        side: position.side,
+        symbol: position.symbol,
+        qty: position.contracts,
+        entryPrice: position.entryPrice,
+        exitPrice: currentPrice,
+        pnlUsd: realized,
+        pointsMove,
+        returnPct: 0,
+        reason: 'manual',
+        closedAtMs: Date.now(),
+      });
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[closePosition] trade card capture failed:', e);
+    }
+
+    // Single-frame transition: clear immediately so Buy/Sell re-enable
+    // (per the spec — "lives during the session, clears on close").
+    setPosition(null);
+    chartRef.current?.clearTrade();
+    flashResult(`Closed ${realized >= 0 ? '+' : '-'}$${Math.abs(realized).toFixed(2)}`);
+    const cardData = {
+      cleanChartUri,
+      shareCardImageUri: cardImageUri,
+      side: position.side,
+      symbol: position.symbol,
+      qty: position.contracts,
+      entryPrice: position.entryPrice,
+      exitPrice: currentPrice,
+      pnlUsd: realized,
+      pointsMove,
+      returnPct: 0,
+      reason: 'manual' as const,
+      closedAtMs: Date.now(),
+    };
+    // Respect the user's "show trade-result card" setting. When off,
+    // the trade still records + the toast flashes — we just skip the
+    // modal.
+    if (useSettingsStore.getState().tradeResultCardEnabled) {
+      setTradeResultCard(cardData);
+    }
+    // Stats refresh — journal entry created BEFORE the user touches
+    // the result card so the Stats screen updates whether they tap
+    // Journal Trade, share, or just dismiss.
+    recordClosedTradeAsJournalEntry(cardData, {
+      slPrice: position.slPrice,
+      tpPrice: position.tpPrice,
+      entryBarTime: position.entryBarTime,
+    });
+  }, [position, currentPrice, flashResult, selectedInterval, recordClosedTradeAsJournalEntry]);
+
+  // Bridge events from the hosted chart lines. tpMoved/slMoved come
+  // from the chart-host when the user drops a TP/SL drag chip; we
+  // store the price on the SessionPosition only — no auto-fill logic
+  // yet (that's the next step).
   const onLineMessage = useCallback(
     (msg: ChartLineMessage) => {
-      if (msg.type === 'tpMoved') {
-        updateStop('take_profit', msg.price);
-      } else if (msg.type === 'slMoved') {
-        updateStop('stop_loss', msg.price);
-      } else if (msg.type === 'closePosition') {
+      if (msg.type === 'closePosition') {
         closePosition();
       } else if (msg.type === 'lineApiStatus') {
         if (!msg.ok) {
@@ -705,28 +1504,104 @@ export default function ChartScreen() {
         } else {
           setLineApiUnavailable(false);
         }
+      } else if (msg.type === 'tpMoved') {
+        setPosition((prev) => (prev ? { ...prev, tpPrice: msg.price } : prev));
+      } else if (msg.type === 'slMoved') {
+        setPosition((prev) => (prev ? { ...prev, slPrice: msg.price } : prev));
+      } else if (msg.type === 'tpCleared') {
+        setPosition((prev) => (prev ? { ...prev, tpPrice: null } : prev));
+      } else if (msg.type === 'slCleared') {
+        setPosition((prev) => (prev ? { ...prev, slPrice: null } : prev));
+      } else if (msg.type === 'chartScreenshot') {
+        // Hand off to whoever called captureChartScreenshot(). The
+        // dataURL is forwarded as-is; the helper turns it into a file.
+        const resolver = pendingChartShot.current;
+        if (resolver) {
+          pendingChartShot.current = null;
+          resolver(msg.dataURL);
+        }
+      } else if (msg.type === 'tradeCardImage') {
+        const resolver = pendingTradeCardShot.current;
+        if (resolver) {
+          pendingTradeCardShot.current = null;
+          resolver(msg.dataURL);
+        }
       }
     },
-    [updateStop, closePosition],
+    [closePosition],
   );
 
   // One-at-a-time gate: Buy/Sell + the stepper are disabled while a position
-  // is open or a trade request is in flight.
+  // is open. The open/close paths are synchronous now (session-local), so the
+  // legacy `tradeBusy` flag is purely a noop guard.
   const tradeDisabled = !!position || tradeBusy || currentPrice == null;
+
+  // Live unrealized P&L — recomputed every render. Re-fires whenever
+  // currentPrice changes (every /advance) so the readout below stays
+  // in lock-step with the chart.
+  const livePnl = useMemo(() => {
+    if (!position || position.status !== 'open' || currentPrice == null) return null;
+    return computePnl({
+      side: position.side,
+      entryPrice: position.entryPrice,
+      currentPrice,
+      contracts: position.contracts,
+      symbol: position.symbol,
+    });
+  }, [position, currentPrice]);
+  const livePointMove = useMemo(() => {
+    if (!position || position.status !== 'open' || currentPrice == null) return null;
+    return position.side === 'long'
+      ? currentPrice - position.entryPrice
+      : position.entryPrice - currentPrice;
+  }, [position, currentPrice]);
+
+  // Entry point: when there's no active session selected, the Chart
+  // tab shows the SessionsScreen (Continue list + New Session CTA).
+  // ChartScreen owns the activeSessionId state itself rather than
+  // pushing a separate route on a stack — keeps all session-driven
+  // state (currentPrice, position, sessionLoading, etc.) co-located
+  // with the chart UI that consumes it, and avoids re-architecting
+  // App.tsx's stack to introduce a nested navigator under the Chart
+  // tab. Tapping the header "Sessions" button below clears
+  // sessionId and brings us back here.
+  if (uid && !sessionId && !sessionLoading && !sessionError) {
+    return (
+      <SafeAreaView style={styles.root} edges={['top']}>
+        <SessionsScreen onSessionSelected={handleSessionSelected} />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.symbol}>{selectedSymbol}</Text>
         <View style={styles.headerActions}>
+          {/* Return to SessionsScreen. Only shown once a session is
+              loaded so the user can swap between sessions or start a
+              new one without backing all the way out of the tab. */}
           <Pressable
-            onPress={() => {
-              /* Phase 3D: news for current replay date */
-            }}
+            onPress={handleReturnToSessions}
+            disabled={!sessionId}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            style={styles.headerIconBtn}
+            style={[styles.headerIconBtn, !sessionId && styles.headerIconBtnDisabled]}
             accessibilityRole="button"
-            accessibilityLabel="News"
+            accessibilityLabel="Sessions"
+          >
+            <Ionicons name="layers-outline" size={22} color="rgba(255,255,255,0.6)" />
+          </Pressable>
+
+          <Pressable
+            onPress={() => setNewsOpen(true)}
+            disabled={!sessionId}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={[
+              styles.headerIconBtn,
+              !sessionId && styles.headerIconBtnDisabled,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="News for current replay day"
           >
             <Ionicons name="newspaper-outline" size={22} color="rgba(255,255,255,0.6)" />
           </Pressable>
@@ -830,15 +1705,70 @@ export default function ChartScreen() {
                   >
                     {tradeResult}
                   </Text>
-                ) : lineApiUnavailable ? (
-                  <Text style={styles.endOfSessionText} numberOfLines={1}>
-                    Chart lines unavailable on this build — trading still works
-                  </Text>
                 ) : (
                   <Text style={styles.endOfSessionText} numberOfLines={1}>
                     End of session
                   </Text>
                 )}
+              </View>
+            )}
+
+            {/* Live P&L readout — only rendered while a session-local
+                position is open. Recomputes every render (every bar
+                advance updates currentPrice → useMemo recomputes →
+                this Text re-renders). Side · contracts × symbol @ entry
+                on the left; dollar P&L (green/red) + point move on the
+                right. Color is white when flat, green > 0, red < 0. */}
+            {position && position.status === 'open' && livePnl != null && (
+              <View style={styles.pnlReadout}>
+                <Text style={styles.pnlReadoutMeta} numberOfLines={1}>
+                  <Text
+                    style={[
+                      styles.pnlReadoutSide,
+                      { color: position.side === 'long' ? colors.green : colors.red },
+                    ]}
+                  >
+                    {position.side === 'long' ? 'LONG' : 'SHORT'}
+                  </Text>
+                  {'  ·  '}
+                  {position.contracts} {position.symbol} @{' '}
+                  {position.entryPrice.toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </Text>
+                <View style={styles.pnlReadoutRight}>
+                  <Text
+                    style={[
+                      styles.pnlReadoutValue,
+                      {
+                        // Flat (livePnl === 0) reads as muted secondary
+                        // text — green for 0 makes the user think
+                        // they're already in profit. Green ONLY for
+                        // strictly positive, red ONLY for negative.
+                        color:
+                          livePnl > 0
+                            ? colors.green
+                            : livePnl < 0
+                              ? colors.red
+                              : colors.textSecondary,
+                      },
+                    ]}
+                  >
+                    {livePnl > 0 ? '+' : livePnl < 0 ? '-' : ''}$
+                    {Math.abs(livePnl).toLocaleString('en-US', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </Text>
+                  {livePointMove != null && (
+                    <Text style={styles.pnlReadoutPoints}>
+                      {/* Zero is unsigned; toFixed handles negative sign natively. */}
+                      {livePointMove > 0 ? '+' : ''}
+                      {livePointMove.toFixed(2)} pt
+                    </Text>
+                  )}
+                </View>
               </View>
             )}
 
@@ -913,10 +1843,7 @@ export default function ChartScreen() {
       <SymbolPickerSheet
         visible={pickerOpen}
         selectedSymbol={selectedSymbol}
-        onSelect={(symbol) => {
-          setSelectedSymbol(symbol);
-          setPickerOpen(false);
-        }}
+        onSelect={handlePickerSelect}
         onClose={() => setPickerOpen(false)}
       />
 
@@ -942,7 +1869,9 @@ export default function ChartScreen() {
               accessibilityLabel="Jump to New York open"
             >
               <Text style={styles.sessionMenuLabel}>New York</Text>
-              <Text style={styles.sessionMenuSub}>09:30 ET</Text>
+              <Text style={styles.sessionMenuSub}>
+                {pad2(sessionNewYork.hh)}:{pad2(sessionNewYork.mm)}
+              </Text>
             </Pressable>
             <View style={styles.sessionMenuDivider} />
             <Pressable
@@ -952,7 +1881,9 @@ export default function ChartScreen() {
               accessibilityLabel="Jump to London open"
             >
               <Text style={styles.sessionMenuLabel}>London</Text>
-              <Text style={styles.sessionMenuSub}>03:00 ET</Text>
+              <Text style={styles.sessionMenuSub}>
+                {pad2(sessionLondon.hh)}:{pad2(sessionLondon.mm)}
+              </Text>
             </Pressable>
             <View style={styles.sessionMenuDivider} />
             <Pressable
@@ -962,13 +1893,91 @@ export default function ChartScreen() {
               accessibilityLabel="Jump to Asia open"
             >
               <Text style={styles.sessionMenuLabel}>Asia</Text>
-              <Text style={styles.sessionMenuSub}>20:00 ET</Text>
+              <Text style={styles.sessionMenuSub}>
+                {pad2(sessionAsia.hh)}:{pad2(sessionAsia.mm)}
+              </Text>
+            </Pressable>
+            {/* Phase B: trailing "Edit session times" row opens the config
+                sheet. Closes the dropdown first so the two modals don't
+                stack visually. */}
+            <View style={styles.sessionMenuDivider} />
+            <Pressable
+              style={({ pressed }) => [styles.sessionMenuRow, pressed && styles.sessionMenuRowPressed]}
+              onPress={() => {
+                setSessionMenuOpen(false);
+                setTzModalVisible(true);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Edit session times"
+            >
+              <Text style={styles.sessionMenuLabel}>⚙ Edit session times</Text>
             </Pressable>
           </Pressable>
         </Pressable>
       </Modal>
+
+      <SessionTimesConfigModal
+        visible={tzModalVisible}
+        onClose={() => setTzModalVisible(false)}
+      />
+
+      {/* TP/SL toast — superseded by TradeResultCard for closes but
+          kept rendered so the existing `fillToast` state can still
+          be set in the future for non-close events (currently never
+          set; safe no-op until then). */}
+      <TradeFillToast
+        data={fillToast}
+        onDismiss={() => setFillToast(null)}
+      />
+
+      {/* Trade-result card — appears centered after every position close
+          (manual, TP, or SL). The Share button image-captures the card
+          on supported builds and falls back to RN Share's text flow if
+          react-native-view-shot isn't linked (Expo Go). The Journal Trade
+          button persists a journal entry pre-filled with the trade data
+          AND navigates to the Journal tab with openEntryId set — the
+          screen's existing route-param flow then opens EntryEditModal on
+          that entry so the user can log emotion / notes / a screenshot. */}
+      <TradeResultCard
+        data={tradeResultCard}
+        onDismiss={() => setTradeResultCard(null)}
+        onJournal={() => {
+          const d = tradeResultCard;
+          if (!d) return;
+          // The journal entry was already created at trade-close time
+          // by `recordClosedTradeAsJournalEntry` so the Stats screen
+          // updates even when the user just dismisses the card. The
+          // "Journal Trade" button here is now purely a navigation
+          // shortcut — open EntryEditModal on the existing entry so
+          // the user can add emotion / notes / a screenshot / rating.
+          const tradeId = `local-${d.closedAtMs}`;
+          setTradeResultCard(null);
+          try {
+            navigation.navigate('Journal', { openEntryId: tradeId });
+          } catch {
+            /* non-fatal */
+          }
+        }}
+      />
+
+      {/* News panel — slides up over the chart with the day's USD
+          economic events. Derives the date from the current replay
+          bar's unix-seconds, fetches /news, and splits past vs
+          upcoming relative to that same clock. Re-fetches on day
+          rollover; past/upcoming re-evaluates on every advance. */}
+      <NewsPanel
+        visible={newsOpen}
+        onClose={() => setNewsOpen(false)}
+        currentBarTimeSec={currentBarTimeSec}
+      />
     </SafeAreaView>
   );
+}
+
+/** Two-digit zero-padded integer ("09", "30", "20"). Module-local so the
+ *  dropdown rows don't recreate it on every render. */
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : `${n}`;
 }
 
 const styles = StyleSheet.create({
@@ -1086,13 +2095,54 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
+  // Live unrealized P&L readout — only mounted while a position is open.
+  // Two-column layout: meta on the left, dollar value + point move on the
+  // right. Sized to slot above the action row without pushing the chart.
+  pnlReadout: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    gap: 12,
+  },
+  pnlReadoutMeta: {
+    flex: 1,
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 12,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  },
+  pnlReadoutSide: {
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  pnlReadoutRight: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+  },
+  pnlReadoutValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+    letterSpacing: -0.2,
+  },
+  pnlReadoutPoints: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 11,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  },
   // Full-width bottom action row — a real layout sibling below the chart,
   // above the app tab bar. Sell / Buy / Next Bar flex equally; FF is fixed.
+  // On narrow Androids (≤360dp) we tighten gap + padding so the 3 flexed
+  // buttons keep enough width to display their labels.
   actionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
+    gap: NARROW_PHONE ? 6 : 8,
+    paddingHorizontal: NARROW_PHONE ? 10 : 16,
     paddingVertical: 8,
   },
   actionBtn: {
@@ -1111,13 +2161,15 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
 
-  // Contract-quantity stepper — fixed compact width (~88px) so the flexed
+  // Contract-quantity stepper — fixed compact width so the flexed
   // Sell/Buy/Next Bar cells share the rest. Matches the action-row height.
+  // Narrow phones get a tighter 72dp variant to free up ~16dp for the
+  // flexed buttons' labels.
   stepper: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    width: 88,
+    width: NARROW_PHONE ? 72 : 88,
     height: 41,
     borderRadius: 11,
     backgroundColor: colors.cardAlt,

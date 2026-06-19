@@ -73,10 +73,12 @@ export interface RecapPlanAdherence {
 }
 
 export interface RecapNextWeek {
-  kind: 'untriedSetup' | 'cutLosers' | 'useChecklist' | 'keepGoing';
+  kind: 'cutLosers' | 'useChecklist' | 'keepGoing';
   title: string;
   reason: string;
-  /** Setup id for the "Open lesson →" link when applicable. */
+  /** Setup id — preserved on persisted recaps for back-compat
+   *  with previously-generated payloads. No longer renders a
+   *  user-facing CTA. */
   setupId?: string;
 }
 
@@ -421,21 +423,8 @@ function pickRecommendation(
   _bottomSetup: RecapSetupRef | null,
   profitFactor: number | 'inf' | null,
   disciplineRate: number,
-  catalog: SetupCatalog,
-  openedSetupIds: ReadonlySet<string>,
 ): RecapNextWeek | null {
-  // 1. Untested setup the user hasn't opened yet — preferred.
-  for (const id of Object.keys(catalog)) {
-    if (!openedSetupIds.has(id)) {
-      return {
-        kind: 'untriedSetup',
-        title: `Try ${catalog[id].name}`,
-        reason: "You haven't tested this pattern yet.",
-        setupId: id,
-      };
-    }
-  }
-  // 2. Profit factor < 1 — cut losers.
+  // 1. Profit factor < 1 — cut losers.
   if (typeof profitFactor === 'number' && profitFactor < 1 && trades.length >= 3) {
     return {
       kind: 'cutLosers',
@@ -443,7 +432,7 @@ function pickRecommendation(
       reason: 'Your average loser is bigger than your average winner this week.',
     };
   }
-  // 3. Low discipline — checklist.
+  // 2. Low discipline — checklist.
   if (disciplineRate < 70 && trades.length >= 3) {
     return {
       kind: 'useChecklist',
@@ -451,7 +440,7 @@ function pickRecommendation(
       reason: 'You completed the pre-trade checks on fewer than 70% of trades.',
     };
   }
-  // 4. Strong setup signal — keep going.
+  // 3. Strong setup signal — keep going.
   if (topSetup && topSetup.tradeCount >= 3 && topSetup.netPnl > 0) {
     return {
       kind: 'keepGoing',
@@ -469,7 +458,6 @@ export function generateWeeklyRecap(
   streak: RecapStreakData,
   grades: Record<string, TradeGrade | undefined> = {},
   catalog: SetupCatalog = {},
-  openedSetupIds: ReadonlySet<string> = new Set(),
 ): WeeklyRecap {
   const { start, end } = weekBounds(refDate);
   const trades = allTrades.filter(
@@ -523,8 +511,6 @@ export function generateWeeklyRecap(
     setups.bottom,
     this_.profitFactor,
     disciplineRate,
-    catalog,
-    openedSetupIds,
   );
 
   return {

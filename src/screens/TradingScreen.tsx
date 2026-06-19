@@ -21,20 +21,17 @@ import {
 } from '../lib/tradeMetrics';
 import type { JournalEntry } from '../store/journalStore';
 import { useTradePlanStore, TradePlan } from '../store/tradePlanStore';
-import { useDailySetupStore } from '../store/dailySetupStore';
-import { getTodaySetup } from '../data/dailySetups';
 import { useWatchlistStore, useSavedSetup } from '../store/watchlistStore';
 import { maybeHaptic, useSettingsStore } from '../store/settingsStore';
-import { getTodayYMD } from '../store/streakStore';
 import { useXpStore } from '../store/xpStore';
-import { useBadgeStore } from '../store/badgeStore';
 import {
   checkTradeCloseBadges, checkJournalBadges,
-  checkDailySetupBadges, checkWatchlistBadges,
+  checkWatchlistBadges,
 } from '../utils/badgeChecker';
 import {
-  detectAfterTradeClose, detectAfterJournalSave, detectDailySetupComplete,
+  detectAfterTradeClose, detectAfterJournalSave, detectAfterSessionEnd,
 } from '../utils/challengeDetection';
+import { useSessionStatsStore } from '../store/sessionStatsStore';
 import EconomicCalendarPanel from '../components/EconomicCalendarPanel';
 import { getEventsForDate } from '../data/economicCalendar';
 import { useDrawingsStore } from '../store/drawingsStore';
@@ -292,16 +289,12 @@ export default function TradingScreen({ route, navigation }: any) {
   // moment today's bucket crosses the user's daily goal.
   useTrainingTimer();
 
-  // Daily-mission plumbing. `route.params.dailySetup` is set when the
-  // user taps "Trade this setup" on the dashboard. We preload that
-  // symbol/timeframe at the scenario's historical date, and mark the
-  // mission complete once the user closes a trade on the matching
-  // symbol + replay date.
+  // Curated-replay route param. `route.params.dailySetup` is set
+  // when the user taps a Saved Setup on Home. We preload that
+  // symbol/timeframe at the scenario's historical date.
   const dailySetup = route?.params?.dailySetup as
     | { symbol: string; timeframe: string; startTs: number; date: string; key: string }
     | undefined;
-  const markDailySetupComplete = useDailySetupStore((s) => s.markCompletedToday);
-  const todaySetup = useMemo(() => getTodaySetup(), []);
   const pendingStartTsRef   = useRef<number | null>(null);
   const consumedSetupKeyRef = useRef<string | null>(null);
 
@@ -407,6 +400,7 @@ export default function TradingScreen({ route, navigation }: any) {
       emotion: null, confidence: null,
       strategy: '', tags: [],
       savedAt: Date.now(),
+      imageUri: null,
     };
     // Snapshot stats BEFORE the new entry lands — so the
     // PostTradeSummaryModal can report Δwin-rate / Δprofit-factor
@@ -454,36 +448,7 @@ export default function TradingScreen({ route, navigation }: any) {
       xpEarned: xpThisClose,
     });
 
-    // Mark the daily mission complete if this trade is on the
-    // curated scenario's symbol AND its NY-time calendar date.
-    // The date is derived locally from the trade's close timestamp
-    // (the module-level `replayDateYMD` memo is declared further
-    // down, so we can't reference it here without a TDZ).
-    if (entry.symbol === todaySetup.symbol) {
-      const closedSec = typeof t.closed_at === 'number'
-        ? t.closed_at
-        : Math.floor(Date.now() / 1000);
-      const p = tzPartsOf(closedSec * 1000, 'America/New_York');
-      const pad = (n: number) => (n < 10 ? '0' + n : '' + n);
-      const tradeYMD = `${p.y}-${pad(p.mo)}-${pad(p.d)}`;
-      if (tradeYMD === todaySetup.date) {
-        // Count one daily-setup completion per distinct day (guard
-        // against the every-matching-close re-fire).
-        const today = getTodayYMD();
-        const alreadyDone =
-          useDailySetupStore.getState().lastCompletedSetupDate === today;
-        markDailySetupComplete();
-        if (!alreadyDone) {
-          useBadgeStore.getState().incrementDailySetupsCompleted();
-          if (useXpStore.getState().tryClaimDailySetup()) {
-            useXpStore.getState().addXP(50, 'daily setup');
-          }
-          checkDailySetupBadges();
-          detectDailySetupComplete();
-        }
-      }
-    }
-  }, [recentClosedTrade, addJournalEntry, todaySetup, markDailySetupComplete]);
+  }, [recentClosedTrade, addJournalEntry]);
 
   // PostTradeSummaryModal is driven off the `postTradeSummary`
   // state above — no separate adapter needed since we pass the
@@ -665,6 +630,16 @@ export default function TradingScreen({ route, navigation }: any) {
     if (!uid || autoStarting) return;
     setAutoStarting(true);
     setAutoStartError(null);
+
+    // Bookend any prior session BEFORE we wipe its state. Covers the
+    // common case where the user closed the app mid-session and the
+    // persisted `currentSession` is still hanging around. No-op when
+    // there's nothing to finalize. The returned record drives the
+    // session-end challenge conditions (green_session, pf15_last10,
+    // consecutive_green_sessions, etc.).
+    const prior = useSessionStatsStore.getState().endSession();
+    if (prior) detectAfterSessionEnd(prior);
+
     // Consume any queued daily-setup start time exactly once.
     const startTs = pendingStartTsRef.current ?? undefined;
     pendingStartTsRef.current = null;
@@ -673,6 +648,9 @@ export default function TradingScreen({ route, navigation }: any) {
         uid, username || 'guest', market.symbol, timeframe, accountSize, startTs,
       );
       await setSession(data);
+      // Begin stats tracking for the new session AFTER the backend
+      // session lands — startSession is idempotent on a fresh state.
+      useSessionStatsStore.getState().startSession();
     } catch (e: any) {
       console.warn('auto-start failed:', e.message);
       setAutoStartError(e.message ?? 'Could not start session — backend unreachable?');
@@ -1098,20 +1076,6 @@ export default function TradingScreen({ route, navigation }: any) {
 
         <TouchableOpacity
           style={styles.bookmarkBtn}
-          onPress={() => navigation.navigate('SetupLibrary')}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          accessibilityRole="button"
-          accessibilityLabel="Open Setup Library"
-        >
-          <Ionicons
-            name="book-outline"
-            size={18}
-            color="rgba(255,255,255,0.5)"
-          />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.bookmarkBtn}
           onPress={openBookmarkModal}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityRole="button"
@@ -1506,6 +1470,22 @@ export default function TradingScreen({ route, navigation }: any) {
           checkTradeCloseBadges(closedPnl);
           if (journaled) checkJournalBadges();
           detectAfterTradeClose(recentClosedTrade ?? {}, timeframe);
+
+          // Feed the per-session stats store so session-end challenge
+          // conditions (tp_sl_full_session, session_under_6_trades,
+          // pf15_last10, etc.) have the data they need at /end time.
+          // hadStop / hadTp are non-null gates on the position's
+          // stop_loss / take_profit values that `recentClosedTrade`
+          // already carries (set at execution time, see line ~358).
+          const rt = recentClosedTrade;
+          if (rt) {
+            useSessionStatsStore.getState().recordTradeClose({
+              pnl: typeof rt.pnl === 'number' ? rt.pnl : 0,
+              hadStop: rt.stop_loss != null,
+              hadTp:   rt.take_profit != null,
+            });
+          }
+
           if (journaled) {
             detectAfterJournalSave(
               rating === 'good' ? 'A' : rating === 'bad' ? 'C' : 'B',
@@ -2080,7 +2060,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
   customSeekCard: {
-    width: 280,
+    // Was hardcoded 280dp wide. On phones < 320dp (Galaxy A05s, older
+    // mid-range) the modal exceeded the screen. 90% of screen width
+    // capped at 280dp keeps a comfortable side margin on narrow
+    // Androids while preserving the original size on iPhone Pro Max.
+    width: '90%',
+    maxWidth: 280,
     backgroundColor: colors.card,
     borderRadius: radius.lg,
     borderWidth: 1, borderColor: colors.border,
@@ -2147,7 +2132,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
   customConfigCard: {
-    width: 340,
+    // Was hardcoded 340dp. Overflowed the screen on phones < 360dp.
+    // Same pattern as customSeekCard above.
+    width: '90%',
+    maxWidth: 340,
     backgroundColor: colors.card,
     borderRadius: radius.lg,
     borderWidth: 1, borderColor: colors.border,
@@ -2185,7 +2173,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   tzPickerCard: {
-    width: 320,
+    // Was hardcoded 320dp; on phones < 340dp text labels clipped.
+    width: '90%',
+    maxWidth: 320,
     maxHeight: '80%',
     backgroundColor: colors.card,
     borderRadius: radius.lg,

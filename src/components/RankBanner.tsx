@@ -1,414 +1,335 @@
 import React from 'react';
-import { View, Text, StyleSheet, ViewStyle } from 'react-native';
-import Svg, {
-  Defs, ClipPath, Rect, Line, Circle, Path, G,
-  Text as SvgText, TSpan,
-} from 'react-native-svg';
-import { colors } from '../theme';
+import {
+  View, Text, Image, StyleSheet, ViewStyle,
+} from 'react-native';
+import type { RankId } from '../data/rankConfig';
 
 /**
- * RankBanner — pure-SVG rank banner rendered at the per-tool vibrant
- * color. No PNG asset; each banner is a unique design generated from
- * primitives so we can iterate on visuals without art assets.
+ * RankBanner — image-backed rank name-tag / plate.
  *
- * Per rank: vibrant outline, subtle textured pattern inside (stripes
- * for Gambler, mini-candles for Paper Hands, scan + crosshair for
- * Sniper, jagged skyline for Inside Trader, dot grid for Market Maker),
- * an icon glyph on the left, a vertical divider, and the rank label.
+ * Renders the per-rank PNG from `assets/ranks/banner_<n>_<rank>.png`
+ * with the rank's display NAME overlaid in the plate's central
+ * cartouche. Plates differ in lightness (paper is bone, profitable
+ * is dark warm, the rest are gold-on-dark), so the overlay color is
+ * tuned per rank via `RANK_TAG_TEXT_COLOR`.
  *
- * The background is pure black so the banner blends seamlessly into
- * the #000000 screen — only the colored elements (outline, pattern,
- * glyph, label) pop.
+ * Prop interface is preserved exactly from the prior SVG-based
+ * version (`rank`, `width`, `showYouIndicator`, `upNext`, `locked`,
+ * `subTier`) so existing callers — CelebrationModal,
+ * RankUpCelebrationHost, the onboarding rank-reveal cascade — keep
+ * working unchanged.
  *
- * Reusable: future profile / leaderboard / achievement screens drop
- * this in and pass the rank.
+ * `Rank` is re-exported as an alias for `RankId` for the same
+ * reason: any old `import { Rank } from './RankBanner'` still
+ * resolves to the new 6-rank union.
  */
 
-export type Rank =
-  | 'gambler'
-  | 'paper_hands'
-  | 'sniper'
-  | 'inside_trader'
-  | 'market_maker';
-
-interface RankDesign {
-  label: string;
-  /** Vibrant accent — border, pattern, glyph, label. */
-  color: string;
-  /** Pattern style key. */
-  pattern: 'stripes' | 'candles' | 'scan' | 'skyline' | 'grid';
-  /** Glyph key for the left-side icon. */
-  glyph: 'spade' | 'crumple' | 'crosshair' | 'door' | 'monogram';
-}
-
-const DESIGN: Record<Rank, RankDesign> = {
-  gambler:       { label: 'GAMBLER',       color: colors.rankGambler,      pattern: 'stripes',  glyph: 'spade'     },
-  paper_hands:   { label: 'PAPER HANDS',   color: colors.rankPaperHands,   pattern: 'candles',  glyph: 'crumple'   },
-  sniper:        { label: 'SNIPER',        color: colors.rankSniper,       pattern: 'scan',     glyph: 'crosshair' },
-  inside_trader: { label: 'INSIDE TRADER', color: colors.rankInsideTrader, pattern: 'skyline',  glyph: 'door'      },
-  market_maker:  { label: 'MARKET MAKER',  color: colors.rankMarketMaker,  pattern: 'grid',     glyph: 'monogram'  },
-};
-
-// SVG drawing coordinates. 1000 wide × 200 tall = 5:1 aspect — fits the
-// "60-80 px on mobile" height target when rendered at typical screen
-// widths (340-390 → 68-78 px tall).
-const VB_W = 1000;
-const VB_H = 200;
-const BORDER_W = 4;
-const CORNER_R = 18;
-const ICON_BOX = 130;   // icon area on the left
-
-// ── Patterns ───────────────────────────────────────────────────────────────
-// Each pattern renders inside a clipPath that matches the rounded
-// banner shape, so nothing bleeds outside the outline.
-
-function StripesPattern({ color }: { color: string }) {
-  // Diagonal lines top-left → bottom-right, very subtle.
-  const stripes = [];
-  for (let i = -200; i < VB_W + 200; i += 60) {
-    stripes.push(
-      <Line key={i} x1={i} y1={-50} x2={i + VB_H + 100} y2={VB_H + 50}
-            stroke={color} strokeWidth={14} strokeOpacity={0.08} />
-    );
-  }
-  return <G>{stripes}</G>;
-}
-
-function CandlesPattern({ color }: { color: string }) {
-  // Tiny ascending green-candle bodies behind the text.
-  const candles = [
-    { x: 380, h: 50,  y: 130 },
-    { x: 430, h: 70,  y: 110 },
-    { x: 480, h: 60,  y: 120 },
-    { x: 530, h: 90,  y: 90  },
-    { x: 580, h: 80,  y: 100 },
-    { x: 630, h: 110, y: 70  },
-    { x: 680, h: 95,  y: 85  },
-    { x: 730, h: 130, y: 50  },
-    { x: 780, h: 110, y: 70  },
-    { x: 830, h: 150, y: 30  },
-  ];
-  return (
-    <G opacity={0.18}>
-      {candles.map((c, i) => (
-        <Rect key={i} x={c.x} y={c.y} width={20} height={c.h} fill={color} />
-      ))}
-    </G>
-  );
-}
-
-function ScanPattern({ color }: { color: string }) {
-  // Horizontal scan-lines + a faint crosshair circle behind the text.
-  return (
-    <G>
-      <G opacity={0.1}>
-        {[30, 70, 130, 170].map((y) => (
-          <Line key={y} x1={200} y1={y} x2={VB_W - 30} y2={y}
-                stroke={color} strokeWidth={1} />
-        ))}
-      </G>
-      <G opacity={0.18}>
-        <Circle cx={760} cy={100} r={70} fill="none" stroke={color} strokeWidth={2} />
-        <Circle cx={760} cy={100} r={45} fill="none" stroke={color} strokeWidth={1.5} />
-        <Line x1={760} y1={20}  x2={760} y2={180} stroke={color} strokeWidth={1} />
-        <Line x1={680} y1={100} x2={840} y2={100} stroke={color} strokeWidth={1} />
-      </G>
-    </G>
-  );
-}
-
-function SkylinePattern({ color }: { color: string }) {
-  // Jagged building silhouette along the bottom.
-  const d =
-    'M 200 200 L 200 150 L 240 150 L 240 130 L 280 130 L 280 110 L 320 110 ' +
-    'L 320 90 L 360 90 L 360 120 L 400 120 L 400 80 L 440 80 L 440 100 ' +
-    'L 480 100 L 480 60 L 520 60 L 520 90 L 560 90 L 560 70 L 600 70 ' +
-    'L 600 100 L 640 100 L 640 80 L 680 80 L 680 110 L 720 110 L 720 90 ' +
-    'L 760 90 L 760 130 L 800 130 L 800 110 L 840 110 L 840 140 L 880 140 ' +
-    'L 880 120 L 920 120 L 920 150 L 970 150 L 970 200 Z';
-  return (
-    <G opacity={0.22}>
-      <Path d={d} fill={color} />
-    </G>
-  );
-}
-
-function GridPattern({ color }: { color: string }) {
-  // Dot grid covering the banner area.
-  const dots = [];
-  for (let y = 30; y < VB_H - 10; y += 30) {
-    for (let x = 220; x < VB_W - 20; x += 30) {
-      dots.push(<Circle key={`${x},${y}`} cx={x} cy={y} r={1.6} fill={color} fillOpacity={0.28} />);
-    }
-  }
-  return <G>{dots}</G>;
-}
-
-function Pattern({ kind, color }: { kind: RankDesign['pattern']; color: string }) {
-  switch (kind) {
-    case 'stripes':  return <StripesPattern color={color} />;
-    case 'candles':  return <CandlesPattern color={color} />;
-    case 'scan':     return <ScanPattern color={color} />;
-    case 'skyline':  return <SkylinePattern color={color} />;
-    case 'grid':     return <GridPattern color={color} />;
-  }
-}
-
-// ── Glyphs ─────────────────────────────────────────────────────────────────
-
-function SpadeGlyph({ color }: { color: string }) {
-  // Classic playing-card spade. Drawn around a 100×100 origin and
-  // centered in the icon box via outer transform.
-  const d =
-    'M 50 0 ' +
-    'C 50 25, 100 35, 100 65 ' +
-    'C 100 85, 80 95, 65 90 ' +
-    'C 70 92, 70 100, 60 100 ' +
-    'L 40 100 ' +
-    'C 30 100, 30 92, 35 90 ' +
-    'C 20 95, 0 85, 0 65 ' +
-    'C 0 35, 50 25, 50 0 Z';
-  return <Path d={d} fill={color} />;
-}
-
-function CrumpleGlyph({ color }: { color: string }) {
-  // Stack of slightly-rotated rectangles, no fill — like crumpled
-  // paper outlines.
-  return (
-    <G fill="none" stroke={color} strokeWidth={3} strokeLinejoin="round">
-      <Path d="M 15 35 L 70 20 L 95 60 L 80 95 L 25 90 L 5 60 Z" />
-      <Path d="M 25 45 L 60 35 L 80 65 L 65 85 L 30 80 L 18 60 Z" />
-      <Path d="M 40 30 L 55 40 L 50 55 L 35 50 Z" />
-    </G>
-  );
-}
-
-function CrosshairGlyph({ color }: { color: string }) {
-  return (
-    <G stroke={color} strokeWidth={3} fill="none">
-      <Circle cx={50} cy={50} r={45} />
-      <Circle cx={50} cy={50} r={28} />
-      <Line x1={50} y1={5}  x2={50} y2={30} />
-      <Line x1={50} y1={70} x2={50} y2={95} />
-      <Line x1={5}  y1={50} x2={30} y2={50} />
-      <Line x1={70} y1={50} x2={95} y2={50} />
-      <Circle cx={50} cy={50} r={4} fill={color} />
-    </G>
-  );
-}
-
-function DoorGlyph({ color }: { color: string }) {
-  // Doorway rectangle with a small figure silhouette inside.
-  return (
-    <G>
-      <Path
-        d="M 20 5 L 80 5 L 80 95 L 20 95 Z"
-        fill="none" stroke={color} strokeWidth={3}
-      />
-      {/* figure silhouette */}
-      <Circle cx={50} cy={32} r={8} fill={color} />
-      <Path d="M 38 45 L 62 45 L 60 78 L 40 78 Z" fill={color} />
-    </G>
-  );
-}
-
-function MonogramGlyph({ color }: { color: string }) {
-  // "M" inside a circle (Market Maker monogram).
-  return (
-    <G>
-      <Circle cx={50} cy={50} r={45} fill="none" stroke={color} strokeWidth={3} />
-      <SvgText
-        x={50} y={68}
-        fill={color}
-        fontSize={56}
-        fontWeight="900"
-        textAnchor="middle"
-        fontFamily="System"
-      >
-        M
-      </SvgText>
-    </G>
-  );
-}
-
-function Glyph({ kind, color }: { kind: RankDesign['glyph']; color: string }) {
-  switch (kind) {
-    case 'spade':     return <SpadeGlyph color={color} />;
-    case 'crumple':   return <CrumpleGlyph color={color} />;
-    case 'crosshair': return <CrosshairGlyph color={color} />;
-    case 'door':      return <DoorGlyph color={color} />;
-    case 'monogram':  return <MonogramGlyph color={color} />;
-  }
-}
-
-// ── Component ──────────────────────────────────────────────────────────────
+export type Rank = RankId;
 
 interface Props {
   rank: Rank;
   /** Fixes the banner display width in px. If omitted, the banner
-   *  stretches to fill its parent (flex:1) and the SVG aspectRatio
-   *  drives the height. */
+   *  stretches to fill its parent and the 3:1 aspect drives the
+   *  height. */
   width?: number;
   /** Render a small "← YOU" label to the right of the banner. */
   showYouIndicator?: boolean;
-  /** Show a small gold "UP NEXT" pill in the top-right corner. Used
-   *  on screens (e.g. the rank-reveal screen 10) where one rank is
-   *  highlighted as the immediate next goal. */
+  /** Show a small gold "UP NEXT" pill in the top-right corner + a
+   *  faint gold glow on the plate. Used on screens (e.g. the
+   *  rank-reveal cascade) where one rank is highlighted as the
+   *  immediate next goal. */
   upNext?: boolean;
-  /** Render the whole banner at 0.5 opacity — signals "future rank,
-   *  not yet earned" on rank-progression screens. */
+  /** Render the whole banner at ~0.45 opacity with a subtle dark
+   *  scrim — signals "future rank, not yet earned". */
   locked?: boolean;
-  /** Sub-tier (1|2|3). When provided, 3 pip dots render below the
-   *  rank name — filled gold for earned tiers, hollow for the rest
-   *  (e.g. Sniper II → ●●○). Omit to render no pips (backward-
-   *  compatible: existing call sites are unchanged). */
-  subTier?: 1 | 2 | 3;
+  /** Sub-tier (1|2|3), or null for the Funded cap (no division —
+   *  pips are hidden entirely). When 1|2|3 is provided, 3 pip dots
+   *  render at the bottom of the plate — filled gold for earned
+   *  tiers, hollow for the rest (e.g. Disciplined II → ●●○). Omit
+   *  (or pass null) to render no pips. */
+  subTier?: 1 | 2 | 3 | null;
 }
 
+const BANNER_SRC: Record<RankId, ReturnType<typeof require>> = {
+  paper:        require('../../assets/ranks/banner_1_paper.png'),
+  unprofitable: require('../../assets/ranks/banner_2_unprofitable.png'),
+  disciplined:  require('../../assets/ranks/banner_3_disciplined.png'),
+  consistent:   require('../../assets/ranks/banner_4_consistent.png'),
+  profitable:   require('../../assets/ranks/banner_5_profitable.png'),
+  funded:       require('../../assets/ranks/banner_6_funded.png'),
+};
+
+const RANK_NAME: Record<RankId, string> = {
+  paper:        'PAPER',
+  unprofitable: 'UNPROFITABLE',
+  disciplined:  'DISCIPLINED',
+  consistent:   'CONSISTENT',
+  profitable:   'PROFITABLE',
+  funded:       'FUNDED',
+};
+
+/**
+ * Per-rank vertical offset for the rank label. The plate art inside
+ * each PNG isn't at the geometric center of the image — wings extend
+ * different amounts above vs below the central plate, so a label
+ * centered in the bannerBox (absoluteFillObject) lands above or
+ * below the plate's actual middle on some emblems. These offsets
+ * nudge the label so it visually sits dead-center of the plate face.
+ *
+ * Positive = down. Tune per emblem after a visual check.
+ */
+const RANK_LABEL_Y_OFFSET: Record<RankId, number> = {
+  paper:        0,
+  unprofitable: 10,   // plate sits low; default render lands above it
+  disciplined:  0,
+  consistent:   6,    // mild low-bias
+  profitable:   0,
+  funded:       0,
+};
+
+/**
+ * Per-rank font size — sized for the WORST CASE rendered glyph width.
+ * Bold uppercase chars (with letter-spacing) realistically run ≈1.1 ×
+ * fontSize wide per char on the system sans-serif fallback — wider
+ * than my earlier 0.75× estimate, which is why "UNPROFITABLE" kept
+ * truncating with "..." even after the labelInner widen.
+ *
+ * For a 345 pt banner with labelInner at 55% (190 pt available):
+ *   ≤ 6 chars  → 18 pt    (PAPER, FUNDED)        5×1.1×18 = 99 pt
+ *   7+ chars   → 11 pt    (long names)          12×1.1×11 = 145 pt
+ *
+ * Both leave ≥40 pt safety margin so the bundled-font load timing
+ * (Inter vs JBM vs system fallback) can't cause overrun.
+ */
+function fontSizeForRank(rank: RankId): number {
+  const len = RANK_NAME[rank].length;
+  if (len <= 6) return 18;
+  return 11;
+}
+
+/** Text color per rank. Every plate has a dark or fully-transparent
+ *  central cartouche (verified by sampling each PNG's center pixel —
+ *  paper alpha=28, profitable alpha=0, the rest are near-black), so
+ *  all six labels need light fills. Cream for the two transparent
+ *  plates (paper, profitable) gives them a parchment feel; gold and
+ *  off-white for the rest matches the warm-metal frames. */
+const RANK_TAG_TEXT_COLOR: Record<RankId, string> = {
+  paper:        '#F4E6D0',
+  unprofitable: '#EDEDED',
+  disciplined:  '#F2D27A',
+  consistent:   '#F2D27A',
+  profitable:   '#F4E6D0',
+  funded:       '#F4D67A',
+};
+
+const GOLD = '#FFB800';
+
 export default function RankBanner({
-  rank, width, showYouIndicator = false, upNext = false, locked = false,
+  rank,
+  width,
+  showYouIndicator = false,
+  upNext = false,
+  locked = false,
   subTier,
 }: Props) {
-  const d = DESIGN[rank];
+  // Container always carries the 3:1 aspect that the plate art
+  // assumes. With `width` it's pinned; otherwise it fills the parent
+  // and the row height follows the aspect ratio.
+  const bannerSizeStyle: ViewStyle =
+    width != null ? { width, aspectRatio: 3 } : { width: '100%', aspectRatio: 3 };
 
-  const cropperStyle: ViewStyle = width
-    ? { width, aspectRatio: VB_W / VB_H }
-    : { flex: 1, aspectRatio: VB_W / VB_H };
+  const labelText = RANK_NAME[rank];
+  const labelColor = RANK_TAG_TEXT_COLOR[rank];
+  const labelFontSize = fontSizeForRank(rank);
+  const labelYOffset = RANK_LABEL_Y_OFFSET[rank];
 
-  const clipId = `clip-${rank}`;
+  const banner = (
+    <View
+      style={[
+        styles.bannerBox,
+        bannerSizeStyle,
+        upNext && styles.bannerUpNextGlow,
+      ]}
+    >
+      <Image
+        source={BANNER_SRC[rank]}
+        resizeMode="contain"
+        style={[styles.image, locked && styles.imageLocked]}
+      />
 
-  return (
-    <View style={[styles.row, locked && styles.rowLocked]}>
-      <View style={cropperStyle}>
-        <Svg
-          width="100%"
-          height="100%"
-          viewBox={`0 0 ${VB_W} ${VB_H}`}
-          preserveAspectRatio="xMidYMid meet"
+      {/* Dark scrim on locked plates — sits on top of the dimmed
+          image so it reads as "not yet earned" without a grayscale
+          filter (no SVG primitives needed). */}
+      {locked && <View style={styles.lockedScrim} pointerEvents="none" />}
+
+      {/* Centered name overlay — constrained to ~46% of the banner
+          width so long names ("UNPROFITABLE") shrink via
+          adjustsFontSizeToFit instead of bleeding onto the
+          decorative borders. */}
+      <View style={styles.labelWrap} pointerEvents="none">
+        <View
+          style={[
+            styles.labelInner,
+            labelYOffset !== 0 && { transform: [{ translateY: labelYOffset }] },
+          ]}
         >
-          <Defs>
-            <ClipPath id={clipId}>
-              <Rect
-                x={BORDER_W / 2}
-                y={BORDER_W / 2}
-                width={VB_W - BORDER_W}
-                height={VB_H - BORDER_W}
-                rx={CORNER_R}
-                ry={CORNER_R}
-              />
-            </ClipPath>
-          </Defs>
-
-          {/* Solid black fill — blends with screen bg. */}
-          <Rect
-            x={0} y={0} width={VB_W} height={VB_H}
-            rx={CORNER_R + BORDER_W / 2}
-            ry={CORNER_R + BORDER_W / 2}
-            fill="#000000"
-          />
-
-          {/* Pattern, clipped to the rounded interior. */}
-          <G clipPath={`url(#${clipId})`}>
-            <Pattern kind={d.pattern} color={d.color} />
-          </G>
-
-          {/* Glyph — left-side icon box, scaled from 100×100 origin. */}
-          <G transform={`translate(${(ICON_BOX - 80) / 2 + 20}, ${(VB_H - 100) / 2}) scale(1)`}>
-            <Glyph kind={d.glyph} color={d.color} />
-          </G>
-
-          {/* Vertical divider between glyph and label. */}
-          <Line
-            x1={ICON_BOX + 25} y1={40}
-            x2={ICON_BOX + 25} y2={VB_H - 40}
-            stroke={d.color} strokeOpacity={0.5} strokeWidth={2}
-          />
-
-          {/* Label. */}
-          <SvgText
-            x={ICON_BOX + 50} y={132}
-            fill={d.color}
-            fontSize={86}
-            fontWeight="900"
-            fontFamily="System"
+          <Text
+            style={[
+              styles.labelText,
+              { color: labelColor, fontSize: labelFontSize },
+            ]}
+            numberOfLines={1}
+            allowFontScaling={false}
           >
-            <TSpan letterSpacing={4}>{d.label}</TSpan>
-          </SvgText>
-
-          {/* Sub-tier pips below the label (only when subTier set). */}
-          {subTier != null && [0, 1, 2].map((i) => {
-            const earned = i < subTier;
-            const cx = ICON_BOX + 50 + 14 + i * 42;
-            return (
-              <Circle
-                key={i}
-                cx={cx}
-                cy={170}
-                r={13}
-                fill={earned ? '#FFB800' : 'none'}
-                stroke={earned ? '#FFB800' : '#333333'}
-                strokeWidth={4}
-              />
-            );
-          })}
-
-          {/* Outer border on top of everything. */}
-          <Rect
-            x={BORDER_W / 2}
-            y={BORDER_W / 2}
-            width={VB_W - BORDER_W}
-            height={VB_H - BORDER_W}
-            rx={CORNER_R}
-            ry={CORNER_R}
-            fill="none"
-            stroke={d.color}
-            strokeWidth={BORDER_W}
-          />
-        </Svg>
-
-        {/* UP NEXT pill — gold text on dark muted bg, top-right. */}
-        {upNext && (
-          <View style={styles.upNextPill}>
-            <Text style={styles.upNextText}>UP NEXT</Text>
-          </View>
-        )}
+            {labelText}
+          </Text>
+        </View>
       </View>
 
-      {showYouIndicator && <Text style={styles.youText}>← YOU</Text>}
+      {/* Sub-tier pips — three small dots pinned to the bottom edge
+          of the plate. Hidden when subTier is null/undefined (e.g.
+          the Funded cap, or callers that don't pass it). */}
+      {subTier != null && (
+        <View style={styles.pipsRow} pointerEvents="none">
+          {[1, 2, 3].map((i) => (
+            <View
+              key={i}
+              style={[styles.pip, i <= subTier ? styles.pipOn : styles.pipOff]}
+            />
+          ))}
+        </View>
+      )}
+
+      {/* "UP NEXT" pill — gold flag in the top-right corner. The
+          softer banner-wide gold glow lives on `bannerBox` via the
+          `bannerUpNextGlow` style above. */}
+      {upNext && (
+        <View style={styles.upNextPill} pointerEvents="none">
+          <Text style={styles.upNextText}>UP NEXT</Text>
+        </View>
+      )}
+    </View>
+  );
+
+  if (!showYouIndicator) return banner;
+
+  // Wrap in a row so the "← YOU" arrow sits to the right of the
+  // banner (matches the prior SVG version's external label).
+  return (
+    <View style={styles.youRow}>
+      {banner}
+      <Text style={styles.youLabel}>← YOU</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  row: {
+  youRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  rowLocked: {
-    opacity: 0.5,
+  youLabel: {
+    marginLeft: 10,
+    color: GOLD,
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 1.4,
   },
-  youText: {
-    marginLeft: 8,
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 11,
+
+  bannerBox: {
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  bannerUpNextGlow: {
+    shadowColor: GOLD,
+    shadowOpacity: 0.55,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 10,
+  },
+
+  image: {
+    width: '100%',
+    height: '100%',
+  },
+  imageLocked: {
+    opacity: 0.45,
+  },
+  lockedScrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.30)',
+  },
+
+  labelWrap: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // 55% inner width — enough horizontal room that even the longest
+  // name ("UNPROFITABLE", 12 chars) at the bold sans-serif fallback
+  // font's actual rendered width sits inside with ≥40 pt safety
+  // margin, so numberOfLines:1 never has to truncate with "...".
+  labelInner: {
+    width: '55%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  labelText: {
+    // JetBrainsMono Bold — chosen for the "engraved metal plate" vibe.
+    // Monospaced slabby glyphs read as stamped/etched on the rank
+    // emblem's central cartouche, which is a much better aesthetic
+    // match for the wings + plate artwork than a generic sans-serif.
+    // (Inter / system fonts looked too "app UI" against the heraldic
+    // emblems.) Loaded in App.tsx via useFonts.
+    fontFamily: 'JetBrainsMono_700Bold',
+    fontSize: 22,
     fontWeight: '700',
-    letterSpacing: 1.5,
+    letterSpacing: 0.6,
+    textAlign: 'center',
+    // Strong dark halo gives the uniformly-light text weight against
+    // each plate's dark / transparent interior. Same tuning as
+    // RankStrip.bannerText.
+    textShadowColor: 'rgba(0,0,0,0.75)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
+
+  pipsRow: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 4,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  pip: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: GOLD,
+  },
+  pipOn: {
+    backgroundColor: GOLD,
+  },
+  pipOff: {
+    backgroundColor: 'transparent',
+  },
+
   upNextPill: {
     position: 'absolute',
-    top: 8,
-    right: 10,
-    backgroundColor: '#1A1A1A',
-    borderColor: '#2A2A2A',
-    borderWidth: 1,
+    top: 6,
+    right: 6,
+    backgroundColor: GOLD,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
     borderRadius: 4,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
   },
   upNextText: {
-    color: '#FFB800',
+    color: '#000',
     fontSize: 9,
-    fontWeight: '800',
+    fontWeight: '900',
     letterSpacing: 1.2,
   },
 });

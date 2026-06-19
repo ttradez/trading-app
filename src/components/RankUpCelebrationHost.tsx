@@ -21,7 +21,7 @@ import { maybeHaptic, maybeNotificationHaptic } from '../store/settingsStore';
  * after the modal is gone).
  *
  *  - 'sub_tier' (I→II, II→III): compact modal, pip scale-bounce.
- *  - 'rank'     (e.g. Gambler→Paper Hands): full-screen takeover
+ *  - 'rank'     (e.g. Paper→Unprofitable): full-screen takeover
  *    — gold flash → particle burst → banner spring-in → name →
  *    copy → Continue.
  *
@@ -32,19 +32,23 @@ import { maybeHaptic, maybeNotificationHaptic } from '../store/settingsStore';
 const GOLD = '#FFB800';
 const PIP_HOLLOW = '#333333';
 const RANK_NAME: Record<RankId, string> = {
-  gambler: 'Gambler',
-  paper_hands: 'Paper Hands',
-  sniper: 'Sniper',
-  inside_trader: 'Inside Trader',
-  market_maker: 'Market Maker',
+  paper: 'Paper',
+  unprofitable: 'Unprofitable',
+  disciplined: 'Disciplined',
+  consistent: 'Consistent',
+  profitable: 'Profitable',
+  funded: 'Funded',
 };
-const ROMAN: Record<SubTier, string> = { 1: 'I', 2: 'II', 3: 'III' };
+// Phase 4: SubTier collapsed to `1` (no divisions). ROMAN kept as
+// {} so legacy `ROMAN[subTier]` lookups return undefined → render
+// no Roman numeral. The whole pip row is also a no-op now.
+const ROMAN: Record<number, string> = {};
 
 // ── Animated pip row (RN, not the SVG banner pips) ─────────────────────────
 
 function PipRow({
   subTier, animateIndex, size = 12,
-}: { subTier: SubTier; animateIndex: number | null; size?: number }) {
+}: { subTier: SubTier | null; animateIndex: number | null; size?: number }) {
   // The pip at `animateIndex` bounces from hollow → gold on mount.
   const scale = useRef(new Animated.Value(animateIndex == null ? 1 : 0.2)).current;
   useEffect(() => {
@@ -53,6 +57,9 @@ function PipRow({
       toValue: 1, tension: 140, friction: 5, useNativeDriver: true,
     }).start();
   }, [animateIndex, scale]);
+
+  // Funded cap has no division — render nothing instead of a pip row.
+  if (subTier == null) return null;
 
   return (
     <View style={styles.pipRow}>
@@ -152,10 +159,11 @@ function SubTierCelebration({
           </View>
           <PipRow
             subTier={item.newSubTier}
-            animateIndex={item.newSubTier - 1}
+            // Funded cap (newSubTier === null): no pip to animate.
+            animateIndex={item.newSubTier == null ? null : item.newSubTier - 1}
           />
           <Text style={styles.subRankName}>
-            {RANK_NAME[item.newRank]} {ROMAN[item.newSubTier]}
+            {RANK_NAME[item.newRank]} {item.newSubTier == null ? '' : ROMAN[item.newSubTier]}
           </Text>
           <Text style={styles.subXp}>+{item.xpEarned} XP</Text>
           <Pressable

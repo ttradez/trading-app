@@ -109,6 +109,8 @@ export default function TradeCardModal({ trade, onClose }: Props) {
       strategy: '',
       tags: [],
       savedAt: Date.now(),
+      // Carry forward any previously attached screenshot.
+      imageUri: prev?.imageUri ?? null,
     };
     addEntry(entry);
     onClose();

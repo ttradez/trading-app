@@ -21,9 +21,9 @@ import { useXpStore } from '../store/xpStore';
  */
 
 // The curated tradable set ("Global Trader" = traded them all).
-// Mirrors the symbols the daily-setup catalogue uses; documented
-// assumption (the backend market list isn't available offline).
-const ALL_SYMBOLS = ['NQ', 'ES', 'CL', 'GC'];
+// Documented assumption (the backend market list isn't available
+// offline).
+const ALL_SYMBOLS = ['NQ', 'ES', 'YM', 'GC'];
 
 export interface BadgeContext {
   tradeCount: number;
@@ -37,7 +37,6 @@ export interface BadgeContext {
   tradedAllSymbols: boolean;
   currentStreak: number;
   freezesUsedTotal: number;
-  dailySetupsCompleted: number;
   watchlistCount: number;
   journaledCount: number;
 }
@@ -115,7 +114,6 @@ export function buildBadgeContext(): BadgeContext {
     tradedAllSymbols: ALL_SYMBOLS.every((s) => symbols.has(s)),
     currentStreak: streak.currentStreak,
     freezesUsedTotal: badge.freezesUsedTotal,
-    dailySetupsCompleted: badge.dailySetupsCompleted,
     watchlistCount: watchlist.length,
     journaledCount: Object.keys(tjEntries).length,
   };
@@ -151,8 +149,6 @@ export const BADGE_TESTS: Record<string, Test> = {
 
   explorer:         (c) => c.uniqueSymbols >= 3,
   global_trader:    (c) => c.tradedAllSymbols,
-  mission_complete: (c) => c.dailySetupsCompleted >= 5,
-  mission_master:   (c) => c.dailySetupsCompleted >= 20,
   bookworm:         (c) => c.watchlistCount >= 10,
 
   first_page:       (c) => c.journaledCount >= 1,
@@ -188,8 +184,6 @@ export function getBadgeProgress(
     case 'iron_will':        return p(c.currentStreak, 60);
     case 'explorer':         return p(c.uniqueSymbols, 3);
     case 'global_trader':    return p(c.uniqueSymbols, ALL_SYMBOLS.length);
-    case 'mission_complete': return p(c.dailySetupsCompleted, 5);
-    case 'mission_master':   return p(c.dailySetupsCompleted, 20);
     case 'bookworm':         return p(c.watchlistCount, 10);
     case 'first_page':       return p(c.journaledCount, 1);
     case 'dedicated':        return p(c.journaledCount, 10);
@@ -235,5 +229,4 @@ export function checkTradeCloseBadges(closedPnl: number): string[] {
 
 export function checkStreakBadges(): string[] { return evaluateBadges(); }
 export function checkJournalBadges(): string[] { return evaluateBadges(); }
-export function checkDailySetupBadges(): string[] { return evaluateBadges(); }
 export function checkWatchlistBadges(): string[] { return evaluateBadges(); }

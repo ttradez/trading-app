@@ -79,7 +79,7 @@ const SESSIONS_PER_WEEK: Record<DailyCommitment, number> = {
   pro:    14,
 };
 
-/** Rank Reveal screen places the user at 10% toward Paper Hands after
+/** Rank Reveal screen places the user at 10% toward Unprofitable after
  *  the first trade, so ~9 more sessions × 10% ≈ a full bar.
  *  This is a pre-XP-system estimate; when the real rank XP system
  *  lands, replace this with the actual remaining XP / per-session
@@ -218,14 +218,14 @@ export default function OnboardingPlanSummaryScreen({ navigation }: Props) {
           <View style={styles.trajectoryBlock}>
             <Text style={styles.trajectoryLabel}>Trajectory</Text>
             <View style={styles.trajectoryRow}>
-              <Text style={styles.trajectoryFrom}>Gambler</Text>
+              <Text style={styles.trajectoryFrom}>Paper</Text>
               <MaterialCommunityIcons
                 name="arrow-right"
                 size={16}
                 color="rgba(255,255,255,0.5)"
                 style={styles.trajectoryArrow}
               />
-              <Text style={styles.trajectoryTo}>Paper Hands</Text>
+              <Text style={styles.trajectoryTo}>Unprofitable</Text>
             </View>
             <Text style={styles.trajectoryEstimate}>
               ~{weeks} {weeks === 1 ? 'week' : 'weeks'} at this pace

@@ -1,5 +1,5 @@
 /**
- * Pocket Trade design system — single source of truth.
+ * Pip design system — single source of truth.
  * Match every value here against the mockup before changing.
  */
 
@@ -94,12 +94,16 @@ export const colors = {
 
   // Rank badges — vibrant palette matching the rank artwork.
   // Each rank has its own saturated identity color used for the
-  // banner border, pattern, glyph, and label.
-  rankGambler:      '#C0C0C0',   // silver
-  rankPaperHands:   '#00D395',   // brand green
-  rankSniper:       '#3B82F6',   // electric blue
-  rankInsideTrader: '#A855F7',   // royal purple
-  rankMarketMaker:  '#FFB800',   // brand gold
+  // banner border, pattern, glyph, and label. Ported from the old
+  // 5-rank tokens via gambler→paper / paper_hands→unprofitable /
+  // sniper→disciplined / inside_trader→consistent /
+  // market_maker→profitable; `rankFunded` is brand gold for the cap.
+  rankPaper:        '#C0C0C0',   // silver
+  rankUnprofitable: '#00D395',   // brand green
+  rankDisciplined:  '#3B82F6',   // electric blue
+  rankConsistent:   '#A855F7',   // royal purple
+  rankProfitable:   '#FFB800',   // brand gold
+  rankFunded:       '#FFB800',   // brand gold (cap)
 } as const;
 
 export const radius = {

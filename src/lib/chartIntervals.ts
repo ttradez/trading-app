@@ -27,3 +27,23 @@ export const TV_INTERVAL_TO_API_TF: Record<string, string> = {
 export function tvIntervalToApiTimeframe(interval: string): string {
   return TV_INTERVAL_TO_API_TF[interval] ?? '5m';
 }
+
+/** Inverse of `tvIntervalToApiTimeframe`. Used when the backend hands
+ *  back a session's stored timeframe ('5m', '1D') and the chart needs
+ *  the matching TradingView resolution to mount at the right TF.
+ *  Defaults to 'D' so an unknown timeframe still renders SOMETHING
+ *  rather than throwing inside the chart toolbar. */
+export const API_TF_TO_TV_INTERVAL: Record<string, string> = {
+  '1m':  '1',
+  '5m':  '5',
+  '15m': '15',
+  '30m': '30',
+  '1h':  '60',
+  '4h':  '240',
+  '1D':  'D',
+  '1W':  'W',
+};
+
+export function apiTimeframeToTvInterval(timeframe: string): string {
+  return API_TF_TO_TV_INTERVAL[timeframe] ?? 'D';
+}

@@ -22,7 +22,12 @@ const GREEN = colors.green;
 const RED   = colors.red;
 const WHITE = colors.textPrimary;
 
-const BAR_FLOOR_OPACITY = 0.30;
+// Subtle background tint — the earlier 0.30 floor + 1.0 ceiling
+// turned the row solid bright yellow when only one symbol existed
+// (ratio == 1.0 → full opacity). Capped at 0.18 max so the bar reads
+// as a soft accent rather than fighting the text + card surface.
+const BAR_FLOOR_OPACITY = 0.04;
+const BAR_RATIO_SCALE   = 0.14;
 const VISIBLE_ROWS      = 6;
 
 interface Props {
@@ -84,7 +89,7 @@ function Row({
   row, maxAbs, showDivider,
 }: { row: SymbolStats; maxAbs: number; showDivider: boolean }) {
   const ratio = maxAbs > 0 ? Math.abs(row.netPnl) / maxAbs : 0;
-  const barOpacity = BAR_FLOOR_OPACITY + 0.70 * Math.min(1, ratio);
+  const barOpacity = BAR_FLOOR_OPACITY + BAR_RATIO_SCALE * Math.min(1, ratio);
 
   const pnlColor =
     row.netPnl > 0 ? GREEN :

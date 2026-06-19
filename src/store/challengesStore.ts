@@ -94,7 +94,7 @@ export const CHALLENGE_TEMPLATES: Omit<Challenge, 'status' | 'progress' | 'start
     title: 'High R Discipline',
     description: 'Hit 10 trades in a row at +2R or better.',
     goal: 10,
-    reward: { xp: 250, badge: 'Sniper' },
+    reward: { xp: 250, badge: 'Disciplined' },
     metric: { kind: 'min_rr_streak', minR: 2 },
   },
   {

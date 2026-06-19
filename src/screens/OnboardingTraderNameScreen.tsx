@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, Pressable, Animated, StyleSheet, StatusBar, ScrollView,
   TextInput, Keyboard, KeyboardAvoidingView, Platform, TouchableWithoutFeedback,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,6 +10,7 @@ import * as Haptics from 'expo-haptics';
 import { useOnboardingStore, Archetype } from '../store/onboardingStore';
 import PlayerCardPreview from '../components/onboarding/PlayerCardPreview';
 import { containsProfanity } from '../utils/profanityFilter';
+import { isHandleAvailable } from '../services/handleClaim';
 
 /** Safety pass over the archetype suggestion pools at module load.
  *  Pools are hand-curated and shouldn't trip the filter, but if a
@@ -134,6 +136,17 @@ export default function OnboardingTraderNameScreen({ navigation }: Props) {
   const [nameFocused,   setNameFocused]   = useState(false);
   const [suggestions,   setSuggestions]   = useState<string[]>(() => generateSuggestions(archetype));
 
+  // Handle-uniqueness check states. `idle` until the user types a
+  // format-valid handle; debounce 500 ms then transition to
+  // `checking`; resolve to `available` or `taken`. The Continue gate
+  // requires `available` so a user can't proceed with a taken handle.
+  // A taken handle can still be IDEMPOTENTLY claimed by the same uid
+  // at signup time (returning user re-running onboarding), but at
+  // this stage the user is anonymous — there's no way to know if the
+  // owner is them, so we treat any "taken" as a block.
+  const [handleAvailability, setHandleAvailability] =
+    useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
+
   const opacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -150,7 +163,37 @@ export default function OnboardingTraderNameScreen({ navigation }: Props) {
   const nameValid      = useMemo(() => isNameValid(displayName), [displayName]);
   const handleProfane  = useMemo(() => containsProfanity(handle), [handle]);
   const nameProfane    = useMemo(() => containsProfanity(displayName), [displayName]);
-  const ctaEnabled     = handleValid && nameValid && !handleProfane && !nameProfane;
+
+  // Debounced availability check. Fires only when the handle passes
+  // local format + profanity gates; otherwise we don't burn a
+  // Firestore read on something that wouldn't pass Continue anyway.
+  // The `cancelled` flag drops a slow response that comes back after
+  // the user has typed more characters — without it, an old check
+  // could overwrite the result of a newer one (race).
+  useEffect(() => {
+    if (!handleValid || handleProfane) {
+      setHandleAvailability('idle');
+      return;
+    }
+    setHandleAvailability('checking');
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const ok = await isHandleAvailable(handle);
+      if (cancelled) return;
+      setHandleAvailability(ok ? 'available' : 'taken');
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [handle, handleValid, handleProfane]);
+
+  const ctaEnabled =
+    handleValid &&
+    nameValid &&
+    !handleProfane &&
+    !nameProfane &&
+    handleAvailability === 'available';
 
   // Don't nag with red error text while the user is still typing from
   // empty — only show after they've typed at least one character.
@@ -197,7 +240,12 @@ export default function OnboardingTraderNameScreen({ navigation }: Props) {
               style={styles.scroll}
               contentContainerStyle={[
                 styles.scrollContent,
-                { paddingTop: insets.top + 24 },
+                // Drop the title down — used to sit right under the
+                // status bar with the rank banner filling the upper
+                // third of the screen. The banner is gone now (see
+                // hideRank below), so we push the title down ~80 pt
+                // so it lands roughly where the banner used to begin.
+                { paddingTop: insets.top + 80 },
               ]}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
@@ -208,12 +256,17 @@ export default function OnboardingTraderNameScreen({ navigation }: Props) {
                 This is how other traders will find you on the leaderboard.
               </Text>
 
-              {/* Live player-card preview — updates as the user types. */}
+              {/* Live preview — display name + @handle only. The rank
+                  emblem (PAPER banner) was competing with the input
+                  fields for visual weight, so we hide it here and let
+                  the inputs be the focal point. The Auth-screen recap
+                  still shows the rank since hideRank defaults to false. */}
               <View style={styles.previewWrap}>
                 <PlayerCardPreview
-                  rank="gambler"
+                  rank="paper"
                   displayName={displayName}
                   handle={handle}
+                  hideRank
                 />
               </View>
 
@@ -242,11 +295,26 @@ export default function OnboardingTraderNameScreen({ navigation }: Props) {
                   selectionColor={GOLD}
                   returnKeyType="next"
                 />
-                {handleValid && !handleProfane && (
+                {handleValid && !handleProfane && handleAvailability === 'checking' && (
+                  <ActivityIndicator
+                    size="small"
+                    color="rgba(255,255,255,0.5)"
+                    style={styles.inputAdornment}
+                  />
+                )}
+                {handleValid && !handleProfane && handleAvailability === 'available' && (
                   <Ionicons
                     name="checkmark-circle"
                     size={22}
                     color={GREEN}
+                    style={styles.inputAdornment}
+                  />
+                )}
+                {handleValid && !handleProfane && handleAvailability === 'taken' && (
+                  <Ionicons
+                    name="close-circle"
+                    size={22}
+                    color="#FF4757"
                     style={styles.inputAdornment}
                   />
                 )}
@@ -255,6 +323,8 @@ export default function OnboardingTraderNameScreen({ navigation }: Props) {
                 <Text style={styles.errorText}>This name isn't allowed.</Text>
               ) : handleHasInput && !handleValid ? (
                 <Text style={styles.errorText}>Invalid handle format</Text>
+              ) : handleValid && handleAvailability === 'taken' ? (
+                <Text style={styles.errorText}>That handle is taken — try another.</Text>
               ) : (
                 <Text style={styles.helperText}>
                   3-20 characters. Lowercase letters, numbers, periods, and underscores only.

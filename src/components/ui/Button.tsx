@@ -17,7 +17,7 @@ import { colors } from '../../theme';
  *                box as primary so the two read as siblings.
  *  - tertiary  — text-link with a trailing arrow. No fill, no
  *                border, no padding box. For "View all", "View
- *                trading insights →", "Learn & Practice →".
+ *                trading insights →".
  *
  * Color tokens from `theme/colors` only — no inline brand values.
  * Type / spacing tokens stay external; this file owns the

@@ -37,6 +37,11 @@ export interface ChallengeInstance {
   completed: boolean;
   completedAt: string | null;
   xpReward: number;
+  /** True once the user has tapped "Claim XP" on a completed
+   *  challenge. XP is granted at claim time, not at completion. The
+   *  delay gives the user agency and lets the rank bar animate from
+   *  the old XP to the new XP when they navigate to Ranks. */
+  claimed: boolean;
 }
 
 function monthKey(ymd: string): string {
@@ -51,6 +56,7 @@ function toInstance(t: ChallengeTemplate): ChallengeInstance {
     completed: false,
     completedAt: null,
     xpReward: t.xpReward,
+    claimed: false,
   };
 }
 
@@ -87,6 +93,11 @@ interface ChallengeState {
   generateWeekly: (userRank: RankId) => void;
   generateMonthly: (userRank: RankId) => void;
   updateProgress: (condition: string, value: number) => void;
+  /** Grant XP for a completed-but-unclaimed challenge. Idempotent —
+   *  a second call on the same challenge is a no-op. Looks up the
+   *  challenge across dailies, weekly, and monthly. Returns the XP
+   *  amount granted (0 if the challenge wasn't claimable). */
+  claimChallenge: (challengeId: string) => number;
   skipDaily: (index: number, userRank: RankId) => boolean;
   checkExpiry: (userRank: RankId) => void;
   reset: () => void;
@@ -149,17 +160,16 @@ export const useChallengeStore = create<ChallengeState>()(
               ? Math.max(inst.progress, value)
               : Math.min(inst.target, inst.progress + value);
           if (next < inst.target) return { ...inst, progress: next };
-          // Completed.
+          // Crossed the target. Mark COMPLETED but NOT claimed — XP
+          // is held until the user taps "Claim XP" on the tile. The
+          // toast pings to surface the claim affordance.
           const completed: ChallengeInstance = {
             ...inst,
             progress: inst.target,
             completed: true,
             completedAt: new Date().toISOString(),
+            claimed: false,
           };
-          useXpStore.getState().addXP(inst.xpReward, 'challenge');
-          if (t.bonusReward === 'streak_freeze') {
-            useStreakStore.getState().grantFreeze();
-          }
           useChallengeToastStore.getState().enqueue({
             name: t.name,
             xp: inst.xpReward,
@@ -172,6 +182,31 @@ export const useChallengeStore = create<ChallengeState>()(
           activeWeekly: s.activeWeekly ? apply(s.activeWeekly) : null,
           activeMonthly: s.activeMonthly ? apply(s.activeMonthly) : null,
         }));
+      },
+
+      claimChallenge: (challengeId) => {
+        let granted = 0;
+        const apply = (inst: ChallengeInstance): ChallengeInstance => {
+          if (inst.challengeId !== challengeId) return inst;
+          if (!inst.completed || inst.claimed) return inst;
+          // Grant XP at claim time + apply any bonus reward (e.g.
+          // streak_freeze). Was previously coupled to the completion
+          // moment in updateProgress; centralized here so the user
+          // controls when their rank XP bar moves.
+          useXpStore.getState().addXP(inst.xpReward, 'challenge');
+          const t = getTemplate(inst.challengeId);
+          if (t?.bonusReward === 'streak_freeze') {
+            useStreakStore.getState().grantFreeze();
+          }
+          granted = inst.xpReward;
+          return { ...inst, claimed: true };
+        };
+        set((s) => ({
+          activeDailies: s.activeDailies.map(apply),
+          activeWeekly: s.activeWeekly ? apply(s.activeWeekly) : null,
+          activeMonthly: s.activeMonthly ? apply(s.activeMonthly) : null,
+        }));
+        return granted;
       },
 
       skipDaily: (index, userRank) => {
@@ -227,7 +262,33 @@ export const useChallengeStore = create<ChallengeState>()(
     }),
     {
       name: 'challenge-storage-v1',
+      version: 2,
       storage: createJSONStorage(() => AsyncStorage),
+      // v1 → v2: introduced `claimed` flag on ChallengeInstance.
+      // Existing completed challenges were ALREADY granted XP
+      // (auto-grant on completion in v1), so backfill claimed=true
+      // to prevent retroactive Claim buttons + double-grants. New
+      // / in-progress challenges default claimed=false.
+      migrate: (raw, fromVersion) => {
+        const persisted = (raw ?? {}) as Partial<ChallengeState>;
+        if (fromVersion < 2) {
+          const lift = (inst: ChallengeInstance | null | undefined): any => {
+            if (!inst) return inst;
+            // claimed already present? leave alone. Otherwise: treat
+            // completed challenges as already claimed (legacy auto-
+            // grant), uncompleted as not-yet-claimed.
+            if (typeof (inst as any).claimed === 'boolean') return inst;
+            return { ...inst, claimed: !!inst.completed };
+          };
+          return {
+            ...persisted,
+            activeDailies: (persisted.activeDailies ?? []).map(lift),
+            activeWeekly: lift(persisted.activeWeekly ?? null),
+            activeMonthly: lift(persisted.activeMonthly ?? null),
+          } as ChallengeState;
+        }
+        return persisted as ChallengeState;
+      },
     }
   )
 );

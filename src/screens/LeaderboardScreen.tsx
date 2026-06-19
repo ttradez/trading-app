@@ -40,19 +40,36 @@ type Period = 'weekly' | 'monthly' | 'alltime';
 
 const PERIODS: Period[] = ['weekly', 'monthly', 'alltime'];
 
+// Keyed by the backend's `accounts.rank` text value. The backend now
+// stores level_names from the new 6-rank ladder (e.g. "Paper I",
+// "Disciplined II", "Funded"); we look up the TIER color, so match
+// on the tier prefix instead of the full level_name.
 const RANK_COLORS: Record<string, string> = {
-  'Gambler':       colors.rankGambler,
-  'Paper Hands':   colors.rankPaperHands,
-  'Sniper':        colors.rankSniper,
-  'Inside Trader': colors.rankInsideTrader,
-  'Market Maker':  colors.rankMarketMaker,
+  'Paper':        colors.rankPaper,
+  'Unprofitable': colors.rankUnprofitable,
+  'Disciplined':  colors.rankDisciplined,
+  'Consistent':   colors.rankConsistent,
+  'Profitable':   colors.rankProfitable,
+  'Funded':       colors.rankFunded,
 };
 
-export default function LeaderboardScreen({ route }: any) {
+export default function LeaderboardScreen({ route, embedded, segment }: any) {
   const { uid } = useAuthStore();
+  // When rendered inside the Ranks tab (embedded=true), the parent
+  // owns the segment selection and hides our internal toggle. The
+  // `segment` prop pins the view; otherwise fall back to the
+  // legacy route-param-driven default.
+  const lockedView: 'rankings' | 'badges' | null = embedded
+    ? (segment === 'badges' ? 'badges' : 'rankings')
+    : null;
   const [view, setView] = useState<'rankings' | 'badges'>(
-    route?.params?.initialSegment === 'badges' ? 'badges' : 'rankings',
+    lockedView ?? (route?.params?.initialSegment === 'badges' ? 'badges' : 'rankings'),
   );
+  // Keep the locked view in sync when the parent flips `segment`
+  // after mount (sub-tab switch).
+  useEffect(() => {
+    if (lockedView && lockedView !== view) setView(lockedView);
+  }, [lockedView, view]);
   const [tab, setTab] = useState<Tab>('leaderboard');
   const [period, setPeriod] = useState<Period>('weekly');
   const [data, setData] = useState<any[]>([]);
@@ -183,7 +200,7 @@ export default function LeaderboardScreen({ route }: any) {
     </>
   );
 
-  const segmentToggle = (
+  const segmentToggle = embedded ? null : (
     <View style={styles.segmentRow}>
       {(['rankings', 'badges'] as const).map((v) => (
         <TouchableOpacity
@@ -199,27 +216,33 @@ export default function LeaderboardScreen({ route }: any) {
     </View>
   );
 
+  // When embedded inside the Ranks tab, the parent owns the
+  // safe-area inset (its pinned header sits above us) — render a
+  // plain View instead of SafeAreaView so we don't double-pad.
+  const Container: React.ComponentType<any> = embedded ? View : SafeAreaView;
+  const containerProps: any = embedded ? {} : { edges: ['top'] };
+
   if (view === 'badges') {
     return (
-      <SafeAreaView edges={['top']} style={styles.container}>
+      <Container {...containerProps} style={styles.container}>
         {segmentToggle}
         <TrophyCase />
-      </SafeAreaView>
+      </Container>
     );
   }
 
   if (loading && data.length === 0 && feed.length === 0) {
     return (
-      <SafeAreaView edges={['top']} style={styles.container}>
+      <Container {...containerProps} style={styles.container}>
         {segmentToggle}
         {renderHeader()}
         <ActivityIndicator color={colors.gold} style={{ marginTop: 40 }} />
-      </SafeAreaView>
+      </Container>
     );
   }
 
   return (
-    <SafeAreaView edges={['top']} style={styles.container}>
+    <Container {...containerProps} style={styles.container}>
     {segmentToggle}
     <FlatList
       style={styles.container}
@@ -238,15 +261,15 @@ export default function LeaderboardScreen({ route }: any) {
               color={LT.textQuaternary}
               style={{ marginBottom: spacing.md }}
             />
-            <Text style={styles.emptyTitle}>Personal Leaderboard</Text>
+            <Text style={styles.emptyTitle}>Leaderboard — Coming Soon</Text>
             <Text style={styles.emptyText}>
-              Your best weeks will appear here as you trade.
+              Compete for real cash prizes. Seasons launch soon.
             </Text>
           </View>
         ) : null
       }
     />
-    </SafeAreaView>
+    </Container>
   );
 }
 

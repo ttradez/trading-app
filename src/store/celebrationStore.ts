@@ -16,9 +16,11 @@ import { RankId, SubTier } from '../data/rankConfig';
 export interface CelebrationItem {
   type: 'rank' | 'sub_tier';
   newRank: RankId;
-  newSubTier: SubTier;
+  /** null when promoting INTO the Funded cap (no division). */
+  newSubTier: SubTier | null;
   previousRank: RankId;
-  previousSubTier: SubTier;
+  /** null when the previous beat was the Funded cap (no division). */
+  previousSubTier: SubTier | null;
   /** XP from the action that pushed the user over the threshold. */
   xpEarned: number;
 }

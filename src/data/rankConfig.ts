@@ -1,106 +1,109 @@
-/**
- * Rank progression: 5 ranks × 3 sub-tiers = 15 beats.
- *
- * `cumulativeXP` is the lifetime XP at which a beat is ENTERED.
- * A user with `xp` is at the highest beat whose `cumulativeXP <=
- * xp`. XP never decreases and ranks are permanent (see xpStore) —
- * so `getRankForXP` is a pure lookup, no history needed.
- *
- * Rank ids match `RankBanner`'s `Rank` union.
- */
-
 export type RankId =
-  | 'gambler' | 'paper_hands' | 'sniper' | 'inside_trader' | 'market_maker';
+  | 'paper'
+  | 'unprofitable'
+  | 'disciplined'
+  | 'consistent'
+  | 'profitable'
+  | 'funded';
 
-export type SubTier = 1 | 2 | 3;
+/**
+ * Divisions (I/II/III) were removed in Phase 4 — one threshold per
+ * rank. `SubTier` is kept exported as `1 | null` so the existing
+ * `RankForXP.subTier` contract stays a union (everything resolves to
+ * null) without breaking call sites that still destructure it.
+ * Anything reading the value already null-guards; remove the field
+ * entirely in a later cleanup pass.
+ */
+export type SubTier = 1;
 
 export interface RankBeat {
   rank: RankId;
-  subTier: SubTier;
-  /** Display label e.g. "Gambler I". */
+  /** Always null in the divisionless ladder. Kept for shape parity. */
+  subTier: SubTier | null;
+  /** Display label — now identical to the rank name (no Roman). */
   label: string;
-  /** Lifetime XP at which this beat is entered. */
+  /** Lifetime XP at which this rank is entered. */
   cumulativeXP: number;
-  /** True when entering this beat is a full rank promotion (a new
-   *  rank), false for an intra-rank sub-tier step. */
+  /** True — every beat in the new ladder is a full rank promotion. */
   isRankPromotion: boolean;
 }
 
 const RANK_NAME: Record<RankId, string> = {
-  gambler: 'Gambler',
-  paper_hands: 'Paper Hands',
-  sniper: 'Sniper',
-  inside_trader: 'Inside Trader',
-  market_maker: 'Market Maker',
+  paper: 'Paper',
+  unprofitable: 'Unprofitable',
+  disciplined: 'Disciplined',
+  consistent: 'Consistent',
+  profitable: 'Profitable',
+  funded: 'Funded',
 };
 
-const ROMAN: Record<SubTier, string> = { 1: 'I', 2: 'II', 3: 'III' };
-
-function beat(rank: RankId, subTier: SubTier, cumulativeXP: number): RankBeat {
+function beat(rank: RankId, cumulativeXP: number): RankBeat {
   return {
     rank,
-    subTier,
-    label: `${RANK_NAME[rank]} ${ROMAN[subTier]}`,
+    subTier: null,
+    label: RANK_NAME[rank],
     cumulativeXP,
-    isRankPromotion: subTier === 1, // tier I of any rank = rank-up
+    isRankPromotion: true,
   };
 }
 
-/** The 15 beats in ascending XP order. */
+/** 6 beats — one per rank. Must stay in sync with backend RANK_LADDER. */
 export const RANK_BEATS: ReadonlyArray<RankBeat> = [
-  beat('gambler',       1, 0),
-  beat('gambler',       2, 150),
-  beat('gambler',       3, 300),
-  beat('paper_hands',   1, 500),
-  beat('paper_hands',   2, 1_100),
-  beat('paper_hands',   3, 1_800),
-  beat('sniper',        1, 3_000),
-  beat('sniper',        2, 5_000),
-  beat('sniper',        3, 7_500),
-  beat('inside_trader', 1, 10_500),
-  beat('inside_trader', 2, 15_000),
-  beat('inside_trader', 3, 20_500),
-  beat('market_maker',  1, 27_500),
-  beat('market_maker',  2, 36_500),
-  beat('market_maker',  3, 48_500),
+  beat('paper',        0),
+  beat('unprofitable', 800),
+  beat('disciplined',  3200),
+  beat('consistent',   7500),
+  beat('profitable',   14500),
+  beat('funded',       25000),
 ];
 
+/** Ordered list of the 6 ranks, low to high. */
+export const RANK_ORDER: ReadonlyArray<RankId> = [
+  'paper', 'unprofitable', 'disciplined', 'consistent', 'profitable', 'funded',
+];
+
+/**
+ * Result of resolving an XP value to its current beat + progress.
+ * `subTier` stays in the type for shape parity but is always null;
+ * `next` is null at the Funded cap.
+ */
 export interface RankForXP {
   rank: RankId;
-  subTier: SubTier;
+  subTier: SubTier | null;
   label: string;
   /** XP earned within the current beat (xp − current.cumulativeXP). */
   xpInTier: number;
   /** Span from the current beat to the next (0 at the max beat). */
   xpNeededForNext: number;
   /** Whether reaching the NEXT beat is a full rank promotion.
-   *  `false` at the max beat. */
+   *  `false` only at the max beat. */
   isRankPromotion: boolean;
   /** The next beat, or null at the cap. */
   next: RankBeat | null;
 }
 
 /**
- * Celebration copy shown when the user is promoted INTO a rank
- * (main-rank promotion only — sub-tier steps don't use this).
- * `gambler` is null: you start there, never get promoted into it.
- * Kept here so copy edits don't touch celebration components.
+ * Celebration copy shown when the user is promoted INTO a rank.
+ * `paper` is null: you start there, never get promoted into it.
+ * Funded gets the apex line.
  */
 export const RANK_PROMOTION_COPY: Record<RankId, string | null> = {
-  gambler: null,
-  paper_hands: "You've stopped gambling. You're learning to wait.",
-  sniper: "You're past paper hands. Now you have aim.",
-  inside_trader: 'You see what others miss. Trade with conviction.',
-  market_maker: "You've made it. You are the market.",
+  paper: null,
+  unprofitable: "You've stopped gambling. You're learning to wait.",
+  disciplined: "You're past paper hands. Now you have aim.",
+  consistent: 'You see what others miss. Trade with conviction.',
+  profitable: "You've made it. You are the market.",
+  funded: "You're funded. The market pays you now.",
 };
 
-/** Theme accent per rank (matches the RankBanner palette). */
+/** Theme accent per rank. */
 export const RANK_THEME_COLOR: Record<RankId, string> = {
-  gambler: '#C0C0C0',
-  paper_hands: '#00D395',
-  sniper: '#4A9EFF',
-  inside_trader: '#9B59B6',
-  market_maker: '#FFB800',
+  paper:        '#C0C0C0',
+  unprofitable: '#00D395',
+  disciplined:  '#4A9EFF',
+  consistent:   '#9B59B6',
+  profitable:   '#FFB800',
+  funded:       '#FFB800',
 };
 
 /** Pure lookup — the highest beat the XP has reached, plus the

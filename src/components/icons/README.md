@@ -1,6 +1,6 @@
 # Icon usage rules
 
-Two icon families coexist in Pocket Trade. They are NOT
+Two icon families coexist in Pip. They are NOT
 interchangeable — picking the wrong family is a visual-language
 bug, not a stylistic preference.
 

@@ -26,10 +26,11 @@ export interface BadgeCelebration {
 export interface RankCelebration {
   kind: 'rank';
   rank: RankId;
-  subTier: SubTier;
+  /** null when the new rank is the Funded cap (no division). */
+  subTier: SubTier | null;
   label: string;
-  /** True = main-rank promotion (e.g. Gambler → Paper Hands); false
-   *  = intra-rank sub-tier step (e.g. Gambler I → Gambler II). */
+  /** True = main-rank promotion (e.g. Paper → Unprofitable); false
+   *  = intra-rank sub-tier step (e.g. Paper I → Paper II). */
   isPromotion: boolean;
   /** XP delta that pushed the user across the threshold. */
   xpEarned: number;

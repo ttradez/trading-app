@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Image } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import NumericText from './NumericText';
@@ -31,6 +31,10 @@ export interface JournalEntryCardProps {
   pnl: number;
   /** ISO yyyy-mm-dd (or anything Date can parse). */
   date: string;
+  /** file:// URI of the chart screenshot captured at close. When
+   *  present the slot renders the real image; null falls back to
+   *  the placeholder pattern. */
+  imageUri?: string | null;
 }
 
 const MONTHS_SHORT = [
@@ -61,7 +65,7 @@ function formatSignedUSD(n: number): string {
 }
 
 export default function JournalEntryCard({
-  outcome, symbol, entry, exit, pnl, date,
+  outcome, symbol, entry, exit, pnl, date, imageUri,
 }: JournalEntryCardProps) {
   const isWin = outcome === 'W';
   const pnlColor =
@@ -94,17 +98,29 @@ export default function JournalEntryCard({
         <NumericText style={styles.date}>{formatDate(date)}</NumericText>
       </View>
 
-      {/* Screenshot placeholder — where the chart screenshot will
-          eventually render. Matches the same empty-state pattern
-          used elsewhere: L3 surface, hairline outline, faint glyph. */}
-      <View style={styles.screenshotSlot}>
-        <MaterialCommunityIcons
-          name="chart-line"
-          size={28}
-          color="rgba(255,255,255,0.18)"
-        />
-        <Text style={styles.screenshotCaption}>Trade screenshot</Text>
-      </View>
+      {/* Screenshot slot — renders the auto-captured chart image
+          (cleanChartUri from the close path, stored on the entry's
+          imageUri). Falls back to the empty-state pattern when no
+          image was captured: L3 surface, hairline outline, faint
+          glyph. */}
+      {imageUri ? (
+        <View style={styles.screenshotSlotImg}>
+          <Image
+            source={{ uri: imageUri }}
+            style={styles.screenshotImg}
+            resizeMode="cover"
+          />
+        </View>
+      ) : (
+        <View style={styles.screenshotSlot}>
+          <MaterialCommunityIcons
+            name="chart-line"
+            size={28}
+            color="rgba(255,255,255,0.18)"
+          />
+          <Text style={styles.screenshotCaption}>Trade screenshot</Text>
+        </View>
+      )}
 
       {/* Price + P&L row */}
       <View style={styles.bodyRow}>
@@ -196,6 +212,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
+  },
+  // Same height as the placeholder; image clips to the rounded
+  // corners via `overflow: hidden`.
+  screenshotSlotImg: {
+    height: 120,
+    borderRadius: radius.md,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+    borderWidth: 1,
+    borderColor: borders.hairline,
+  },
+  screenshotImg: {
+    width: '100%',
+    height: '100%',
   },
   screenshotCaption: {
     color: colors.textTertiary,

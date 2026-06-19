@@ -112,14 +112,22 @@ export function useCelebrationTriggers(): void {
 // ── Helpers ────────────────────────────────────────────────────────
 
 const RANK_NAME = {
-  gambler: 'Gambler',
-  paper_hands: 'Paper Hands',
-  sniper: 'Sniper',
-  inside_trader: 'Inside Trader',
-  market_maker: 'Market Maker',
+  paper: 'Paper',
+  unprofitable: 'Unprofitable',
+  disciplined: 'Disciplined',
+  consistent: 'Consistent',
+  profitable: 'Profitable',
+  funded: 'Funded',
 } as const;
 const ROMAN = { 1: 'I', 2: 'II', 3: 'III' } as const;
 
-function rankLabel(rank: keyof typeof RANK_NAME, subTier: 1 | 2 | 3): string {
-  return `${RANK_NAME[rank]} ${ROMAN[subTier]}`;
+function rankLabel(
+  rank: keyof typeof RANK_NAME,
+  subTier: 1 | 2 | 3 | null,
+): string {
+  // Funded cap (subTier === null): label is just the rank name, no
+  // roman numeral.
+  return subTier == null
+    ? RANK_NAME[rank]
+    : `${RANK_NAME[rank]} ${ROMAN[subTier]}`;
 }

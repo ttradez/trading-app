@@ -4,7 +4,7 @@ import { Linking, Platform } from 'react-native';
 import { useNotificationsStore, NotificationTime } from '../store/notificationsStore';
 
 /**
- * Local-notification scheduling for Pocket Trade.
+ * Local-notification scheduling for Pip.
  *
  * Two events ONLY (see `notificationsStore.ts` for the design
  * rationale on why streak notifications are deliberately excluded).
@@ -32,13 +32,13 @@ import { useNotificationsStore, NotificationTime } from '../store/notificationsS
 // Notification copy — review-locked. Adding a variation that fails
 // the tired-user filter is a regression; don't.
 const DAILY_MISSION_TITLE = "Today's mission is ready";
-const DAILY_MISSION_BODY  = "Open Pocket Trade when you're ready to trade.";
+const DAILY_MISSION_BODY  = "Open Pip when you're ready to trade.";
 const WEEKLY_RECAP_TITLE  = "Your weekly recap is ready";
 const WEEKLY_RECAP_BODY   = "See how you traded this week.";
 
 /** Tag every notification we own so we can cancel ours without
  *  touching unrelated scheduled work. */
-export type PocketTradeNotificationType =
+export type PipNotificationType =
   | 'daily-mission'
   | 'weekly-recap';
 
@@ -46,15 +46,15 @@ export type PocketTradeNotificationType =
 // accepts it (the SDK requires `data: Record<string, unknown>`),
 // while the `as const` narrows the literal types for our own
 // listeners.
-type PocketTradeData = Record<string, unknown> & {
-  type: PocketTradeNotificationType;
+type PipData = Record<string, unknown> & {
+  type: PipNotificationType;
   /** Marker so a stale notification scheduled by a previous app
    *  install can be filtered cleanly from the user's tray. */
-  app: 'pocket-trade';
+  app: 'pip';
 };
 
-function makeData(type: PocketTradeNotificationType): PocketTradeData {
-  return { type, app: 'pocket-trade' };
+function makeData(type: PipNotificationType): PipData {
+  return { type, app: 'pip' };
 }
 
 // ── Permission flow ────────────────────────────────────────────────
@@ -159,13 +159,17 @@ export async function cancelNotification(identifier: string): Promise<void> {
 }
 
 /** Cancel ONLY the notifications we own (tagged with `app:
- *  'pocket-trade'` in their data payload). Leaves other scheduled
- *  work — none today, future-proofing for plugins — alone. */
-export async function cancelAllPocketTradeNotifications(): Promise<void> {
+ *  'pip'` in their data payload). Leaves other scheduled
+ *  work — none today, future-proofing for plugins — alone.
+ *
+ *  Includes a backwards-compat sweep for legacy `app: 'pocket-trade'`
+ *  payloads scheduled before the Pip rename — without it, stale
+ *  notifications from older installs would linger in the user's tray. */
+export async function cancelAllPipNotifications(): Promise<void> {
   const all = await Notifications.getAllScheduledNotificationsAsync();
   for (const item of all) {
-    const data = item.content.data as Partial<PocketTradeData> | undefined;
-    if (data?.app === 'pocket-trade') {
+    const data = item.content.data as Partial<PipData> | undefined;
+    if (data?.app === 'pip' || data?.app === 'pocket-trade') {
       await cancelNotification(item.identifier);
     }
   }
@@ -208,7 +212,7 @@ export function configureForegroundNotificationHandler(): void {
 export async function rescheduleFromStoredPrefs(): Promise<void> {
   if (Platform.OS === 'web') return;
   try {
-    await cancelAllPocketTradeNotifications();
+    await cancelAllPipNotifications();
   } catch {
     // Bail silently — the per-pref schedule below is the source of
     // truth, and we don't want to block app start on this.

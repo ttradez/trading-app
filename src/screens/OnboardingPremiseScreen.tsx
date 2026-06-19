@@ -162,7 +162,7 @@ export default function OnboardingPremiseScreen({ navigation }: Props) {
           </Text>
           <View style={styles.bodyGap} />
           <Text style={styles.body}>
-            Pocket Trade is where you fail 1,000 times — without losing a dollar.
+            Pip is where you fail 1,000 times — without losing a dollar.
           </Text>
         </Animated.View>
 
@@ -170,7 +170,7 @@ export default function OnboardingPremiseScreen({ navigation }: Props) {
             objection from finance-wary users without slowing the
             pitch above. Shares the body's fade-in. */}
         <Animated.Text style={[styles.trustLine, { opacity: textOpacity }]}>
-          Pocket Trade is a simulator. No real money. No accounts. No funny business.
+          Pip is a simulator. No real money. No accounts. No funny business.
         </Animated.Text>
       </View>
 

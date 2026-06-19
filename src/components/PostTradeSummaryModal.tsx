@@ -100,7 +100,7 @@ export default function PostTradeSummaryModal({
       <SafeAreaView edges={['top', 'bottom']} style={styles.root}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
           {/* Close X (top-right). The Done button at the bottom is
               the primary dismissal; this is the escape hatch. */}

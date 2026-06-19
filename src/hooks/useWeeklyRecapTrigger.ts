@@ -9,7 +9,6 @@ import {
   SetupCatalog,
 } from '../utils/weeklyRecap';
 import { SETUP_LIBRARY, CATEGORY_LABEL } from '../data/setupLibrary';
-import { useLearnProgressStore } from '../store/learnProgressStore';
 
 /**
  * useWeeklyRecapTrigger — decides whether to auto-show the Sunday
@@ -121,8 +120,6 @@ export function useWeeklyRecapTrigger() {
             category: CATEGORY_LABEL[s.category] ?? s.category,
           };
         }
-        const openedSetupIds =
-          useLearnProgressStore.getState().openedSetupIds;
         const streak = useStreakStore.getState();
         toShow = generateWeeklyRecap(
           ref,
@@ -136,7 +133,6 @@ export function useWeeklyRecapTrigger() {
           },
           grades,
           setupCatalog,
-          openedSetupIds,
         );
         useRecapStore.getState().saveRecap(toShow);
       }

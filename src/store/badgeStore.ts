@@ -10,7 +10,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
  *  - `consecutiveWins` — current win streak (Hot Hand / On Fire /
  *    Untouchable). Mutated exactly once per closed trade by the
  *    trade-close checker; resets on a loss.
- *  - `dailySetupsCompleted` — lifetime daily-mission completions.
  *  - `freezesUsedTotal` — lifetime streak-freeze usage (Freeze
  *    Saver / Unbreakable).
  *
@@ -22,7 +21,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 interface BadgeState {
   unlockedBadges: Record<string, string>; // badgeId → ISO unlockedAt
   consecutiveWins: number;
-  dailySetupsCompleted: number;
   freezesUsedTotal: number;
 
   unlockBadge: (badgeId: string) => void;
@@ -31,7 +29,6 @@ interface BadgeState {
 
   incrementConsecutiveWins: () => void;
   resetConsecutiveWins: () => void;
-  incrementDailySetupsCompleted: () => void;
   addFreezesUsed: (n: number) => void;
 
   reset: () => void;
@@ -40,7 +37,6 @@ interface BadgeState {
 const INITIAL = {
   unlockedBadges: {} as Record<string, string>,
   consecutiveWins: 0,
-  dailySetupsCompleted: 0,
   freezesUsedTotal: 0,
 };
 
@@ -65,8 +61,6 @@ export const useBadgeStore = create<BadgeState>()(
       incrementConsecutiveWins: () =>
         set((s) => ({ consecutiveWins: s.consecutiveWins + 1 })),
       resetConsecutiveWins: () => set({ consecutiveWins: 0 }),
-      incrementDailySetupsCompleted: () =>
-        set((s) => ({ dailySetupsCompleted: s.dailySetupsCompleted + 1 })),
       addFreezesUsed: (n) =>
         set((s) => ({ freezesUsedTotal: s.freezesUsedTotal + Math.max(0, n) })),
 

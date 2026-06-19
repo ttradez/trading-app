@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
   type Icon,
@@ -47,10 +47,14 @@ const CATEGORY_ICON: Record<string, Icon> = {
  * title. The progress bar still fills to 100% gold underneath.
  */
 
-const TILE_W   = 140;
-const TILE_H   = 140;
+// Responsive tile sizing — was hardcoded 140dp, which only fit one full
+// tile on a 320dp Galaxy A05s and made the horizontal scroll affordance
+// invisible. Use min(140, 38% of screen) so 2+ tiles peek on every
+// device class. Height stays in lockstep so the tile aspect ratio is
+// preserved.
+const TILE_W   = Math.min(140, Dimensions.get('window').width * 0.38);
+const TILE_H   = TILE_W;
 const GOLD     = colors.gold;
-const GREEN    = colors.green;
 // Daily Challenge tiles are secondary surfaces — L1 in the layered
 // system. They sit alongside the Today's Mission hero (L2/L3).
 const CARD_BG  = '#0A0A0A';
@@ -60,23 +64,53 @@ interface Props {
   inst: ChallengeInstance;
   onSwap?: () => void;
   swapAvailable?: boolean;
+  /** Tap-to-claim handler. Provided by the parent — typically calls
+   *  `claimChallenge(id)` from challengeStore then navigates to the
+   *  Ranks tab so the user can watch their XP bar animate. */
+  onClaim?: () => void;
 }
 
-export default function DailyChallengeTile({ inst, onSwap, swapAvailable }: Props) {
+export default function DailyChallengeTile({
+  inst, onSwap, swapAvailable, onClaim,
+}: Props) {
   const t = getTemplate(inst.challengeId);
   if (!t) return null;
   const pct = Math.min(1, inst.target > 0 ? inst.progress / inst.target : 0);
   const completed = inst.completed;
+  const claimable = completed && !inst.claimed && !!onClaim;
+
+  // Wrap the tile in a Pressable when claimable so the whole face
+  // becomes the claim affordance. Otherwise the tile is passive.
+  const Outer: React.ComponentType<any> = claimable ? Pressable : View;
+  const outerProps: any = claimable
+    ? {
+        onPress: onClaim,
+        accessibilityRole: 'button',
+        accessibilityLabel: `Claim +${inst.xpReward} XP for ${t.name}`,
+        style: ({ pressed }: { pressed: boolean }) => [
+          styles.wrap,
+          pressed && { transform: [{ scale: 0.97 }] },
+        ],
+      }
+    : { style: styles.wrap };
 
   return (
     // Outer wrapper has overflow:'visible' so the check medallion
     // can overhang the tile's rounded edge. The inner tile keeps
     // its overflow:hidden so the progress bar still clips cleanly.
-    <View style={styles.wrap}>
-      <View style={[styles.tile, completed && styles.tileDone]}>
+    <Outer {...outerProps}>
+      <View style={[
+        styles.tile,
+        completed && styles.tileDone,
+        claimable && styles.tileClaimable,
+      ]}>
         {/* Inner content fades to 60% when complete — title stays
-            full opacity for legibility (next sibling). */}
-        <View style={[styles.topRow, completed && styles.fadedBlock]}>
+            full opacity for legibility (next sibling). Claim state
+            keeps content at full opacity so the call-to-action reads. */}
+        <View style={[
+          styles.topRow,
+          completed && !claimable && styles.fadedBlock,
+        ]}>
           {(() => {
             const Glyph = CATEGORY_ICON[t.category] ?? CrosshairIcon;
             return <Glyph size={22} weight="fill" color="rgba(255,184,0,0.8)" />;
@@ -98,10 +132,19 @@ export default function DailyChallengeTile({ inst, onSwap, swapAvailable }: Prop
           {t.name}
         </Text>
 
-        <View style={[styles.metaRow, completed && styles.fadedBlock]}>
-          <NumericText bold style={styles.xp} allowFontScaling={false}>
-            +{inst.xpReward} XP
-          </NumericText>
+        <View style={[
+          styles.metaRow,
+          completed && !claimable && styles.fadedBlock,
+        ]}>
+          {claimable ? (
+            <NumericText bold style={styles.claimLabel} allowFontScaling={false}>
+              CLAIM +{inst.xpReward} XP
+            </NumericText>
+          ) : (
+            <NumericText bold style={styles.xp} allowFontScaling={false}>
+              +{inst.xpReward} XP
+            </NumericText>
+          )}
           {!completed && (
             <NumericText bold style={styles.progLabel} allowFontScaling={false}>
               {Math.floor(inst.progress)}/{inst.target}
@@ -118,12 +161,17 @@ export default function DailyChallengeTile({ inst, onSwap, swapAvailable }: Prop
         </View>
       </View>
 
-      {completed && (
+      {completed && !claimable && (
         <View style={styles.checkOverlay} pointerEvents="none">
           <Ionicons name="checkmark" size={16} color="#FFFFFF" />
         </View>
       )}
-    </View>
+      {claimable && (
+        <View style={styles.claimBadgeOverlay} pointerEvents="none">
+          <Ionicons name="gift" size={14} color="#000000" />
+        </View>
+      )}
+    </Outer>
   );
 }
 
@@ -148,6 +196,39 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   tileDone: { borderColor: 'rgba(255,184,0,0.6)' },
+  // Claimable: louder gold border so the call-to-action pops out
+  // of the horizontal scroller next to its completed siblings.
+  tileClaimable: {
+    borderColor: GOLD,
+    backgroundColor: 'rgba(255,184,0,0.08)',
+  },
+  claimLabel: {
+    color: GOLD,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    fontVariant: ['tabular-nums'],
+  },
+  // Gold gift-box medallion (replaces the green check) when XP is
+  // sitting unclaimed — visually distinct from the "settled" state.
+  claimBadgeOverlay: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: GOLD,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#000000',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    elevation: 4,
+  },
   // Faded sub-blocks on completion — title stays at 100% so the
   // tile remains scannable.
   fadedBlock: { opacity: 0.6 },

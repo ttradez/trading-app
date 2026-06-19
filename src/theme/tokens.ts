@@ -1,7 +1,7 @@
 import type { TextStyle, ViewStyle } from 'react-native';
 
 /**
- * Design tokens — the single source of truth for the Pocket Trade
+ * Design tokens — the single source of truth for the Pip
  * visual system. Every magic number in the app should resolve to a
  * token here. Created as the foundation for the design-system
  * upgrade; screens are wired to these in a follow-up (this file is

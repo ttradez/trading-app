@@ -1,10 +1,17 @@
 import React, { useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, SafeAreaView, Pressable,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, SafeAreaView, Pressable, Linking, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Logo from '../components/brand/Logo';
 import { colors, radius, spacing, fontSize, fontWeight, labelStyle } from '../theme';
+import { PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL } from '../config/legalDocs';
+
+function openExternal(url: string) {
+  Linking.openURL(url).catch(() => {
+    Alert.alert('Could not open link', 'Check your internet connection and try again.');
+  });
+}
 
 interface Props {
   onAccept: () => void;
@@ -37,7 +44,7 @@ export default function DisclaimerScreen({ onAccept }: Props) {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>NO FINANCIAL ADVICE</Text>
           <Text style={styles.cardBody}>
-            Pocket Trade does not provide financial, investment, or trading advice. You are solely responsible for your own decisions.
+            Pip does not provide financial, investment, or trading advice. You are solely responsible for your own decisions.
           </Text>
         </View>
 
@@ -50,7 +57,21 @@ export default function DisclaimerScreen({ onAccept }: Props) {
 
         <Text style={styles.legalLine}>
           BY CONTINUING, YOU AGREE TO OUR{'\n'}
-          <Text style={{ color: colors.gold }}>TERMS OF SERVICE</Text> AND <Text style={{ color: colors.gold }}>PRIVACY POLICY.</Text>
+          <Text
+            style={{ color: colors.gold }}
+            onPress={() => openExternal(TERMS_OF_SERVICE_URL)}
+            accessibilityRole="link"
+          >
+            TERMS OF SERVICE
+          </Text>
+          {' '}AND{' '}
+          <Text
+            style={{ color: colors.gold }}
+            onPress={() => openExternal(PRIVACY_POLICY_URL)}
+            accessibilityRole="link"
+          >
+            PRIVACY POLICY.
+          </Text>
         </Text>
 
         {/* Agree checkbox */}
@@ -60,8 +81,22 @@ export default function DisclaimerScreen({ onAccept }: Props) {
           </View>
           <Text style={styles.agreeText}>
             I have read and agree to the{' '}
-            <Text style={styles.link}>Terms of Service</Text> and{' '}
-            <Text style={styles.link}>Disclaimer</Text>.
+            <Text
+              style={styles.link}
+              onPress={() => openExternal(TERMS_OF_SERVICE_URL)}
+              accessibilityRole="link"
+            >
+              Terms of Service
+            </Text>
+            {' '}and{' '}
+            <Text
+              style={styles.link}
+              onPress={() => openExternal(PRIVACY_POLICY_URL)}
+              accessibilityRole="link"
+            >
+              Privacy Policy
+            </Text>
+            .
           </Text>
         </Pressable>
 

@@ -123,7 +123,7 @@ export default function PreTradeModal({
     >
       <KeyboardAvoidingView
         style={styles.overlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <Pressable style={styles.backdropPress} onPress={onCancel}>
           <Pressable style={styles.card} onPress={() => { /* swallow */ }}>

@@ -94,7 +94,7 @@ interface OnboardingState {
   accountSize: number;
 
   /** Trader name (screen 7). `handle` is the unique handle used for
-   *  leaderboards / URLs (e.g. "gambler.wolf.42"); `displayName` is
+   *  leaderboards / URLs (e.g. "paper.wolf.42"); `displayName` is
    *  the friendlier name shown on profile cards. Uniqueness check is
    *  deferred to signup (screen 11); here we only format-validate. */
   handle: string;

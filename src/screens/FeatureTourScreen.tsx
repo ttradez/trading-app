@@ -21,7 +21,7 @@ const SLIDES = [
   {
     headline: 'RANK UP.',
     headline2: 'EARN YOUR TIER.',
-    body: 'Climb from Gambler → Paper Hands → Sniper → Inside Trader → Market Maker. Your rank is computed from your last 200 trades.',
+    body: 'Climb from Paper → Unprofitable → Disciplined → Consistent → Profitable → Funded. Your rank is computed from your last 200 trades.',
     visual: 'ranks' as const,
   },
   {
@@ -142,11 +142,12 @@ function ChartVisual() {
 
 function RanksVisual() {
   const tiers = [
-    { name: 'Gambler', color: colors.rankGambler },
-    { name: 'Paper Hands', color: colors.rankPaperHands },
-    { name: 'Sniper', color: colors.rankSniper },
-    { name: 'Inside Trader', color: colors.rankInsideTrader },
-    { name: 'Market Maker', color: colors.rankMarketMaker },
+    { name: 'Paper', color: colors.rankPaper },
+    { name: 'Unprofitable', color: colors.rankUnprofitable },
+    { name: 'Disciplined', color: colors.rankDisciplined },
+    { name: 'Consistent', color: colors.rankConsistent },
+    { name: 'Profitable', color: colors.rankProfitable },
+    { name: 'Funded', color: colors.rankFunded },
   ];
   return (
     <View style={[styles.visualInner, { gap: spacing.xs }]}>

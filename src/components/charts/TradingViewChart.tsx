@@ -5,6 +5,18 @@ import { colors } from '../../theme';
 import { CHART_BACKEND_URL } from '../../config/chartBackend';
 
 /**
+ * Chart-host version string. Appended to the WebView URL as ?hostv=…
+ * so any change to the chart-host page is treated as a NEW URL by the
+ * WebView's HTTP cache — WKWebView aggressively serves the cached
+ * index.html for an unchanged URL even when the page sends
+ * `Cache-Control: max-age=0, must-revalidate`. Bumping this value
+ * after a chart-host deploy guarantees the next mount fetches fresh.
+ *
+ * KEEP IN SYNC with PT_HOST_VERSION in pt-chart-host/index.html.
+ */
+const PT_HOST_VERSION = '2026-06-17-revert-v32c';
+
+/**
  * One OHLCV bar in the shape `window.pushBar(bar)` expects on the
  * hosted chart. `time` is **milliseconds** (TV's `activeOnTick`
  * convention) — the parent multiplies the advance API's unix-seconds
@@ -21,13 +33,17 @@ export interface ChartBar {
 
 /**
  * A position to draw on the chart via the hosted `window.ptShowPosition`.
- * `pnl` is the live unrealized P&L (colored on the line).
+ * `pnl` is the live unrealized P&L (colored on the line). `pointValue`
+ * is the USD per 1.00-point move per 1 contract for the current symbol
+ * (POINT_VALUE[symbol]) — the chart-host uses it to compute the live
+ * $ amounts on the draggable TP/SL chips.
  */
 export interface ChartPosition {
   side: 'buy' | 'sell';
   qty: number;
   entry: number;
   pnl: number;
+  pointValue: number;
 }
 
 /**
@@ -53,6 +69,20 @@ export interface TradingViewChartHandle {
    *  - clearTrade: remove all three lines.
    */
   showPosition: (p: ChartPosition) => void;
+  /** Capture the chart's main plot canvas as a JPEG dataURL. Async via
+   *  postMessage — listen for `chartScreenshot` on `onLineMessage`.
+   *  `opts.exitPrice` (optional) adds a horizontal EXIT marker line
+   *  to the screenshot — chart-host doesn't know the exit price
+   *  natively, so RN passes it in.
+   *  `opts.noOverlays` (optional) skips entry/TP/SL/exit overlay
+   *  drawing — used for the journal entry's clean chart capture so
+   *  the user sees a plain candle chart with no annotations. */
+  captureChartImage: (opts?: { exitPrice?: number; noOverlays?: boolean }) => void;
+  /** Capture a polished 4:5 trade-card composite (chart + P&L hero +
+   *  symbol/side/qty + entry→exit + branding). Async via postMessage
+   *  — listen for `tradeCardImage` on `onLineMessage`. The chart-host
+   *  renders the composite using the trade data passed in. */
+  captureTradeCard: (data: TradeCardData) => void;
   showTP: (price: number) => void;
   showSL: (price: number) => void;
   clearTrade: () => void;
@@ -68,8 +98,28 @@ export interface TradingViewChartHandle {
 export type ChartLineMessage =
   | { type: 'tpMoved'; price: number }
   | { type: 'slMoved'; price: number }
+  | { type: 'tpCleared' }
+  | { type: 'slCleared' }
   | { type: 'closePosition' }
-  | { type: 'lineApiStatus'; ok: boolean; detail?: string };
+  | { type: 'lineApiStatus'; ok: boolean; detail?: string }
+  | { type: 'chartScreenshot'; dataURL: string | null; err?: string }
+  | { type: 'tradeCardImage'; dataURL: string | null; err?: string };
+
+/** Shape passed to `captureTradeCard` — matches the polished trade-
+ *  card composite the chart-host renders. Keep in sync with
+ *  TradeResultData and the chart-host's `data` param. */
+export interface TradeCardData {
+  side: 'long' | 'short';
+  symbol: string;
+  qty: number;
+  entryPrice: number;
+  exitPrice: number;
+  pnlUsd: number;
+  pointsMove: number;
+  returnPct: number;
+  reason: 'tp' | 'sl' | 'manual';
+  closedAtMs: number;
+}
 
 /**
  * TradingView Advanced Charts host (Phase 2 — hosted Vercel URL + real datafeed).
@@ -150,6 +200,21 @@ function TradingViewChart(
       clearTrade: () => {
         webviewRef.current?.injectJavaScript('window.ptClearTrade && window.ptClearTrade(); true;');
       },
+      captureChartImage: (opts?: { exitPrice?: number; noOverlays?: boolean }) => {
+        const json = JSON.stringify(opts ?? {});
+        webviewRef.current?.injectJavaScript(
+          'window.ptCaptureChart && window.ptCaptureChart(' + json + '); true;',
+        );
+      },
+      captureTradeCard: (data: TradeCardData) => {
+        // Stringify-safe payload — JSON.stringify quotes the JSON
+        // inside the JS so chart-host sees a real object literal
+        // when window.ptCaptureTradeCard is called.
+        const json = JSON.stringify(data);
+        webviewRef.current?.injectJavaScript(
+          'if (window.ptCaptureTradeCard) { window.ptCaptureTradeCard(' + json + '); } true;',
+        );
+      },
     }),
     [],
   );
@@ -187,6 +252,10 @@ function TradingViewChart(
       }
       return;
     }
+    if (type === 'tpCleared' || type === 'slCleared') {
+      onLineMessage?.({ type });
+      return;
+    }
     if (type === 'closePosition') {
       onLineMessage?.({ type: 'closePosition' });
       return;
@@ -198,6 +267,26 @@ function TradingViewChart(
         type: 'lineApiStatus',
         ok: !!ok,
         detail: typeof detail === 'string' ? detail : undefined,
+      });
+      return;
+    }
+    if (type === 'chartScreenshot') {
+      const dataURL = (parsed as { dataURL?: unknown }).dataURL;
+      const err     = (parsed as { err?: unknown }).err;
+      onLineMessage?.({
+        type: 'chartScreenshot',
+        dataURL: typeof dataURL === 'string' ? dataURL : null,
+        err: typeof err === 'string' ? err : undefined,
+      });
+      return;
+    }
+    if (type === 'tradeCardImage') {
+      const dataURL = (parsed as { dataURL?: unknown }).dataURL;
+      const err     = (parsed as { err?: unknown }).err;
+      onLineMessage?.({
+        type: 'tradeCardImage',
+        dataURL: typeof dataURL === 'string' ? dataURL : null,
+        err: typeof err === 'string' ? err : undefined,
       });
       return;
     }
@@ -235,7 +324,9 @@ function TradingViewChart(
       'https://pt-chart-host.vercel.app/?backend=' + encodeURIComponent(CHART_BACKEND_URL) +
       '&symbol=' + encodeURIComponent(symbol ?? 'NQ') +
       '&interval=' + encodeURIComponent(interval ?? '5') +
-      '&session=' + encodeURIComponent(sessionId ?? ''),
+      '&session=' + encodeURIComponent(sessionId ?? '') +
+      // Cache-buster — see PT_HOST_VERSION comment up top.
+      '&hostv=' + encodeURIComponent(PT_HOST_VERSION),
     // interval intentionally OMITTED — see comment above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [symbol, sessionId],
@@ -253,7 +344,7 @@ function TradingViewChart(
     // TODO v2: postMessage widget.chart().setSymbol() to switch symbol without a full reload.
     <WebView
       ref={webviewRef}
-      key={`${symbol}-${sessionId}`}
+      key={`${symbol}-${sessionId}-${PT_HOST_VERSION}`}
       source={{ uri: chartUrl }}
       style={styles.web}
       // Kill the iOS pull-to-refresh control: the blue "Refreshing…" bar was
@@ -261,6 +352,25 @@ function TradingViewChart(
       // user-driven reload of the chart WebView (TF switches refresh in place
       // via resetData), so disable it entirely.
       pullToRefreshEnabled={false}
+      // Disable the WebView's persistent HTTP cache for the chart-host page.
+      // WKWebView ignores Cache-Control: max-age=0 + must-revalidate for HTML
+      // surprisingly often and serves stale index.html across app launches.
+      // Combined with the ?hostv= cache-buster above, this guarantees the
+      // newest chart-host code is loaded on every mount. The TradingView
+      // charting_library/ assets it then loads are separate URLs and are
+      // still allowed to cache normally (they're path-versioned by us).
+      cacheEnabled={false}
+      // NOTE: `incognito` was REMOVED. On iOS it sets the WebView to
+      // WKWebsiteDataStore.nonPersistentDataStore, which wipes
+      // localStorage on every WebView mount. TradingView's Advanced
+      // Charts library persists user chart settings (colors, drawing
+      // tools, indicators, time-axis prefs, etc.) to localStorage by
+      // default — chart-host doesn't override its save adapter — so
+      // turning the data store ephemeral was destroying those settings
+      // on every reload. The HTTP-cache concern is already handled by
+      // cacheEnabled={false} + ?hostv= above, which is independent of
+      // localStorage. Keeping the persistent data store lets the
+      // library's auto-save survive app restarts.
       originWhitelist={['*']}
       allowFileAccess
       allowFileAccessFromFileURLs

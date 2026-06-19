@@ -82,6 +82,11 @@ export interface JournalEntry {
   strategy: string;
   tags: string[];
   savedAt: number;
+  /** Optional screenshot/chart image attached by the user from the
+   *  EntryEditModal. Stored as a local file:// URI from
+   *  expo-image-picker; the file persists on the device cache for
+   *  the lifetime of the install. null = no image attached. */
+  imageUri: string | null;
 }
 
 interface JournalState {
@@ -89,6 +94,10 @@ interface JournalState {
   addEntry: (e: JournalEntry) => void;
   updateEntry: (id: string, patch: Partial<JournalEntry>) => void;
   removeEntry: (id: string) => void;
+  /** Bulk delete — used by the JournalScreen multi-select Delete
+   *  flow. Equivalent to looping `removeEntry`, but persists the
+   *  resulting array once instead of N times. */
+  removeMany: (ids: string[]) => void;
   /** Wipe all entries + the persisted blob. Used by Settings →
    *  Reset Everything. */
   reset: () => void;
@@ -118,6 +127,14 @@ export const useJournalStore = create<JournalState>((set, get) => ({
 
   removeEntry: (id) => {
     const next = get().entries.filter((e) => e.id !== id);
+    persist(next);
+    set({ entries: next });
+  },
+
+  removeMany: (ids) => {
+    if (!ids || ids.length === 0) return;
+    const drop = new Set(ids);
+    const next = get().entries.filter((e) => !drop.has(e.id));
     persist(next);
     set({ entries: next });
   },
@@ -175,6 +192,8 @@ export const useJournalStore = create<JournalState>((set, get) => ({
           positionSize:    e.positionSize ?? e.lots ?? 0,
           intendedRisk:    e.intendedRisk ?? 0,
           intendedRR:      e.intendedRR ?? 0,
+          // Screenshot attachment was added later — null for pre-existing entries.
+          imageUri:        e.imageUri ?? null,
         };
       });
       set({ entries: migrated });

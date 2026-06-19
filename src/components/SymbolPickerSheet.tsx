@@ -1,70 +1,61 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, Modal, SectionList, ActivityIndicator,
+  View, Text, StyleSheet, Pressable, Modal, ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 
 import { colors } from '../theme';
 import { CHART_BACKEND_URL } from '../config/chartBackend';
-import { useSymbolFavoritesStore } from '../store/symbolFavoritesStore';
 
 /**
  * SymbolPickerSheet — bottom-sheet symbol picker for the Chart tab.
  *
- * Mirrors the `SelectModal` pattern from SettingsScreen (backdrop +
- * handle + title + scrollable option rows with a gold-tint highlight
- * + checkmark on the current selection), built as a focused component
- * so Settings is left untouched.
+ * Layout mirrors the symbol-toggle pills in CreateSessionSheet: each
+ * symbol is a pill with a colored circle badge (NQ/ES/YM/GC distinct
+ * accents) + the symbol code, gold-bordered, selected = filled gold.
+ * The wrap row scales when more symbols are added — pills hold their
+ * intrinsic width and overflow onto a new line.
  *
  * Symbols are fetched from `${CHART_BACKEND_URL}/markets` when the
- * sheet opens. On failure we fall back to a hardcoded symbol list
- * (symbols only, no friendly names — the name line is omitted).
- *
- * Grouping: rows are bucketed by `category` (sent by /markets) into
- * a SectionList. A "★ Favorites" section is pinned above the
- * categories whenever the user has at least one favorite — and
- * favorites also appear in their own category section so the user
- * can find every contract in its canonical place. Star tap toggles
- * favorite; row body tap selects the symbol.
+ * sheet opens. On failure we fall back to a hardcoded list (NQ/ES/
+ * YM/GC) so the picker still works offline.
  */
 export interface MarketSymbol {
   symbol: string;
-  /** Friendly name. Empty string for fallback entries (no name known). */
+  /** Friendly name. Not surfaced in the pill layout but kept in the
+   *  contract so the /markets payload doesn't need a shim. */
   name: string;
   pip?: number;
   contractSize?: number;
-  /** Section label. Optional for back-compat with the fallback list. */
   category?: string;
 }
 
-/** Fallback when the /markets fetch fails — symbols only, no names. */
+/** Fallback when the /markets fetch fails — same four contracts the
+ *  CreateSessionSheet hardcodes for its starting toggle. */
 const FALLBACK_SYMBOLS: MarketSymbol[] = [
-  'SPX', 'NDX', 'DJI', 'DAX', 'FTSE', 'N225', 'ES',
-  'NQ', 'YM', 'CL', 'GC', 'SI', 'NG', 'ZB',
-].map((symbol) => ({ symbol, name: '' }));
-
-/** Category display order. Anything unmapped falls through to the end
- *  (sorted alphabetically) so a newly-added category still renders. */
-const CATEGORY_ORDER = [
-  'Indexes',
-  'Index Futures',
-  'Metals',
-  'Energy',
-  'Bonds',
-  'Other',
+  { symbol: 'NQ', name: 'Nasdaq 100 E-mini',  category: 'Futures' },
+  { symbol: 'ES', name: 'S&P 500 E-mini',     category: 'Futures' },
+  { symbol: 'YM', name: 'Dow Jones E-mini',   category: 'Futures' },
+  { symbol: 'GC', name: 'Gold Futures',       category: 'Futures' },
 ];
 
-const FAVORITES_SECTION_KEY = '__favorites__';
+/** Badge label per known symbol — mirrors the CreateSessionSheet
+ *  BADGE_LABEL map. New symbols added to /markets without a known
+ *  label fall back to the symbol code itself. */
+const BADGE_LABEL: Record<string, string> = {
+  NQ: '100',
+  ES: '500',
+  YM: '30',
+  GC: 'OZ',
+};
 
-interface Section {
-  /** Internal key — `FAVORITES_SECTION_KEY` for the pinned section, otherwise the category name. */
-  key: string;
-  /** Title shown in the eyebrow header. */
-  title: string;
-  /** Whether this is the pinned favorites section (icon prefix). */
-  isFavorites: boolean;
-  data: MarketSymbol[];
-}
+/** Badge background color per known symbol. New symbols default to
+ *  neutral white-on-transparent so they still render. */
+const BADGE_COLOR: Record<string, string> = {
+  NQ: '#2962FF',
+  ES: '#F23645',
+  YM: '#0EA968',
+  GC: '#C9742F',
+};
 
 interface Props {
   visible: boolean;
@@ -78,9 +69,6 @@ export default function SymbolPickerSheet({
 }: Props) {
   const [symbols, setSymbols] = useState<MarketSymbol[]>([]);
   const [loading, setLoading] = useState(false);
-
-  const favorites = useSymbolFavoritesStore((s) => s.favorites);
-  const toggleFavorite = useSymbolFavoritesStore((s) => s.toggle);
 
   // Fetch when the sheet opens. Cancel-on-unmount / re-open guard via
   // the `let cancelled = false` pattern used elsewhere in the repo.
@@ -109,61 +97,18 @@ export default function SymbolPickerSheet({
     };
   }, [visible]);
 
-  // Build the sectioned data. Favorites pinned on top (when ≥1
-  // favorite) AND retained in their category — standard pattern, the
-  // user shouldn't have to remember "I favorited that, it moved".
-  const sections: Section[] = useMemo(() => {
-    if (symbols.length === 0) return [];
-
-    // Bucket by category. Fallback entries lack `category` → "Other".
-    const byCategory = new Map<string, MarketSymbol[]>();
-    for (const sym of symbols) {
-      const cat = sym.category || 'Other';
-      const arr = byCategory.get(cat);
-      if (arr) arr.push(sym);
-      else byCategory.set(cat, [sym]);
-    }
-
-    // Order categories per CATEGORY_ORDER, then any unknown ones alphabetically.
-    const ordered: Section[] = [];
-    const seen = new Set<string>();
-    for (const cat of CATEGORY_ORDER) {
-      const arr = byCategory.get(cat);
-      if (arr && arr.length > 0) {
-        ordered.push({ key: cat, title: cat, isFavorites: false, data: arr });
-        seen.add(cat);
-      }
-    }
-    for (const cat of [...byCategory.keys()].sort()) {
-      if (seen.has(cat)) continue;
-      ordered.push({
-        key: cat,
-        title: cat,
-        isFavorites: false,
-        data: byCategory.get(cat)!,
-      });
-    }
-
-    // Pin a Favorites section above everything when any favorite resolves
-    // to a known symbol. Preserve the user-display order: walk the
-    // catalog (already in CATEGORY_ORDER) and keep only favorited rows.
-    const favRows: MarketSymbol[] = [];
-    for (const sec of ordered) {
-      for (const row of sec.data) {
-        if (favorites.has(row.symbol)) favRows.push(row);
-      }
-    }
-    if (favRows.length > 0) {
-      ordered.unshift({
-        key: FAVORITES_SECTION_KEY,
-        title: 'Favorites',
-        isFavorites: true,
-        data: favRows,
-      });
-    }
-
-    return ordered;
-  }, [symbols, favorites]);
+  // Order the pills so the four well-known contracts always appear
+  // first in this canonical order (NQ, ES, YM, GC). Anything beyond
+  // that follows whatever order /markets returned.
+  const orderedSymbols = useMemo(() => {
+    const known = ['NQ', 'ES', 'YM', 'GC'];
+    const order = new Map(known.map((s, i) => [s, i]));
+    return [...symbols].sort((a, b) => {
+      const ai = order.has(a.symbol) ? order.get(a.symbol)! : 99;
+      const bi = order.has(b.symbol) ? order.get(b.symbol)! : 99;
+      return ai - bi;
+    });
+  }, [symbols]);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -177,85 +122,44 @@ export default function SymbolPickerSheet({
               <ActivityIndicator color={colors.gold} />
             </View>
           ) : (
-            <SectionList
-              style={styles.list}
-              sections={sections}
-              keyExtractor={(item, idx) => `${item.symbol}-${idx}`}
-              showsVerticalScrollIndicator={false}
-              stickySectionHeadersEnabled={false}
-              renderSectionHeader={({ section }) => (
-                <View style={styles.sectionHeader}>
-                  {section.isFavorites && (
-                    <Ionicons
-                      name="star"
-                      size={11}
-                      color={colors.gold}
-                      style={styles.sectionHeaderIcon}
-                    />
-                  )}
-                  <Text style={styles.sectionHeaderText}>{section.title}</Text>
-                </View>
-              )}
-              renderItem={({ item }) => {
+            <View style={styles.symbolRow}>
+              {orderedSymbols.map((item) => {
                 const selected = item.symbol === selectedSymbol;
-                const fav = favorites.has(item.symbol);
+                const badgeColor = BADGE_COLOR[item.symbol] ?? 'rgba(255,255,255,0.16)';
+                const badgeText  = BADGE_LABEL[item.symbol] ?? item.symbol;
                 return (
-                  <View
-                    style={[
-                      styles.optionRow,
-                      selected && styles.optionSelected,
+                  <Pressable
+                    key={item.symbol}
+                    onPress={() => onSelect(item.symbol)}
+                    style={({ pressed }) => [
+                      styles.symbolPill,
+                      selected && styles.symbolPillSelected,
+                      pressed && !selected && styles.pressed,
                     ]}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={`Symbol ${item.symbol}`}
                   >
-                    <Pressable
-                      onPress={() => onSelect(item.symbol)}
-                      style={({ pressed }) => [
-                        styles.optionBody,
-                        pressed && !selected && styles.optionPressed,
+                    <View
+                      style={[
+                        styles.symbolBadge,
+                        { backgroundColor: badgeColor },
                       ]}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected }}
-                      accessibilityLabel={item.symbol}
                     >
-                      <View style={styles.optionTextWrap}>
-                        <Text
-                          style={[
-                            styles.optionSymbol,
-                            selected && styles.optionSymbolSelected,
-                          ]}
-                        >
-                          {item.symbol}
-                        </Text>
-                        {item.name ? (
-                          <Text style={styles.optionName} numberOfLines={1}>
-                            {item.name}
-                          </Text>
-                        ) : null}
-                      </View>
-                      {selected && (
-                        <Ionicons name="checkmark" size={20} color={colors.gold} />
-                      )}
-                    </Pressable>
-                    {/* Star sits as a SIBLING of the body Pressable so its
-                        tap can't bubble through to row selection. hitSlop
-                        widens the tap area to a comfortable target without
-                        widening the visual icon. */}
-                    <Pressable
-                      onPress={() => toggleFavorite(item.symbol)}
-                      style={styles.starButton}
-                      hitSlop={10}
-                      accessibilityRole="button"
-                      accessibilityLabel={fav ? `Unfavorite ${item.symbol}` : `Favorite ${item.symbol}`}
+                      <Text style={styles.symbolBadgeText}>{badgeText}</Text>
+                    </View>
+                    <Text
+                      style={[
+                        styles.symbolPillText,
+                        selected && styles.symbolPillTextSelected,
+                      ]}
                     >
-                      <Ionicons
-                        name={fav ? 'star' : 'star-outline'}
-                        size={18}
-                        color={fav ? colors.gold : 'rgba(255,255,255,0.4)'}
-                      />
-                    </Pressable>
-                  </View>
+                      {item.symbol}
+                    </Text>
+                  </Pressable>
                 );
-              }}
-            />
+              })}
+            </View>
           )}
         </Pressable>
       </Pressable>
@@ -266,7 +170,10 @@ export default function SymbolPickerSheet({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    // Transparent so the chart behind the sheet stays fully visible
+    // while the watchlist slides up. The Pressable still captures
+    // taps in the empty area for tap-to-dismiss.
+    backgroundColor: 'transparent',
     justifyContent: 'flex-end',
   },
   sheet: {
@@ -278,7 +185,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 8,
     paddingBottom: 28,
-    maxHeight: '70%',
   },
   handle: {
     alignSelf: 'center',
@@ -293,74 +199,59 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     letterSpacing: -0.2,
-    marginBottom: 8,
+    marginBottom: 14,
   },
   loadingWrap: {
     paddingVertical: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  list: {
-    flexGrow: 0,
-  },
-  sectionHeader: {
+  // ── Pill row — matches CreateSessionSheet's symbolRow + symbolPill ─
+  symbolRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingTop: 14,
-    paddingBottom: 6,
+    flexWrap: 'wrap',
+    gap: 10,
   },
-  sectionHeaderIcon: {
-    marginRight: 6,
-  },
-  sectionHeaderText: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
-  },
-  optionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 10,
-  },
-  optionBody: {
+  symbolPill: {
     flex: 1,
+    minWidth: 80,
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-  },
-  optionSelected: {
-    backgroundColor: 'rgba(255,184,0,0.10)',
-  },
-  optionPressed: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
-  },
-  optionTextWrap: {
-    flex: 1,
-  },
-  optionSymbol: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  optionSymbolSelected: {
-    color: colors.gold,
-  },
-  optionName: {
-    marginTop: 2,
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 13,
-    fontWeight: '400',
-  },
-  starButton: {
-    paddingVertical: 14,
-    paddingHorizontal: 12,
+    borderWidth: 1.5,
+    borderColor: colors.gold,
+    borderRadius: 999,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'transparent',
+    gap: 10,
+  },
+  symbolPillSelected: {
+    backgroundColor: colors.gold,
+  },
+  pressed: {
+    opacity: 0.7,
+  },
+  symbolPillText: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  symbolPillTextSelected: {
+    color: colors.textInverse,
+  },
+  symbolBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  symbolBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
 });

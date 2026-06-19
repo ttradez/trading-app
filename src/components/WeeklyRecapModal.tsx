@@ -25,7 +25,7 @@ import { colors, borders, surface } from '../theme';
  *   3. BY SETUP          — top + bottom setup rows + takeaway
  *   4. PROCESS           — mini discipline ring + mini adherence bar
  *   5. ENGAGEMENT        — XP, sessions, streak tiles
- *   6. NEXT WEEK         — recommendation card with optional lesson
+ *   6. NEXT WEEK         — recommendation card
  *
  * Entrance choreography: container fade → P&L count-up from $0 →
  * sections stagger-fade in. Total ~1.6s.
@@ -79,14 +79,12 @@ interface Props {
   /** Tap a best/worst trade → open the JournalEntry detail.
    *  Caller (MainTabs / JournalScreen) wires to navigation. */
   onOpenTrade?: (tradeId: string) => void;
-  /** "Open lesson →" on the NEXT WEEK card → Setup detail. */
-  onOpenLesson?: (setupId: string) => void;
   /** Empty-state Primary CTA → Chart. */
   onStartSession?: () => void;
 }
 
 export default function WeeklyRecapModal({
-  visible, recap, onClose, onOpenTrade, onOpenLesson, onStartSession,
+  visible, recap, onClose, onOpenTrade, onStartSession,
 }: Props) {
   const fadeIn   = useRef(new Animated.Value(0)).current;
   const pnlValue = useRef(new Animated.Value(0)).current;
@@ -380,19 +378,6 @@ export default function WeeklyRecapModal({
                 <Text style={styles.nextReason}>
                   {recap.nextRecommendation.reason}
                 </Text>
-                {recap.nextRecommendation.setupId && onOpenLesson && (
-                  <View style={styles.nextLessonWrap}>
-                    <Button
-                      label="Open lesson"
-                      variant="tertiary"
-                      onPress={() => {
-                        const id = recap.nextRecommendation!.setupId!;
-                        onClose();
-                        onOpenLesson(id);
-                      }}
-                    />
-                  </View>
-                )}
               </View>
             )}
           </Animated.View>
@@ -947,11 +932,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     lineHeight: 20,
   },
-  nextLessonWrap: {
-    marginTop: 10,
-    alignSelf: 'flex-start',
-  },
-
   // Empty state
   emptyCard: {
     alignItems: 'center',

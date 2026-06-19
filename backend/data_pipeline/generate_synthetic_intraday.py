@@ -22,7 +22,7 @@ from db import get_conn
 
 # 480 1m bars per day (8-hour synthetic session). Divides cleanly into every
 # higher TF so aggregation is exact. Total bars per day across all TFs ≈ 633.
-MINUTES_PER_DAY = 480
+MINUTES_PER_DAY = 1440
 
 # group size in 1m bars
 TF_GROUPS = {

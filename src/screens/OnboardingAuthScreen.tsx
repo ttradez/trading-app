@@ -18,6 +18,7 @@ import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../services/firebase';
 import { useOnboardingStore } from '../store/onboardingStore';
 import PlayerCardPreview from '../components/onboarding/PlayerCardPreview';
+import { claimHandle } from '../services/handleClaim';
 
 // Completes the OAuth redirect when the browser bounces back.
 WebBrowser.maybeCompleteAuthSession();
@@ -197,7 +198,39 @@ export default function OnboardingAuthScreen({ navigation }: Props) {
           { merge: true },
         );
       } else {
-        // Brand-new user — original write path, unchanged.
+        // Brand-new user — claim the handle FIRST. The TraderName
+        // screen's debounced availability check rejects taken handles
+        // before the user can reach Auth, so a failure here only
+        // happens on the narrow race where another user claimed the
+        // same handle in the few seconds between the TraderName check
+        // and this transaction. We undo the just-created Firebase
+        // user so they can pick a new handle and retry cleanly.
+        const claim = await claimHandle(s.handle, uid);
+        if (!claim.ok) {
+          // Roll back Firebase user — best-effort. `delete()` requires
+          // recent auth, which is the case here since we just signed
+          // up; an SSO session that disallows self-delete will be left
+          // dangling (route guard still sends authenticated users to
+          // Main, so they can use Settings → Redo Onboarding to retry).
+          try { await auth.currentUser?.delete(); } catch { /* noop */ }
+          setLoading(false);
+          if (claim.reason === 'taken') {
+            Alert.alert(
+              'Handle just taken',
+              `Someone claimed @${s.handle} a moment ago. Pick a different handle and try again.`,
+              [{
+                text: 'OK',
+                onPress: () => navigation.navigate('OnboardingTraderName'),
+              }],
+            );
+          } else {
+            Alert.alert(
+              'Connection problem',
+              "We couldn't finish setting up your account. Check your connection and try again.",
+            );
+          }
+          return;
+        }
         await setDoc(
           doc(db, 'users', uid),
           {
@@ -385,7 +418,7 @@ export default function OnboardingAuthScreen({ navigation }: Props) {
         {/* Recap — what they're saving */}
         <Animated.View style={[styles.recapWrap, { opacity: recapOp }]}>
           <PlayerCardPreview
-            rank="gambler"
+            rank="paper"
             displayName={displayName}
             handle={handle}
             badge={firstTrade?.badge ?? null}

@@ -31,7 +31,7 @@ const EXPERIENCE_OPTIONS: ExperienceOption[] = [
   {
     id: 'never',
     title: 'Never traded',
-    description: "I'm here to learn before I risk anything.",
+    description: 'I want to test setups before I risk anything.',
   },
   {
     id: 'beginner',

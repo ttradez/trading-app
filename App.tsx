@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, Image, StyleSheet } from 'react-native';
+import { View, Text, Image, StyleSheet, Platform } from 'react-native';
 import { NavigationContainer, useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -38,6 +38,7 @@ import * as Notifications from 'expo-notifications';
 import {
   configureForegroundNotificationHandler, rescheduleFromStoredPrefs,
 } from './src/lib/notifications';
+import { initCrashReporting, setCrashUser } from './src/services/crashReporting';
 import { useNotificationsStore } from './src/store/notificationsStore';
 import { useBadgeWatchers } from './src/hooks/useBadgeWatchers';
 import { useXpWatchers } from './src/hooks/useXpWatchers';
@@ -50,20 +51,19 @@ import { colors } from './src/theme';
 
 import HomeScreen         from './src/screens/HomeScreen';
 import StatsScreen        from './src/screens/StatsScreen';
-import LearnScreen        from './src/screens/LearnScreen';
 import TradingScreen      from './src/screens/TradingScreen';
 import ChartScreen        from './src/screens/ChartScreen';
 import LeaderboardScreen  from './src/screens/LeaderboardScreen';
+import RanksScreen        from './src/screens/RanksScreen';
 import JournalScreen      from './src/screens/JournalScreen';
-// ChallengesScreen retired from the tab bar 2026-05-14 — the
-// dashboard's "Challenges" section is the placeholder for now.
-// Component file is preserved for a future re-wire.
+// ChallengesScreen — reached via the "Challenges" banner on Home
+// (stack route, not a tab). Renders active + rank-locked challenges.
+import ChallengesScreen   from './src/screens/ChallengesScreen';
 import SettingsScreen     from './src/screens/SettingsScreen';
-import SetupLibraryScreen from './src/screens/SetupLibraryScreen';
-import SetupDetailScreen  from './src/screens/SetupDetailScreen';
 import InsightsScreen     from './src/screens/InsightsScreen';
 import AccountDetailScreen from './src/screens/AccountDetailScreen';
 import SetupStatsScreen   from './src/screens/SetupStatsScreen';
+import JourneyScreen      from './src/screens/JourneyScreen';
 import { useJournalStore } from './src/store/journalStore';
 import OnboardingSplashScreen    from './src/screens/OnboardingSplashScreen';
 import OnboardingPremiseScreen   from './src/screens/OnboardingPremiseScreen';
@@ -81,6 +81,21 @@ import OnboardingWelcomeScreen     from './src/screens/OnboardingWelcomeScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab   = createBottomTabNavigator();
+
+/**
+ * DEV REVIEW FLAG — when true, every launch boots straight into the
+ * onboarding flow (OnboardingSplash → Premise → Archetype → … → Welcome
+ * → Main), regardless of whether the user is already authenticated /
+ * has previously completed onboarding. Lets the team walk every
+ * onboarding screen end-to-end without first signing out and resetting
+ * stores.
+ *
+ * FLIP TO false BEFORE SHIPPING. While true, returning users can't
+ * reach `Main` directly — they'll be forced through the funnel each
+ * launch. Settings → "Redo Onboarding" remains the production-shipped
+ * way to re-enter the funnel; this flag is purely a dev override.
+ */
+const FORCE_ONBOARDING_FLOW = false;
 
 function MainTabs() {
   // Sunday Wrap deep-links: the modal hands setup ids / trade ids
@@ -127,6 +142,12 @@ function MainTabs() {
   // (handles time-zone changes and OS-side drops); and listen for
   // taps so we can route the user to the right surface.
   React.useEffect(() => {
+    // Start crash reporting first so any crash during the rest of
+    // bootstrap also surfaces in the dashboard. No-op until the user
+    // installs @react-native-firebase/crashlytics + drops in the
+    // GoogleService-Info.plist / google-services.json files —
+    // see src/services/crashReporting.ts for setup.
+    initCrashReporting();
     configureForegroundNotificationHandler();
 
     // Wait for the notifications store to finish rehydrating from
@@ -165,7 +186,18 @@ function MainTabs() {
   }, []);
 
   const insets = useSafeAreaInsets();
-  const bottomInset = Math.max(insets.bottom, 4);
+  // Bottom inset for the tab bar. iOS needs only ~4dp baseline when
+  // there's no home indicator. Android with edgeToEdgeEnabled=true
+  // (set in app.json) draws under the system nav bar, so the app must
+  // self-clear it via insets.bottom. On 3-button-nav phones (most
+  // Samsung A-series / older Pixels) some OEM ROMs report insets.bottom
+  // as 0 even though the nav bar still occupies ~48dp — the
+  // Platform-aware floor below guarantees at least 16dp of clearance
+  // on Android so the tab bar never disappears under the nav bar.
+  const bottomInset = Math.max(
+    insets.bottom,
+    Platform.OS === 'android' ? 16 : 4,
+  );
   return (
     <>
     <Tab.Navigator
@@ -182,6 +214,11 @@ function MainTabs() {
         },
         tabBarActiveTintColor: colors.gold,
         tabBarInactiveTintColor: colors.textSecondary,
+        // Disable system font-scaling on the tab labels. At 6 tabs ×
+        // 10pt baseline, even the smallest accessibility text scale
+        // overflows the cell on Android; with `false`, the bar stays
+        // readable regardless of the user's Display → Font size setting.
+        tabBarAllowFontScaling: false,
         // 6 tabs at 10pt label — narrower per-cell but "CHART" still
         // fits without truncation at typical phone widths.
         tabBarLabelStyle: {
@@ -202,8 +239,7 @@ function MainTabs() {
             Chart:       'analytics-outline',
             Stats:       'stats-chart-outline',
             Journal:     'journal-outline',
-            Learn:       'school-outline',
-            Leaderboard: 'trophy-outline',
+            Ranks:       'trophy-outline',
           };
           const name = lineIcon[route.name] ?? 'help';
           return (
@@ -225,11 +261,11 @@ function MainTabs() {
             Chart:       'CHART',
             Stats:       'STATS',
             Journal:     'JOURNAL',
-            Learn:       'LEARN',
-            // Internal route name stayed "Leaderboard" to avoid a
-            // ripple of nav-call renames; the visible tab label is
-            // RANKS per spec.
-            Leaderboard: 'RANKS',
+            // The Ranks tab is the rank hub — pinned current-emblem
+            // header on top of three sub-tabs (Journey / Leaderboard
+            // / Badges). The old standalone Leaderboard tab is gone;
+            // it now lives as the middle sub-tab.
+            Ranks:       'RANKS',
           };
           return (
             <View style={tabStyles.labelWrap}>
@@ -257,8 +293,7 @@ function MainTabs() {
       <Tab.Screen name="Chart"       component={ChartScreen} />
       <Tab.Screen name="Stats"       component={StatsScreen} />
       <Tab.Screen name="Journal"     component={JournalScreen} />
-      <Tab.Screen name="Learn"       component={LearnScreen} />
-      <Tab.Screen name="Leaderboard" component={LeaderboardScreen} />
+      <Tab.Screen name="Ranks"       component={RanksScreen} />
     </Tab.Navigator>
     <WeeklyRecapModal
       visible={weeklyRecap !== null}
@@ -271,9 +306,6 @@ function MainTabs() {
           params: { openEntryId: tradeId },
         });
       }}
-      onOpenLesson={(setupId) =>
-        navigation.navigate('SetupDetail', { setupId })
-      }
       onStartSession={() => navigation.navigate('Chart')}
     />
     <ChallengeToastHost />
@@ -367,6 +399,10 @@ export default function App() {
         const fallbackUsername =
           user.displayName ?? user.email?.split('@')[0] ?? 'Trader';
         setUser(user.uid, fallbackUsername, user.email ?? '');
+        // Tag crash reports with the uid so a fatal crash dashboard
+        // entry can be matched to one user without exposing email or
+        // any identifying info. No-op until Crashlytics is installed.
+        setCrashUser(user.uid);
         getUser(user.uid).then((dbUser) => {
           if (dbUser?.username) {
             setUser(user.uid, dbUser.username, user.email ?? '');
@@ -381,6 +417,9 @@ export default function App() {
         void rcLogIn(user.uid);
         setAuthState('authenticated');
       } else {
+        // Clear the crash-report uid tag on sign-out so a subsequent
+        // crash isn't attributed to the previously-signed-in user.
+        setCrashUser(null);
         void rcLogOut();
         setAuthState('unauthenticated');
       }
@@ -396,15 +435,18 @@ export default function App() {
   }
 
   // Routing guard:
+  //  - FORCE_ONBOARDING_FLOW    → onboarding from screen 1 (dev review)
   //  - authenticated            → main tabs (dashboard)
   //  - unauth + local handle    → auth screen (just sign in)
   //  - unauth + no local data   → onboarding from screen 1
   const initialRoute =
-    authState === 'authenticated'
-      ? 'Main'
-      : onboardingComplete || handle.trim().length > 0
-        ? 'OnboardingAuth'
-        : 'OnboardingSplash';
+    FORCE_ONBOARDING_FLOW
+      ? 'OnboardingSplash'
+      : authState === 'authenticated'
+        ? 'Main'
+        : onboardingComplete || handle.trim().length > 0
+          ? 'OnboardingAuth'
+          : 'OnboardingSplash';
 
   return (
     <SafeAreaProvider>
@@ -452,11 +494,6 @@ export default function App() {
           {/* Pushed from the dashboard gear icon — slides in over
               the tab navigator with its own in-screen back button. */}
           <Stack.Screen name="Settings"              component={SettingsScreen} />
-          {/* Setup Library — pushed from the dashboard card and the
-              chart header book icon. Detail deep-links into a replay
-              via the nested Chart tab. */}
-          <Stack.Screen name="SetupLibrary"          component={SetupLibraryScreen} />
-          <Stack.Screen name="SetupDetail"           component={SetupDetailScreen} />
           {/* "Your Tendencies" — pushed from the Journal card and
               the dashboard insights link. */}
           <Stack.Screen name="Insights"              component={InsightsScreen} />
@@ -467,6 +504,18 @@ export default function App() {
               "By setup" breakdown rows. Reuses the equity / heatmap
               / histogram components against a filtered slice. */}
           <Stack.Screen name="SetupStats"            component={SetupStatsScreen} />
+          {/* Rank journey (Phase 2) — pushed from the Home rank
+              strip. Vertical ladder of all 19 levels with the
+              current one highlighted Clash-Royale-style. */}
+          <Stack.Screen name="Journey"               component={JourneyScreen} />
+          <Stack.Screen name="Challenges"            component={ChallengesScreen} />
+          {/* Leaderboard is no longer surfaced in the bottom nav
+              (folded INTO the Ranks tab's sub-tabs). Kept as a
+              stack route so the existing Dashboard / Home rank
+              card "open Badges" deep-link still resolves — it
+              just pushes the standalone Leaderboard screen with
+              the legacy `initialSegment` param honored. */}
+          <Stack.Screen name="Leaderboard"           component={LeaderboardScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>

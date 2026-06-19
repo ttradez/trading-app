@@ -1,23 +1,18 @@
 /**
- * Setup Library — a browseable encyclopedia of named trading
- * patterns. The "curriculum" layer (Research Feature #4): users
- * study a pattern, then tap a historical example to load it
- * straight into a replay session.
+ * Setup catalog — the canonical taxonomy of named trading patterns.
+ * Pure data, no UI. Drives:
+ *  - the pre-trade setup picker (PreTradeChecklistModal),
+ *  - per-setup performance roll-ups (Stats "By setup",
+ *    SetupStatsScreen, WeeklyRecap top/bottom setup),
+ *  - human-friendly name + category labels rendered on the journal,
+ *    DayDetailSheet, and PostTradeSummaryModal.
  *
- * Pure data. The library/detail screens render this; the deep-link
- * to the chart reuses the existing `dailySetup` route param
- * (symbol / timeframe / date → `savedSetupStartUnixSeconds`), the
- * same mechanism Daily Mission and Saved Setups use.
- *
- * v1 ships 15 setups across 5 categories — expandable. All example
- * dates are real 2022 NQ/ES sessions (the year the replay backend
- * has coverage for); news examples use dates that exist in
- * `economicCalendar.ts` (CPI / NFP / FOMC).
- *
- * Out of scope for v1 (documented for the next contributor):
- *  - Per-setup completion tracking (ties into badges/XP later).
- *  - User-created setups (needs Firebase).
- *  - More than 15 setups.
+ * The Learn tab / Setup Library browse UI was retired — the app's
+ * positioning is "you already know the theory; come practice it."
+ * This file remains as a taxonomy reference; the rich lesson
+ * fields (howToTrade / keyRules / examples / lesson) are kept on
+ * the type for back-compat with persisted journal entries that
+ * reference these ids but are not currently rendered anywhere.
  */
 
 import type { RankId } from './rankConfig';
@@ -53,12 +48,9 @@ export interface SetupExample {
   context: string;
 }
 
-/** Deep lesson content for a setup. Optional on the top-level
- *  LibrarySetup — entries authored before the 50-setup expansion
- *  inline these fields directly (back-compat). The 2026 expansion
- *  batch sets `lesson: null` to mark "schema wired, lesson copy to
- *  follow"; SetupDetailScreen renders a "Lesson coming soon" state
- *  in that case. */
+/** Deep lesson content for a setup. Retained on the type for back-
+ *  compat with persisted journal data. Not rendered anywhere — the
+ *  Setup Library / Learn surfaces that consumed it were retired. */
 export interface LessonContent {
   /** 2-3 sentences: how to identify + trade it. */
   howToTrade: string;
@@ -87,12 +79,8 @@ export interface LibrarySetup {
   howToTrade?: string;
   keyRules?: string[];
   examples?: SetupExample[];
-  /** Lesson content. `undefined` on legacy entries (they inline the
-   *  fields above for back-compat). `null` explicitly marks
-   *  "schema-only entry; full lesson copy is on the way" and flips
-   *  SetupDetailScreen into a "Lesson coming soon" state. A non-null
-   *  object is the new canonical home for deep content once legacy
-   *  entries migrate. */
+  /** Lesson content. Retained on the type for back-compat; the
+   *  surfaces that consumed it were retired with the Learn tab. */
   lesson?: LessonContent | null;
   /** 'classic' (default when omitted — keeps the original 15
    *  untouched) or 'ict'. */
@@ -111,10 +99,8 @@ export function getSection(s: LibrarySetup): SetupSection {
 /** Category accent (mirrors the rank theme palette already in use
  *  so the app stays visually coherent). */
 export const CATEGORY_COLOR: Record<SetupCategory, string> = {
-  // Classic categories: neutral white@60% eyebrow weight (was gold;
-  // demoted per DESIGN_AUDIT §2.2 — the card's "Learn & Practice →"
-  // link is the actionable gold; the category tag is metadata, so
-  // it should read as a quiet label, not compete for attention).
+  // Classic categories: neutral white@60% eyebrow weight (category
+  // tag is metadata, not an actionable CTA).
   momentum: 'rgba(255,255,255,0.6)',
   reversal: 'rgba(255,255,255,0.6)',
   range:    'rgba(255,255,255,0.6)',
@@ -539,7 +525,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     difficulty: 'intermediate',
     type: 'setup',
     section: 'ict',
-    unlock: 'paper_hands',
+    unlock: 'unprofitable',
     description:
       'The first break of structure in the opposite direction of the prevailing trend, signaling a potential reversal.',
     howToTrade:
@@ -590,7 +576,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     difficulty: 'intermediate',
     type: 'setup',
     section: 'ict',
-    unlock: 'paper_hands',
+    unlock: 'unprofitable',
     description:
       'A displacement candle that breaks recent structure with momentum, leaving an FVG behind. The highest-confidence reversal signal in ICT.',
     howToTrade:
@@ -697,7 +683,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     difficulty: 'intermediate',
     type: 'setup',
     section: 'ict',
-    unlock: 'paper_hands',
+    unlock: 'unprofitable',
     description:
       'A failed order block that becomes support/resistance in the opposite direction. The OB body must be broken AND a market structure shift in the opposite direction must occur — without that MSS it is just a failed OB, not a Breaker.',
     howToTrade:
@@ -725,7 +711,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     difficulty: 'advanced',
     type: 'setup',
     section: 'ict',
-    unlock: 'sniper',
+    unlock: 'disciplined',
     description:
       'An unmitigated order block re-tested for a continuation trade in the existing trend direction. The test confirms the trend is intact (no opposite-direction MSS) and price is returning to fill orders left at the original OB.',
     howToTrade:
@@ -835,7 +821,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     difficulty: 'intermediate',
     type: 'setup',
     section: 'ict',
-    unlock: 'paper_hands',
+    unlock: 'unprofitable',
     description:
       'A time-bounded ICT setup that runs in three specific one-hour windows per day. Inside the window, the trader waits for a liquidity sweep, then a displacement creating an FVG, and enters on the retrace targeting the next draw on liquidity.',
     howToTrade:
@@ -859,9 +845,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
 
   // ══════════════════════════════════════════════════════════════
   // 2026 EXPANSION BATCH — +22 setups (50 total). `lesson: null`
-  // marks "schema wired, lesson copy to follow in a separate pass".
-  // SetupDetailScreen renders a "Lesson coming soon" body for these
-  // until full lesson content lands.
+  // on these entries marks "schema-only" — no rendered lesson copy.
   //
   // ICT-section category note: the source spec assigned several
   // entries to "Reversal" / "Range", which are Classic-only category
@@ -1029,7 +1013,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     difficulty: 'intermediate',
     type: 'setup',
     section: 'ict',
-    unlock: 'paper_hands',
+    unlock: 'unprofitable',
     rule: 'Trade the FVG that price closed through — it now flips polarity as support/resistance.',
     description:
       'When price closes decisively through an existing FVG, the gap "inverts" — a former bullish FVG becomes resistance, and a former bearish FVG becomes support. The retest of the inverted gap is the entry. One of the cleanest reversal triggers in the post-2022 ICT toolkit.',
@@ -1042,7 +1026,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     difficulty: 'intermediate',
     type: 'setup',
     section: 'ict',
-    unlock: 'paper_hands',
+    unlock: 'unprofitable',
     rule: 'Enter at the overlap of two opposing FVGs at the same price zone.',
     description:
       'A bullish FVG and a bearish FVG that overlap at the same price form a Balanced Price Range. Returning to the overlap typically produces a sharp reaction in either direction because two independent imbalances are stacked. Often paired with CISD/MSS for confirmation.',
@@ -1055,7 +1039,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     difficulty: 'advanced',
     type: 'setup',
     section: 'ict',
-    unlock: 'sniper',
+    unlock: 'disciplined',
     rule: 'Enter where a Breaker Block and an FVG overlap in the same zone.',
     description:
       'The Unicorn is the high-confluence intersection of a Breaker Block and a Fair Value Gap formed in the same delivery leg. When price retraces back to the overlap, the two PD Arrays reinforce each other — considered one of the highest-conviction setups in the ICT framework.',
@@ -1068,7 +1052,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     difficulty: 'intermediate',
     type: 'setup',
     section: 'ict',
-    unlock: 'paper_hands',
+    unlock: 'unprofitable',
     rule: 'Fade the false move against daily bias right after session open.',
     description:
       'A false move engineered at the session open (NY midnight → ~05:00 ET, or NY 9:30 open) that runs counter to the day\'s true bias, designed to trap retail and trigger stops before the real move. Trade the reversal once liquidity is swept and structure shifts (MSS/CISD) in the direction of bias.',
@@ -1081,7 +1065,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     difficulty: 'intermediate',
     type: 'setup',
     section: 'ict',
-    unlock: 'paper_hands',
+    unlock: 'unprofitable',
     rule: 'Fade a false breakout beyond a prior swing high/low.',
     description:
       'Price extends just beyond a prior session/swing high or low, sweeps the resting liquidity, then rejects sharply back into range. ICT\'s adaptation of Linda Raschke\'s original Turtle Soup, now codified by session (Asia, London, NY AM/PM) and almost always paired with an opposing FVG or BPR for the entry.',
@@ -1094,7 +1078,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     difficulty: 'advanced',
     type: 'setup',
     section: 'ict',
-    unlock: 'sniper',
+    unlock: 'disciplined',
     rule: 'Trade the bullish Smart Money Reversal after the manipulation leg sweeps liquidity.',
     description:
       'A 4-phase institutional delivery framework: Original Consolidation → Engineering Liquidity (the manipulation move) → Smart Money Reversal → Liquidity Hunt to the opposite array. MMBM = bullish version (low to high). Often used as the daily/4H "macro template" inside which other entries (Silver Bullet, Judas, IFVG) trigger.',
@@ -1107,7 +1091,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     difficulty: 'advanced',
     type: 'setup',
     section: 'ict',
-    unlock: 'sniper',
+    unlock: 'disciplined',
     rule: 'Trade the bearish Smart Money Reversal after the manipulation leg sweeps liquidity.',
     description:
       'A 4-phase institutional delivery framework: Original Consolidation → Engineering Liquidity (the manipulation move) → Smart Money Reversal → Liquidity Hunt to the opposite array. MMSM = bearish version (high to low). Often used as the daily/4H "macro template" inside which other entries (Silver Bullet, Judas, IFVG) trigger.',
@@ -1120,7 +1104,7 @@ export const SETUP_LIBRARY: ReadonlyArray<LibrarySetup> = [
     difficulty: 'intermediate',
     type: 'setup',
     section: 'ict',
-    unlock: 'paper_hands',
+    unlock: 'unprofitable',
     rule: 'Enter when price closes through the open of the prior delivery leg.',
     description:
       'Earlier reversal signal than a full Market Structure Shift: CISD fires when a candle closes past the open of the most recent opposing-direction leg, signalling delivery has switched from buy-side to sell-side (or vice versa). Used as a candle-close entry trigger, often inside an FVG/OB.',

@@ -17,12 +17,12 @@ import RankBanner from '../components/RankBanner';
  * effect choreography under ~2.5 s total:
  *
  *   a. Headline + subheadline fade in
- *   b. Gambler banner fades + scales in (settle pop)
+ *   b. Paper banner fades + scales in (settle pop)
  *   c. "← YOU" drops in from above with a spring overshoot — a
  *      weighted "thunk" — and a Medium haptic fires at first land
  *   d. Progress bar fills 0 % → 10 % only after YOU has landed
- *   e. "10 % toward Paper Hands" label fades in
- *   f. Paper Hands → Sniper → Inside Trader → Market Maker
+ *   e. "10 % toward Unprofitable" label fades in
+ *   f. Unprofitable → Disciplined → Consistent → Profitable → Funded
  *      cascade in
  *   g. Continue button fades in last
  *
@@ -44,7 +44,7 @@ const T_HEAD          = 0;
 const D_HEAD          = 280;
 const T_GAMBLER       = 320;
 const D_GAMBLER       = 280;
-const T_YOU           = 640;     // ~80 ms beat after Gambler settles
+const T_YOU           = 640;     // ~80 ms beat after Paper settles
 const YOU_LAND_DELAY  = 150;     // empirical: first zero-crossing of the spring
 const HAPTIC_AT       = T_YOU + YOU_LAND_DELAY;
 const T_PROGRESS      = HAPTIC_AT; // fill starts the moment YOU lands
@@ -119,7 +119,7 @@ export default function OnboardingRankRevealScreen({ navigation }: Props) {
       // a. Headline + subheadline
       fadeAt(headOp, T_HEAD, D_HEAD),
 
-      // b. Gambler — fade + scale (slight pop-in, not a slam)
+      // b. Paper — fade + scale (slight pop-in, not a slam)
       Animated.sequence([
         Animated.delay(T_GAMBLER),
         Animated.parallel([
@@ -173,7 +173,7 @@ export default function OnboardingRankRevealScreen({ navigation }: Props) {
         ]),
       ]),
 
-      // e. "10% toward Paper Hands" label
+      // e. "10% toward Unprofitable" label
       fadeAt(progressLabelOp, T_PROG_LABEL, D_PROG_LABEL),
 
       // f. Upper-rank cascade
@@ -218,12 +218,12 @@ export default function OnboardingRankRevealScreen({ navigation }: Props) {
         <Animated.View style={{ opacity: headOp }}>
           <Text style={styles.headline}>Where you're going</Text>
           <Text style={styles.subheadline}>
-            Your first trade just moved the needle. Most traders never climb out of Gambler. You're on your way.
+            Your first trade just moved the needle. Most traders never climb out of Paper. You're on your way.
           </Text>
         </Animated.View>
 
         <View style={styles.stack}>
-          {/* Gambler row — banner + independently-animated "← YOU".
+          {/* Paper row — banner + independently-animated "← YOU".
               Manually composed (rather than via RankBanner's built-in
               showYouIndicator prop) so the YOU label can spring in
               after the banner has settled. */}
@@ -235,7 +235,7 @@ export default function OnboardingRankRevealScreen({ navigation }: Props) {
           >
             <View style={styles.gamblerRow}>
               <View style={styles.gamblerBannerWrap}>
-                <RankBanner rank="gambler" />
+                <RankBanner rank="paper" />
               </View>
               <Animated.View
                 style={{
@@ -253,24 +253,24 @@ export default function OnboardingRankRevealScreen({ navigation }: Props) {
               <Animated.View style={[styles.progressFill, { width: fillWidth }]} />
             </View>
             <Animated.Text style={[styles.progressLabel, { opacity: progressLabelOp }]}>
-              {PROGRESS_PCT}% toward Paper Hands
+              {PROGRESS_PCT}% toward Unprofitable
             </Animated.Text>
           </Animated.View>
 
           <Animated.View style={{ opacity: paperHandsOp }}>
-            <RankBanner rank="paper_hands" upNext />
+            <RankBanner rank="unprofitable" upNext />
           </Animated.View>
 
           <Animated.View style={[styles.bannerGap, { opacity: sniperOp }]}>
-            <RankBanner rank="sniper" locked />
+            <RankBanner rank="disciplined" locked />
           </Animated.View>
 
           <Animated.View style={[styles.bannerGap, { opacity: insideOp }]}>
-            <RankBanner rank="inside_trader" locked />
+            <RankBanner rank="consistent" locked />
           </Animated.View>
 
           <Animated.View style={[styles.bannerGap, { opacity: marketOp }]}>
-            <RankBanner rank="market_maker" locked />
+            <RankBanner rank="profitable" locked />
           </Animated.View>
         </View>
       </ScrollView>
@@ -330,7 +330,7 @@ const styles = StyleSheet.create({
     // gives Animated.View something to drive opacity against.
   },
 
-  // Gambler row composes the banner + the YOU label as siblings so
+  // Paper row composes the banner + the YOU label as siblings so
   // each can be animated independently. Matches the visual produced
   // by RankBanner's built-in showYouIndicator path.
   gamblerRow: {
@@ -348,7 +348,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
   },
 
-  // Progress block sits between Gambler and Paper Hands.
+  // Progress block sits between Paper and Unprofitable.
   progressBlock: {
     paddingVertical: 4,
     alignItems: 'stretch',

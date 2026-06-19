@@ -5,7 +5,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
-import Button from '../components/ui/Button';
 import NumericText from '../components/NumericText';
 import EquityCurveSparkline from '../components/EquityCurveSparkline';
 import CalendarHeatmap from '../components/CalendarHeatmap';
@@ -198,15 +197,6 @@ export default function SetupStatsScreen({ route, navigation }: any) {
           <Text style={styles.cardEyebrow}>P&amp;L DISTRIBUTION</Text>
           <PnLDistributionHistogram trades={setupTrades} />
         </View>
-
-        {/* Bottom CTA — back to the lesson. */}
-        <View style={styles.bottomCta}>
-          <Button
-            label="Read the lesson"
-            variant="tertiary"
-            onPress={() => navigation.navigate('SetupDetail', { setupId: setup.id })}
-          />
-        </View>
       </ScrollView>
 
       {/* Day drill-down sheet — opens when a heatmap cell with
@@ -357,10 +347,5 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 1.5,
     marginBottom: 12,
-  },
-
-  bottomCta: {
-    marginTop: 24,
-    alignItems: 'center',
   },
 });

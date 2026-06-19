@@ -40,7 +40,18 @@ export default function DashboardHeader({ onSettingsPress }: Props) {
   const archetype    = useOnboardingStore((s) => s.archetype);
   const displayName  = useOnboardingStore((s) => s.displayName);
   const currentXP    = useXpStore((s) => s.currentXP);
-  const rankInfo     = React.useMemo(() => getRankForXP(currentXP), [currentXP]);
+  const serverXp     = useXpStore((s) => s.serverXp);
+  const serverRank   = useXpStore((s) => s.serverRank);
+  // Backend doesn't track local challenge XP yet, so server total
+  // can lag behind currentXP after a challenge completes. Use max so
+  // local progress is never hidden by a smaller server return.
+  const xpForRank    = Math.max(serverXp ?? 0, currentXP);
+  const rankInfo     = React.useMemo(() => getRankForXP(xpForRank), [xpForRank]);
+  // Phase 2: when the backend's rank object is available, show the
+  // server-authoritative level name (the new 7-tier ladder has labels
+  // the local 5-rank derivation can't produce). The pip-row still
+  // uses the local sub-tier so the dot visual stays correct.
+  const rankLabel    = serverRank ? serverRank.level_name : rankInfo.label;
   const archetypeMeta = archetype ? ARCHETYPE_META[archetype] : null;
 
   // Daily time-goal ring lives in the header now (was a standalone
@@ -67,19 +78,10 @@ export default function DashboardHeader({ onSettingsPress }: Props) {
           {displayName ? (
             <Text style={styles.identityDim}>{`  ·  ${displayName}`}</Text>
           ) : null}
-          <Text style={styles.identityDim}>{`  ·  ${rankInfo.label}`}</Text>
+          <Text style={styles.identityDim}>{`  ·  ${rankLabel}`}</Text>
         </Text>
-        <View style={styles.pips}>
-          {[1, 2, 3].map((t) => (
-            <View
-              key={t}
-              style={[
-                styles.pip,
-                t <= rankInfo.subTier ? styles.pipOn : styles.pipOff,
-              ]}
-            />
-          ))}
-        </View>
+        {/* Divisions removed (Phase 4): pip row deleted — ranks no
+            longer have I/II/III sub-tiers. */}
       </View>
       <View style={styles.headerRight}>
         <Pressable

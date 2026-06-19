@@ -32,10 +32,15 @@ interface Props {
    *  Default true; pass false for read-only contexts like the auth
    *  recap on screen 11 where it'd read as out-of-place. */
   showYouIndicator?: boolean;
+  /** Skip the rank banner entirely — render display name + @handle
+   *  only. Used on the trader-name screen where the rank emblem
+   *  competes with the headline / input fields for visual weight. */
+  hideRank?: boolean;
 }
 
 export default function PlayerCardPreview({
-  rank = 'gambler', displayName, handle, badge, showYouIndicator = true,
+  rank = 'paper', displayName, handle, badge,
+  showYouIndicator = true, hideRank = false,
 }: Props) {
   const isNameEmpty   = displayName.trim().length === 0;
   const isHandleEmpty = handle.trim().length === 0;
@@ -43,7 +48,9 @@ export default function PlayerCardPreview({
 
   return (
     <View style={styles.wrap}>
-      <RankBanner rank={rank} showYouIndicator={showYouIndicator} />
+      {!hideRank && (
+        <RankBanner rank={rank} showYouIndicator={showYouIndicator} />
+      )}
 
       <Text
         style={[styles.displayName, isNameEmpty && styles.placeholder]}

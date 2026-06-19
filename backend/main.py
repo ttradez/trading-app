@@ -1,5 +1,6 @@
 import json
 import random
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -80,7 +81,7 @@ def get_candles(
         raise HTTPException(status_code=500, detail=str(e))
     conn.close()
     return [
-        {"time": r["time"], "open": r["open"], "high": r["high"],
+        {"time": _wire_time(timeframe, r["time"]), "open": r["open"], "high": r["high"],
          "low": r["low"], "close": r["close"], "volume": r["volume"]}
         for r in reversed(rows)
     ]
@@ -129,13 +130,163 @@ def get_user(uid: str):
 def get_account(uid: str):
     conn = get_conn()
     row = conn.execute("SELECT * FROM accounts WHERE uid = ?", (uid,)).fetchone()
+    xp_row = conn.execute("SELECT xp FROM users WHERE uid = ?", (uid,)).fetchone()
     conn.close()
     if not row:
         raise HTTPException(status_code=404, detail="User not found")
-    return dict(row)
+    out = dict(row)
+    xp_total = xp_row["xp"] if xp_row else 0
+    out["xp"] = xp_total
+    # Phase 2: surface the full rank object alongside the legacy
+    # `rank` string field. The legacy field stays so existing
+    # leaderboard/group-LB consumers don't break.
+    out["rank_obj"] = _rank_from_xp(xp_total)
+    return out
+
+
+@app.get("/users/{uid}/xp")
+def get_user_xp(uid: str):
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT xp FROM users WHERE uid=?", (uid,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="User not found")
+        xp_total = row["xp"]
+        events = conn.execute(
+            "SELECT id, session_id, amount, reason, breakdown, created_at "
+            "FROM xp_events WHERE uid=? ORDER BY created_at DESC LIMIT 50",
+            (uid,),
+        ).fetchall()
+        recent_events = [
+            {
+                "id": e["id"],
+                "session_id": e["session_id"],
+                "amount": e["amount"],
+                "reason": e["reason"],
+                "breakdown": json.loads(e["breakdown"]),
+                "created_at": e["created_at"],
+            }
+            for e in events
+        ]
+    finally:
+        conn.close()
+    return {
+        "xp_total": xp_total,
+        "recent_events": recent_events,
+        "rank": _rank_from_xp(xp_total),
+    }
+
+
+@app.get("/users/{uid}/sessions")
+def list_user_sessions(uid: str):
+    """List a user's existing replay sessions, newest first. Drives the
+    SessionsScreen "Continue" list. Returns an empty array (200) when
+    the user has no sessions — callers don't need to special-case 404.
+
+    `progress_pct` is computed from end_time when present; when the
+    session has no defined end bound we omit the field rather than
+    inventing a noisy "% through the dataset" number that would mean
+    nothing to the user. `trade_count` and `realized_pnl` aggregate the
+    `trades` table on session_id; sessions with no closed trades yet
+    return 0 / 0.0.
+
+    Order: newest first by created_at (the session-row insert time).
+    Filter: trading_sessions.uid (FK to users.uid).
+    """
+    conn = get_conn()
+    # is_shadow = 0 filter: hide watchlist-picker-spawned scratch sessions
+    # from the Continue list. The user only sees the sessions they
+    # explicitly created via SessionsScreen / CreateSessionSheet.
+    rows = conn.execute(
+        """
+        SELECT s.session_id, s.symbol, s.timeframe, s.hidden_start,
+               s.current_time, s.end_time, s.created_at, s.status,
+               s.account_size,
+               COALESCE(t.trade_count, 0)  AS trade_count,
+               COALESCE(t.realized_pnl, 0) AS realized_pnl
+        FROM trading_sessions s
+        LEFT JOIN (
+          SELECT session_id, COUNT(*) AS trade_count, SUM(pnl) AS realized_pnl
+          FROM trades
+          GROUP BY session_id
+        ) t ON t.session_id = s.session_id
+        WHERE s.uid = ? AND s.is_shadow = 0
+        ORDER BY s.created_at DESC
+        """,
+        (uid,),
+    ).fetchall()
+    conn.close()
+
+    out = []
+    for r in rows:
+        start_t = r["hidden_start"]
+        cur_t = r["current_time"]
+        end_t = r["end_time"]
+        item: dict = {
+            "session_id": r["session_id"],
+            "symbol": r["symbol"],
+            "timeframe": r["timeframe"],
+            "start_time": start_t,
+            "end_time": end_t,
+            "current_time": cur_t,
+            "created_at": r["created_at"],
+            "status": r["status"],
+            "trade_count": int(r["trade_count"]),
+            "realized_pnl": round(float(r["realized_pnl"]), 2),
+            "account_size": r["account_size"],
+        }
+        # Only compute progress_pct when there's a defined end bound —
+        # see docstring. Guard against zero-length windows.
+        if end_t is not None and end_t > start_t:
+            pct = (cur_t - start_t) / (end_t - start_t) * 100.0
+            # Clamp to [0, 100] for display friendliness.
+            item["progress_pct"] = round(max(0.0, min(100.0, pct)), 1)
+        out.append(item)
+    return out
+
+
+@app.get("/symbols/{symbol}/range")
+def get_symbol_range(symbol: str):
+    """Min/max candle time for a symbol — drives the date-picker bounds
+    on the New Session "Pick dates" mode. Returns the full 1m base
+    range; smaller TFs share the same window because they're resampled
+    from 1m. ES/NQ honor the same Databento window the cached helper
+    above uses. Returns unix seconds."""
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT MIN(time) AS min_t, MAX(time) AS max_t FROM candles "
+        "WHERE symbol = ? AND timeframe = '1m'",
+        (symbol,),
+    ).fetchone()
+    conn.close()
+    if not row or row["min_t"] is None:
+        raise HTTPException(status_code=404, detail="No data for this symbol")
+    return {"symbol": symbol, "min_time": int(row["min_t"]), "max_time": int(row["max_t"])}
 
 
 # ─── Session helpers ─────────────────────────────────────────────────────────
+
+# Per-symbol cached 1m data range for symbols whose intraday data window must
+# clamp _pick_random_start. ES and NQ are sourced from a fixed Databento window
+# (2020-04 → 2025-04); a fresh session must never land outside it.
+_DATA_RANGE_CACHE: dict[str, tuple[int, int]] = {}
+
+
+def _data_range_1m(conn, symbol: str) -> tuple[int, int]:
+    cached = _DATA_RANGE_CACHE.get(symbol)
+    if cached is not None:
+        return cached
+    row = conn.execute(
+        "SELECT MIN(time), MAX(time) FROM candles "
+        "WHERE symbol = ? AND timeframe = '1m'",
+        (symbol,),
+    ).fetchone()
+    if not row or row[0] is None:
+        raise HTTPException(status_code=404, detail="No data for this symbol")
+    rng = (int(row[0]), int(row[1]))
+    _DATA_RANGE_CACHE[symbol] = rng
+    return rng
+
 
 def _pick_random_start(conn, symbol: str, timeframe: str) -> int:
     """
@@ -196,6 +347,16 @@ def _pick_random_start(conn, symbol: str, timeframe: str) -> int:
         raise HTTPException(status_code=404, detail="No data for this symbol/timeframe")
 
     min_t, max_t = row[0], row[1]
+
+    # Per-symbol data-window clamp. ES and NQ intraday is sourced from a
+    # fixed Databento range; cap picks strictly inside [data_min, data_max -
+    # MIN_FUTURE_1M*60s] so a fresh session never lands outside that window.
+    # MIN_FUTURE_1M is preserved as the count-based future buffer (in 1m bars),
+    # converted to seconds here for the wall-clock max bound.
+    if symbol in ("ES", "NQ"):
+        data_min, data_max = _data_range_1m(conn, symbol)
+        min_t = max(min_t, data_min)
+        max_t = min(max_t, data_max - MIN_FUTURE_1M * 60)
 
     # Ensure at least 200 bars of history before start
     offset_row = conn.execute(
@@ -364,6 +525,37 @@ TF_SECONDS = {
 }
 
 
+def _wire_time(tf: str, t: int) -> int:
+    """Snap a 1D/1W candle timestamp to UTC midnight on the wire.
+
+    The DB stores CME-session-aligned timestamps for 1D and 1W candles,
+    which drift across three end-of-day bands (~23:46, ~23:53, ~00:00 UTC).
+    That drift makes ~18% of UTC calendar dates contain two 1D bars with
+    different stored times. The hosted chart bundle keys daily bars by
+    UTC calendar date, so two same-date pushes collapse to one (apparent
+    "gaps") and a later same-date push overwrites the earlier one
+    (apparent "candles disappearing after being scrolled past").
+
+    The fix is wire-layer only: every endpoint that emits 1D/1W candles
+    to the chart runs the bar's `time` through this helper, snapping
+    it to the UTC midnight (00:00:00) of its calendar date so each
+    calendar day carries one unique bar. Lower TFs (1m..4h) are
+    untouched — their times already render unambiguously on the chart's
+    intraday grid.
+
+    Server-internal math (next-bucket lookups, _resample_with_forming
+    bucket containment, bars_at_* counts, SL/TP walk windows) keeps
+    operating on the raw r["time"] from the DB, so non-uniform CME
+    spacing for ES/NQ/YM/GC at every TF still works correctly.
+    """
+    if tf in ("1D", "1W"):
+        # int() guard: if a caller ever passes a float t (e.g. drifted
+        # through a JSON round-trip), keep the wire payload's `time`
+        # int-typed for the chart-host's contract.
+        return int(t // 86400) * 86400
+    return t
+
+
 def _get_tf_step(timeframe: str) -> int:
     """Single source of truth for the nominal step at a given timeframe.
     Used by `_resample_with_forming` (to test bucket-containment) and `/advance`
@@ -392,13 +584,107 @@ def _next_bucket_after(conn, symbol: str, timeframe: str, from_time: int):
     ).fetchone()
 
 
+_IMPACT_RANK = {"high": 3, "medium": 2, "low": 1, "holiday": 0}
+
+
 @app.get("/news")
-def get_news(symbol: str = "", before: int = 0, limit: int = 50):
-    """Historical news up to (and including) `before` unix-seconds. Plug a real
-    provider in here later — for now returns an empty list so the UI can
-    render the "no news" state without breaking. Keeps the contract stable so
-    the frontend can ship before a provider is chosen."""
-    return []
+def get_news(
+    date: str = Query(..., description="Replay day, YYYY-MM-DD."),
+    tz: str = Query(
+        "America/New_York",
+        description="IANA tz; defines the day boundary AND the time_local display.",
+    ),
+    currency: Optional[str] = Query(
+        None,
+        description="Comma-separated currency filter (e.g. 'USD' or 'USD,EUR'). Omit = all.",
+    ),
+    min_impact: Optional[str] = Query(
+        None,
+        description="'high'|'medium'|'low' — events ranked at or above. Omit = all.",
+    ),
+):
+    """Economic-calendar events for one replay calendar day in `tz`. The
+    day's UTC window is computed via zoneinfo so DST day-length is correct
+    (e.g. the spring-forward day is 23h in America/New_York). Each row's
+    `time_local` is the row's UTC time converted to `tz`. `time_known=false`
+    rows carry placeholder times the source CSV never pinned down — the UI
+    can render them as date-only when needed."""
+    # ── Parse + validate inputs ──
+    try:
+        d = datetime.strptime(date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(400, f"Bad date: {date!r}; expected YYYY-MM-DD")
+    try:
+        zone = ZoneInfo(tz)
+    except Exception:
+        raise HTTPException(400, f"Unknown tz: {tz!r}")
+
+    # ── UTC window: [local_midnight(date), local_midnight(date+1)) ──
+    local_start = datetime(d.year, d.month, d.day, tzinfo=zone)
+    local_end   = local_start + timedelta(days=1)
+    utc_start   = local_start.astimezone(timezone.utc)
+    utc_end     = local_end.astimezone(timezone.utc)
+
+    # ── Build SQL (datetime_utc is indexed) ──
+    sql_parts = [
+        "SELECT datetime_utc, currency, impact, title, actual, forecast, previous, time_known",
+        "FROM economic_events",
+        "WHERE datetime_utc >= ? AND datetime_utc < ?",
+    ]
+    args: list = [
+        utc_start.strftime("%Y-%m-%d %H:%M:%S"),
+        utc_end.strftime("%Y-%m-%d %H:%M:%S"),
+    ]
+    if currency:
+        currencies = [c.strip().upper() for c in currency.split(",") if c.strip()]
+        if currencies:
+            sql_parts.append(
+                "AND currency IN (" + ",".join("?" * len(currencies)) + ")"
+            )
+            args.extend(currencies)
+    if min_impact:
+        mi = min_impact.lower()
+        if mi not in _IMPACT_RANK:
+            raise HTTPException(
+                400,
+                f"Bad min_impact: {min_impact!r}; expected 'high'|'medium'|'low'",
+            )
+        threshold = _IMPACT_RANK[mi]
+        allowed = [k for k, v in _IMPACT_RANK.items() if v >= threshold]
+        sql_parts.append("AND impact IN (" + ",".join("?" * len(allowed)) + ")")
+        args.extend(allowed)
+    sql_parts.append("ORDER BY datetime_utc ASC")
+
+    conn = get_conn()
+    try:
+        rows = conn.execute("\n".join(sql_parts), args).fetchall()
+    finally:
+        conn.close()
+
+    events = []
+    for r in rows:
+        try:
+            dt_utc = datetime.strptime(
+                r["datetime_utc"], "%Y-%m-%d %H:%M:%S"
+            ).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        dt_local = dt_utc.astimezone(zone)
+        events.append(
+            {
+                "datetime_utc": dt_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "time_local":   dt_local.strftime("%H:%M"),
+                "currency":     r["currency"],
+                "impact":       r["impact"],
+                "title":        r["title"],
+                "actual":       r["actual"],
+                "forecast":     r["forecast"],
+                "previous":     r["previous"],
+                "time_known":   bool(r["time_known"]),
+            }
+        )
+
+    return {"date": date, "tz": tz, "events": events}
 
 
 def _get_candles_up_to(conn, symbol: str, timeframe: str, up_to: int, limit: int):
@@ -529,6 +815,19 @@ class StartSessionRequest(BaseModel):
     # Optional override — if provided, the session's hidden_start is the bar
     # whose period contains this unix timestamp instead of a random pick.
     start_time: int | None = None
+    # Optional replay end bound. When set, /advance returns the existing
+    # end-of-data shape ({"candles": [], "done": True}) once the cursor
+    # would step past this unix timestamp. Lets a user constrain a
+    # "Pick dates" session to a specific window. NULL = open-ended,
+    # matches today's behavior.
+    end_time: int | None = None
+    # When true, this session is auto-spawned by the chart-screen
+    # watchlist picker so the chart can render a different symbol at
+    # the same time as the user's primary session. Shadow sessions:
+    #   - are hidden from /users/{uid}/sessions (Continue list)
+    #   - are DELETED when the user exits the chart back to SessionsScreen
+    # Default false → behaves like every existing user-initiated session.
+    is_shadow: bool = False
 
 
 class AdvanceRequest(BaseModel):
@@ -557,13 +856,20 @@ class SeekRequest(BaseModel):
 
 
 class SeekSessionRequest(BaseModel):
-    """Fast-forward to the next ET wall-clock time matching `target_hh:target_mm`.
+    """Fast-forward to the next wall-clock time matching `target_hh:target_mm`.
     Phase A defaults supplied by the RN dropdown: NY=09:30, London=03:00,
     Asia=20:00. Forward-only — backend always picks the NEXT occurrence
     strictly after the current cursor, then snaps to the first available bar
-    at-or-after that ET instant (handles weekend/holiday gaps for free)."""
-    target_hh: int   # 0-23, ET wall-clock hour
+    at-or-after that instant (handles weekend/holiday gaps for free).
+
+    Phase B: `tz` is an optional IANA timezone identifier. When omitted the
+    handler falls back to `"America/New_York"` for backwards compat with the
+    Phase A hardcoded ET behavior. The target HH:MM is interpreted in this
+    timezone (DST-aware via zoneinfo), and the landing bar's wall-clock IN
+    `tz` must literally equal target_hh:target_mm."""
+    target_hh: int   # 0-23, wall-clock hour in `tz`
     target_mm: int   # 0-59
+    tz: Optional[str] = None  # IANA tz id; defaults to "America/New_York"
 
 
 @app.get("/sessions/{session_id}")
@@ -591,16 +897,34 @@ def get_session(session_id: str, timeframe: Optional[str] = Query(None)):
     # Pick which TF to query at: the request's override or the session's stored TF.
     effective_tf = timeframe if timeframe is not None else sess["timeframe"]
 
+    # TF-switch / stale-cursor guard. NQ/GC/ES/YM all have 1D data extending
+    # ~13 months past the intraday-TF tail (2026-04-30 vs 2025-03-31 for the
+    # intraday tail). If the user advanced a 1D session near its end and then
+    # switches the chart down to a lower TF, an unclamped resample would
+    # return the youngest 500 rows of the lower TF — landing in March 2025 —
+    # which yanks the visible chart back ~13 months from where the session
+    # cursor sits. Clamp the resample cursor for THIS request to the maximum
+    # available time at the requested TF. We do NOT persist this clamp —
+    # the session's stored current_time stays anchored at the original TF, so
+    # switching back doesn't lose state.
+    tf_max_row = conn.execute(
+        "SELECT MAX(time) AS m FROM candles WHERE symbol=? AND timeframe=?",
+        (sess["symbol"], effective_tf),
+    ).fetchone()
+    resample_ct = sess["current_time"]
+    if tf_max_row and tf_max_row["m"] is not None and resample_ct > tf_max_row["m"]:
+        resample_ct = tf_max_row["m"]
+
     # Reconstruct the bar-indexed candle history from hidden_start up to current_time.
     # Use the forming-bucket resampler so the LAST candle's close is the 1m base
     # close at current_time — identical across every TF (single source of truth).
-    rows = _resample_with_forming(conn, sess["symbol"], effective_tf, sess["current_time"], 500)
+    rows = _resample_with_forming(conn, sess["symbol"], effective_tf, resample_ct, 500)
     # Self-heal: pre-existing sessions stored current_time as bar.start under
     # the old convention. The new convention treats current_time as bar.end,
     # so the query returns nothing. Shift forward by tf_seconds and migrate.
     if not rows:
         s_heal = TF_SECONDS.get(sess["timeframe"], 86400)
-        new_t = sess["current_time"] + s_heal
+        new_t = resample_ct + s_heal
         rows = _resample_with_forming(conn, sess["symbol"], effective_tf, new_t, 500)
         if rows:
             conn.execute(
@@ -609,6 +933,7 @@ def get_session(session_id: str, timeframe: Optional[str] = Query(None)):
             )
             conn.commit()
             sess = dict(sess); sess["current_time"] = new_t  # reflect for the rest of this request
+            resample_ct = new_t
 
     # If a TF override was supplied and produced candles, persist it so subsequent
     # /advance reveals at the right TF. This collapses the old POST /timeframe
@@ -621,13 +946,18 @@ def get_session(session_id: str, timeframe: Optional[str] = Query(None)):
         conn.commit()
         sess = dict(sess); sess["timeframe"] = timeframe
 
+    # Bar-index counts use `resample_ct` (the clamped cursor that was
+    # actually fed to _resample_with_forming) — keeping bars_at_current
+    # in lockstep with the revealed rows. If we used sess["current_time"]
+    # while the resample saw the clamped value, bars_at_current would
+    # overshoot and the bar-index math would slide.
     bars_at_start = conn.execute(
         "SELECT COUNT(*) FROM candles WHERE symbol=? AND timeframe=? AND time<=?",
         (sess["symbol"], effective_tf, sess["hidden_start"]),
     ).fetchone()[0]
     bars_at_current = conn.execute(
         "SELECT COUNT(*) FROM candles WHERE symbol=? AND timeframe=? AND time<=?",
-        (sess["symbol"], effective_tf, sess["current_time"]),
+        (sess["symbol"], effective_tf, resample_ct),
     ).fetchone()[0]
     conn.close()
 
@@ -636,7 +966,7 @@ def get_session(session_id: str, timeframe: Optional[str] = Query(None)):
     first_bar = 199 - (len(rows) - 1 - bar_offset) if len(rows) > bar_offset else 0
 
     candles = [
-        {"bar": first_bar + i, "time": r["time"],
+        {"bar": first_bar + i, "time": _wire_time(effective_tf, r["time"]),
          "open": r["open"], "high": r["high"],
          "low": r["low"], "close": r["close"], "volume": r["volume"]}
         for i, r in enumerate(rows)
@@ -645,6 +975,11 @@ def get_session(session_id: str, timeframe: Optional[str] = Query(None)):
         "session_id": session_id,
         "symbol": sess["symbol"],
         "timeframe": effective_tf,
+        # current_time is the session's authoritative replay cursor in
+        # unix seconds. Surfaced so the chart-screen can time-sync
+        # shadow sessions (other markets viewed via the watchlist) to
+        # the user's primary cursor when they switch symbols.
+        "current_time": sess["current_time"],
         "account_size": sess["account_size"],
         "balance": sess["balance"],
         "status": sess["status"],
@@ -690,7 +1025,8 @@ def seek_session(session_id: str, req: SeekRequest):
     conn.commit()
     conn.close()
     candles = [
-        {"bar": i, "time": r["time"], "open": r["open"], "high": r["high"],
+        {"bar": i, "time": _wire_time(sess["timeframe"], r["time"]),
+         "open": r["open"], "high": r["high"],
          "low": r["low"], "close": r["close"], "volume": r["volume"]}
         for i, r in enumerate(rows)
     ]
@@ -742,6 +1078,16 @@ def seek_session_open(session_id: str, req: SeekSessionRequest):
         conn.close()
         raise HTTPException(status_code=400, detail="Invalid target time")
 
+    # Phase B: per-request timezone. Falls back to America/New_York for
+    # backwards compat with the Phase A hardcoded ET behavior. Note the
+    # module-level `ET` constant stays — other functions (e.g. `_snap_to_1800_et`)
+    # use it for SYSTEM session-start anchoring, which is not user-configurable.
+    try:
+        user_tz = ZoneInfo(req.tz) if req.tz else ZoneInfo("America/New_York")
+    except Exception:
+        conn.close()
+        raise HTTPException(status_code=400, detail=f"Invalid timezone: {req.tz!r}")
+
     old_current = sess["current_time"]
     s = _get_tf_step(sess["timeframe"])
 
@@ -754,14 +1100,14 @@ def seek_session_open(session_id: str, req: SeekSessionRequest):
     TOLERANCE_SEC = 60       # strict: bar must START at target HH:MM (one 1m bucket)
     MAX_DAYS_FORWARD = 30    # cap the day-by-day forward search
 
-    # Day-by-day forward loop. For each candidate day we compute the ET wall-clock
-    # at target_hh:target_mm (DST-aware via zoneinfo), then look for a 1m bar
-    # whose `time` falls inside [candidate_unix, candidate_unix + 60). If found,
-    # we VERIFY the bar's ET HH:MM literally equals the target — that closes the
-    # loophole where the old algorithm silently returned the next bar after a
-    # data gap (e.g. asked for 09:30 ET, landed at 19:53 ET because 09:30 has
-    # no data in this dataset).
-    cur_et = datetime.fromtimestamp(old_current, tz=ET)
+    # Day-by-day forward loop. For each candidate day we compute the wall-clock
+    # at target_hh:target_mm in `user_tz` (DST-aware via zoneinfo), then look
+    # for a 1m bar whose `time` falls inside [candidate_unix, candidate_unix + 60).
+    # If found, we VERIFY the bar's HH:MM in `user_tz` literally equals the
+    # target — that closes the loophole where the old algorithm silently
+    # returned the next bar after a data gap (e.g. asked for 09:30 ET, landed
+    # at 19:53 ET because 09:30 has no data in this dataset).
+    cur_et = datetime.fromtimestamp(old_current, tz=user_tz)
     row = None
     for day_offset in range(MAX_DAYS_FORWARD):
         candidate = cur_et.replace(
@@ -782,7 +1128,7 @@ def seek_session_open(session_id: str, req: SeekSessionRequest):
             (sess["symbol"], BASE_TF, candidate_unix, candidate_unix + TOLERANCE_SEC),
         ).fetchone()
         if candidate_row is not None:
-            bar_et = datetime.fromtimestamp(candidate_row["time"], tz=ET)
+            bar_et = datetime.fromtimestamp(candidate_row["time"], tz=user_tz)
             if bar_et.hour == req.target_hh and bar_et.minute == req.target_mm:
                 row = candidate_row
                 break
@@ -790,9 +1136,10 @@ def seek_session_open(session_id: str, req: SeekSessionRequest):
 
     if row is None:
         conn.close()
+        tz_label = req.tz if req.tz else "America/New_York"
         return {
             "success": False,
-            "reason": f"no {req.target_hh:02d}:{req.target_mm:02d} ET bar found within {MAX_DAYS_FORWARD} days",
+            "reason": f"no {req.target_hh:02d}:{req.target_mm:02d} {tz_label} bar found within {MAX_DAYS_FORWARD} days",
         }
 
     # End-of-1m-bucket: cursor sits at the moment AFTER the target minute is
@@ -960,7 +1307,8 @@ def change_session_timeframe(session_id: str, req: TimeframeChangeRequest):
     conn.close()
 
     candles = [
-        {"bar": i, "time": r["time"], "open": r["open"], "high": r["high"],
+        {"bar": i, "time": _wire_time(req.timeframe, r["time"]),
+         "open": r["open"], "high": r["high"],
          "low": r["low"], "close": r["close"], "volume": r["volume"]}
         for i, r in enumerate(rows)
     ]
@@ -1026,18 +1374,20 @@ def start_session(req: StartSessionRequest):
     conn.execute(
         """
         INSERT INTO trading_sessions
-          (session_id, uid, symbol, timeframe, account_size, balance, hidden_start, current_time)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          (session_id, uid, symbol, timeframe, account_size, balance, hidden_start, current_time, end_time, is_shadow)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (session_id, req.uid, req.symbol, req.timeframe,
-         req.account_size, req.account_size, hidden_start, initial_current_time),
+         req.account_size, req.account_size, hidden_start, initial_current_time, req.end_time,
+         1 if req.is_shadow else 0),
     )
     conn.commit()
     conn.close()
 
     # Strip real timestamps — send bar index only
     candles = [
-        {"bar": i, "time": r["time"], "open": r["open"], "high": r["high"],
+        {"bar": i, "time": _wire_time(req.timeframe, r["time"]),
+         "open": r["open"], "high": r["high"],
          "low": r["low"], "close": r["close"], "volume": r["volume"]}
         for i, r in enumerate(rows)
     ]
@@ -1093,6 +1443,24 @@ def advance_session(session_id: str, req: AdvanceRequest):
         conn.close()
         return {"candles": [], "done": True}
 
+    # User-defined replay end bound. When `sess["end_time"]` is set, any
+    # candle whose start time is strictly past end_time is dropped from
+    # the reveal, and we flag `done` so the chart disables Next Bar. The
+    # filter uses `time > end_time` (not >=) so a candle landing exactly
+    # at the bound is still revealed. If filtering empties the list, fall
+    # through the existing "no rows → done" branch. This matches the
+    # soft-fail shape every existing caller already handles.
+    end_time_bound = sess["end_time"]
+    end_time_hit = False
+    if end_time_bound is not None:
+        kept = [r for r in rows if r["time"] <= end_time_bound]
+        if len(kept) < len(rows):
+            end_time_hit = True
+        rows = kept
+        if not rows:
+            conn.close()
+            return {"candles": [], "done": True}
+
     # Table-driven `new_current` is THE fix for non-uniform 1D/1W buckets.
     # 1D buckets are CME-aligned and don't span exactly N*86400 (typical
     # diffs are 86000–87000, weekend gaps are ~259000). Computing
@@ -1106,6 +1474,13 @@ def advance_session(session_id: str, req: AdvanceRequest):
     # so this preserves the original behavior. When we've run off the end
     # of the data (no next bucket), fall back to `last.time + s_nominal`.
     next_following = _next_bucket_after(conn, sess["symbol"], sess["timeframe"], rows[-1]["time"])
+    # When _next_bucket_after returns None, the row we just revealed IS
+    # the table tail — there are no more bars for this (symbol, timeframe).
+    # Set done=True on THIS press so the session terminates atomically with
+    # the final reveal, instead of requiring a second press to flip done.
+    # Without this, the chart sees `{candles: [last_bar], done: False}` and
+    # the user has to click Next Bar once more to get `{candles: [], done: True}`.
+    eod = next_following is None
     new_current = next_following["time"] if next_following is not None else rows[-1]["time"] + s
 
     # Count bars revealed so far. With the end-of-period convention, the last
@@ -1236,12 +1611,12 @@ def advance_session(session_id: str, req: AdvanceRequest):
     base_bar = (bars_at_new_current - bars_at_start) + 199 - (len(rows) - 1)
 
     candles = [
-        {"bar": base_bar + i, "time": r["time"],
+        {"bar": base_bar + i, "time": _wire_time(sess["timeframe"], r["time"]),
          "open": r["open"], "high": r["high"],
          "low": r["low"], "close": r["close"], "volume": r["volume"]}
         for i, r in enumerate(rows)
     ]
-    return {"candles": candles, "done": False, "auto_closed": closed_now}
+    return {"candles": candles, "done": end_time_hit or eod, "auto_closed": closed_now}
 
 
 @app.post("/sessions/{session_id}/trade")
@@ -1398,6 +1773,174 @@ def place_trade(session_id: str, req: TradeRequest):
     raise HTTPException(status_code=400, detail="action must be 'open', 'close', or 'update_stops'")
 
 
+XP_BASE = 50
+
+
+# ─── Rank ladder (Phase 4: divisions removed) ────────────────────────────────
+# 6 levels = 6 ranks, no divisions. Each rank has a single XP threshold
+# (Paper, Unprofitable, Disciplined, Consistent, Profitable, Funded).
+# `_rank_from_xp(xp)` maps a user's total XP → level entry; `/ranks` returns
+# the whole ladder (drives the frontend Journey screen). `accounts.rank`
+# (TEXT column) stores the level_name (e.g. "Disciplined"); the API
+# responses additionally surface a `rank` object (nested) alongside the
+# legacy `rank` string field — see `_account_rank_obj` callsites below.
+
+RANK_LADDER = [
+    # (level_index, tier, division, level_name, threshold)
+    # Phase 4: divisions collapsed — one threshold per rank, level_name
+    # == tier (no Roman numerals). `division` is None for every rank.
+    # Thresholds carry forward from the prior tier-I entry of each rank.
+    (1, "Paper",        None, "Paper",        0),
+    (2, "Unprofitable", None, "Unprofitable", 800),
+    (3, "Disciplined",  None, "Disciplined",  3200),
+    (4, "Consistent",   None, "Consistent",   7500),
+    (5, "Profitable",   None, "Profitable",   14500),
+    (6, "Funded",       None, "Funded",       25000),
+]
+
+TIER_EMBLEM_KEYS = {
+    "Paper":        "paper",
+    "Unprofitable": "unprofitable",
+    "Disciplined":  "disciplined",
+    "Consistent":   "consistent",
+    "Profitable":   "profitable",
+    "Funded":       "funded",
+}
+
+
+def _rank_from_xp(xp: int) -> dict:
+    """Return the rank object for a user with `xp` total XP.
+    Spec:
+      - level = highest ladder entry whose threshold <= xp
+      - division is None at Elite
+      - is_max true at Elite (top)
+      - xp_into_level = xp - current threshold
+      - xp_for_next = next threshold - xp (0 when is_max)
+    """
+    current = RANK_LADDER[0]
+    for entry in RANK_LADDER:
+        if entry[4] <= xp:
+            current = entry
+        else:
+            break
+    level_index, tier, division, level_name, threshold = current
+    is_max = level_index == RANK_LADDER[-1][0]
+    if is_max:
+        next_level_name = None
+        xp_for_next = 0
+    else:
+        next_entry = RANK_LADDER[level_index]  # next is 0-based, equal to level_index
+        next_level_name = next_entry[3]
+        xp_for_next = next_entry[4] - xp
+    return {
+        "xp": xp,
+        "tier": tier,
+        "division": division,
+        "level_index": level_index,
+        "level_name": level_name,
+        "xp_into_level": xp - threshold,
+        "next_level_name": next_level_name,
+        "xp_for_next": xp_for_next,
+        "is_max": is_max,
+        "emblem_key": TIER_EMBLEM_KEYS[tier],
+    }
+
+
+@app.get("/ranks")
+def get_ranks():
+    """Full rank ladder — drives the frontend Journey screen."""
+    return {
+        "ladder": [
+            {
+                "level_index": e[0],
+                "tier": e[1],
+                "division": e[2],
+                "level_name": e[3],
+                "threshold": e[4],
+                "emblem_key": TIER_EMBLEM_KEYS[e[1]],
+            }
+            for e in RANK_LADDER
+        ]
+    }
+
+
+def _compute_session_xp(closed_trades: list, realized_pnl: float, journaled: bool) -> dict:
+    """Compute XP for a session at /end.
+
+    Returns: {amount, breakdown: {base, multipliers, product, final}}
+    Multipliers are multiplicative; each one only applies when its
+    `applied` flag is true. `closed_trades` is the parsed JSON list
+    from `trading_sessions.closed_trades` — fields used: `id`, `pnl`,
+    `r_multiple`, `opened_at`, `closed_at` (sim-time unix seconds).
+    """
+    base = XP_BASE
+    multipliers = []
+
+    # 1. Net profitable session
+    profitable = realized_pnl > 0
+    multipliers.append({"name": "net_profitable", "applied": profitable, "factor": 1.5})
+
+    # 2. Win rate > 50%
+    if closed_trades:
+        wins = sum(1 for t in closed_trades if (t.get("pnl") or 0) > 0)
+        win_rate = wins / len(closed_trades)
+        win_rate_qualifies = win_rate > 0.5
+    else:
+        win_rate_qualifies = False
+    multipliers.append({"name": "win_rate_gt_50", "applied": win_rate_qualifies, "factor": 1.25})
+
+    # 3. Positive R:R — avg r_multiple >= 1.0 over trades with non-null r_multiple
+    r_values = [t.get("r_multiple") for t in closed_trades if t.get("r_multiple") is not None]
+    if r_values:
+        avg_r = sum(r_values) / len(r_values)
+        rr_qualifies = avg_r >= 1.0
+    else:
+        rr_qualifies = False  # don't reward or penalize when no stops were used
+    multipliers.append({"name": "positive_rr", "applied": rr_qualifies, "factor": 1.5})
+
+    # 4. No revenge trading — no trade opened within 120s sim-time of a
+    #    LOSING trade's close.
+    revenge_clean = True
+    losses_sorted = sorted(
+        (t for t in closed_trades if (t.get("pnl") or 0) < 0 and t.get("closed_at") is not None),
+        key=lambda t: t["closed_at"],
+    )
+    for loss in losses_sorted:
+        loss_close = loss["closed_at"]
+        for t in closed_trades:
+            if t.get("id") == loss.get("id"):
+                continue
+            opened_at = t.get("opened_at")
+            if opened_at is None:
+                continue
+            if loss_close <= opened_at <= loss_close + 120:
+                revenge_clean = False
+                break
+        if not revenge_clean:
+            break
+    multipliers.append({"name": "no_revenge", "applied": revenge_clean, "factor": 1.1})
+
+    # 5. Journaled the session (always False today; flips True when Journal wires up)
+    multipliers.append({"name": "journaled", "applied": bool(journaled), "factor": 1.2})
+
+    # Multiplicative: product of qualifying multipliers
+    product = 1.0
+    for m in multipliers:
+        if m["applied"]:
+            product *= m["factor"]
+
+    final = round(base * product)
+    return {
+        "amount": final,
+        "breakdown": {
+            "base": base,
+            "multipliers": multipliers,
+            "product": product,
+            "final": final,
+        },
+    }
+
+
 @app.post("/sessions/{session_id}/end")
 def end_session(session_id: str, payload: dict):
     conn = get_conn()
@@ -1413,6 +1956,7 @@ def end_session(session_id: str, payload: dict):
     closed_trades = json.loads(sess["closed_trades"])
     wins = sum(1 for t in closed_trades if t.get("pnl", 0) > 0)
     win_rate = wins / len(closed_trades) if closed_trades else 0
+    realized_pnl = final_balance - sess["account_size"]
 
     conn.execute(
         "UPDATE trading_sessions SET status='ended', ended_at=unixepoch(), balance=? WHERE session_id=?",
@@ -1428,12 +1972,69 @@ def end_session(session_id: str, payload: dict):
          sess["account_size"], return_pct, len(closed_trades), win_rate),
     )
 
+    # ── XP grant (idempotent on session_id) ──────────────────────────────────
+    existing = conn.execute(
+        "SELECT id, amount, breakdown FROM xp_events WHERE session_id=?",
+        (session_id,),
+    ).fetchone()
+    if existing:
+        xp_awarded = existing["amount"]
+        xp_breakdown = json.loads(existing["breakdown"])
+    else:
+        sess_keys = sess.keys() if hasattr(sess, "keys") else []
+        journaled = bool(sess["journaled"]) if "journaled" in sess_keys else False
+        result = _compute_session_xp(closed_trades, realized_pnl, journaled)
+        xp_awarded = result["amount"]
+        xp_breakdown = result["breakdown"]
+        conn.execute(
+            "INSERT INTO xp_events (uid, session_id, amount, reason, breakdown, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (sess["uid"], session_id, xp_awarded, "session_end",
+             json.dumps(xp_breakdown), time.time()),
+        )
+        conn.execute(
+            "UPDATE users SET xp = xp + ? WHERE uid=?",
+            (xp_awarded, sess["uid"]),
+        )
+
+    xp_row = conn.execute("SELECT xp FROM users WHERE uid=?", (sess["uid"],)).fetchone()
+    xp_total = xp_row["xp"] if xp_row else 0
+
     # Update account stats
     _update_account_stats(conn, sess["uid"])
 
     conn.commit()
     conn.close()
-    return {"return_pct": round(return_pct, 2), "win_rate": round(win_rate * 100, 1)}
+    return {
+        "return_pct": round(return_pct, 2),
+        "win_rate": round(win_rate * 100, 1),
+        "xp_awarded": xp_awarded,
+        "xp_breakdown": xp_breakdown,
+        "xp_total": xp_total,
+        "rank": _rank_from_xp(xp_total),
+    }
+
+
+@app.delete("/sessions/{session_id}")
+def delete_session(session_id: str, uid: str = Query(...)):
+    """Delete a session and its associated trades. Scoped to the owning user.
+    Returns 404 if not found, 403 if uid mismatches the session's stored uid."""
+    conn = get_conn()
+    try:
+        sess = conn.execute(
+            "SELECT uid FROM trading_sessions WHERE session_id = ?", (session_id,)
+        ).fetchone()
+        if not sess:
+            raise HTTPException(status_code=404, detail="Session not found")
+        if sess["uid"] != uid:
+            raise HTTPException(status_code=403, detail="Not your session")
+        # delete dependent rows first (FK or not — be explicit)
+        conn.execute("DELETE FROM trades WHERE session_id = ?", (session_id,))
+        conn.execute("DELETE FROM trading_sessions WHERE session_id = ?", (session_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    return {"success": True}
 
 
 def _update_account_stats(conn, uid: str):
@@ -1453,7 +2054,15 @@ def _update_account_stats(conn, uid: str):
     starting = conn.execute("SELECT starting_balance FROM accounts WHERE uid = ?", (uid,)).fetchone()
     starting_balance = starting["starting_balance"] if starting else 10000
     return_pct = total_pnl / starting_balance * 100
-    rank = _calc_rank(len(rows), win_rate, profit_factor, return_pct)
+    # Rank is now driven by total XP (Phase 2), not by the legacy
+    # win-rate/profit-factor heuristic in `_calc_rank`. We persist the
+    # `level_name` (e.g. "Disciplined Trader II") in the TEXT column so
+    # the leaderboard/group queries that read `a.rank` still get a
+    # human-readable label. `_calc_rank` is kept for back-compat in
+    # case any caller still references it.
+    xp_row = conn.execute("SELECT xp FROM users WHERE uid = ?", (uid,)).fetchone()
+    user_xp = xp_row["xp"] if xp_row else 0
+    rank = _rank_from_xp(user_xp)["level_name"]
     # all-time total for dashboard display
     all_rows = conn.execute("SELECT pnl FROM trades WHERE uid = ?", (uid,)).fetchall()
     all_pnl = sum(r["pnl"] for r in all_rows)
@@ -1776,7 +2385,8 @@ def enter_tournament(tournament_id: int, payload: dict):
     conn.close()
 
     candles = [
-        {"bar": i, "time": r["time"], "open": r["open"], "high": r["high"],
+        {"bar": i, "time": _wire_time(tourney["timeframe"], r["time"]),
+         "open": r["open"], "high": r["high"],
          "low": r["low"], "close": r["close"], "volume": r["volume"]}
         for i, r in enumerate(rows)
     ]

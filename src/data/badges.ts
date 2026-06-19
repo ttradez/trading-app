@@ -112,10 +112,6 @@ export const BADGES: ReadonlyArray<Badge> = [
     condition: 'Trade 3 different symbols', description: 'You ventured beyond your comfort symbol.' },
   { id: 'global_trader',   name: 'Global Trader',   category: 'discovery', rarity: 'uncommon', icon: 'earth',
     condition: 'Trade every available symbol', description: 'You have traded the whole board.' },
-  { id: 'mission_complete', name: 'Mission Complete', category: 'discovery', rarity: 'uncommon', icon: 'flag-checkered',
-    condition: 'Complete 5 Daily Setups', description: 'Five daily missions cleared.' },
-  { id: 'mission_master',  name: 'Mission Master',  category: 'discovery', rarity: 'rare',     icon: 'flag-variant',
-    condition: 'Complete 20 Daily Setups', description: 'Twenty daily missions. Showing up is the strategy.' },
   { id: 'bookworm',        name: 'Bookworm',        category: 'discovery', rarity: 'uncommon', icon: 'bookmark-multiple',
     condition: 'Save 10 setups to your watchlist', description: 'A curated library of setups to study.' },
 

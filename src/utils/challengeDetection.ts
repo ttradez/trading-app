@@ -4,6 +4,7 @@ import { useTradeJournalStore } from '../store/tradeJournalStore';
 import { useBadgeStore } from '../store/badgeStore';
 import { getTodayYMD } from '../store/streakStore';
 import { isoWeekId } from './weeklyRecap';
+import { useSessionStatsStore, SessionLogEntry } from '../store/sessionStatsStore';
 
 /**
  * STUBBED challenge conditions — wiring deferred (need data points
@@ -48,11 +49,22 @@ function localYMD(ms: number): string {
 }
 
 interface ClosedTradeShape {
+  /** Trade id — used to look up the matching JournalEntry for
+   *  R:R-based conditions (intendedRR lives on the entry, not the
+   *  trade). Optional because legacy call sites may not pass it. */
+  id?: string;
   symbol?: string;
   pnl?: number;
   opened_at?: number; // unix seconds
   closed_at?: number;
   r_multiple?: number;
+  /** Numeric SL/TP levels from the position at close time. null/
+   *  undefined ⇒ the user never set one. Used by the
+   *  recordTradeClose call site, not by detectAfterTradeClose
+   *  itself — kept on the shape so the type matches what call sites
+   *  actually pass in. */
+  stop_loss?: number | null;
+  take_profit?: number | null;
 }
 
 /** Call AFTER badge `checkTradeCloseBadges` (so `consecutiveWins`
@@ -120,11 +132,42 @@ export function detectAfterTradeClose(
   const todayTrades = entries.filter((e) => localYMD(e.closedAt) === today);
   if (todayTrades.length >= 3) {
     const dayPnl = todayTrades.reduce((s, e) => s + e.pnl, 0);
-    if (dayPnl > 0) updateChallengeProgress('green_day', 1);
+    if (dayPnl > 0) {
+      updateChallengeProgress('green_day', 1);
+      // Trivial green_week wire (was previously dead): when the day
+      // is green AND the local ISO week's running total is also > 0,
+      // credit the weekly "end week positive" challenge. Target=1,
+      // add-mode → first qualifying close completes it.
+      const weekTrades = entries.filter(
+        (e) => isoWeekId(new Date(e.closedAt)) === nowWeek,
+      );
+      const weekPnl = weekTrades.reduce((s, e) => s + e.pnl, 0);
+      if (weekPnl > 0) updateChallengeProgress('green_week', 1);
+    }
   }
   if (todayTrades.length >= 4) {
     const wr = todayTrades.filter((e) => e.pnl > 0).length / todayTrades.length;
     if (wr > 0.55) updateChallengeProgress('win_rate_55', 1);
+  }
+
+  // ── R:R conditions ─────────────────────────────────────────────
+  // rr2_realized: a WIN whose realized R-multiple ≥ 2. r_multiple is
+  // null when the trade had no planned stop — silently skipped (no
+  // progress, no penalty).
+  if (won && rMul != null && rMul >= 2) {
+    updateChallengeProgress('rr2_realized', 1);
+  }
+
+  // plan_rr_kept: a WIN that hit at least its planned R:R, AND the
+  // plan called for ≥ 1.5 to begin with. intendedRR is on the journal
+  // entry (set by the pre-trade plan capture); look it up by tradeId.
+  // Plan-skipped trades have intendedRR = 0 ⇒ filtered out by the
+  // ≥ 1.5 gate. No matching entry ⇒ no plan ⇒ skip.
+  if (won && rMul != null && t.id) {
+    const entry = entries.find((e) => e.tradeId === t.id);
+    if (entry && entry.intendedRR >= 1.5 && rMul >= entry.intendedRR) {
+      updateChallengeProgress('plan_rr_kept', 1);
+    }
   }
 
   // Month window.
@@ -193,8 +236,75 @@ export function detectAfterJournalSave(
   }
 }
 
-/** Call once per day when the Daily Setup mission completes. */
-export function detectDailySetupComplete(): void {
-  updateChallengeProgress('daily_setup', 1);
-  updateChallengeProgress('daily_setups', 1);
+/**
+ * Call from the session-end / recap site (currently the
+ * autoStart bookend in TradingScreen — pre-start finalize of any
+ * prior run). `record` comes back from `useSessionStatsStore.endSession()`.
+ *
+ * Session-end conditions:
+ *   - green_session                — +1 when record.green AND trades ≥ 3
+ *   - tp_sl_full_session           — +1 when record.allTpSl AND trades ≥ 3
+ *   - session_under_6_trades       — +1 when 1 ≤ trades ≤ 6 (NO 3-trade gate)
+ *   - consecutive_green_sessions   — max-mode, fire the live counter
+ *                                    (the store gates its own update on
+ *                                    trades ≥ 3, so tiny sessions can't
+ *                                    accidentally extend the streak)
+ *   - green_sessions_10            — +1 per green session (trades ≥ 3),
+ *                                    plain add-counter (target tunable
+ *                                    per challenge row)
+ *   - pf15_last10                  — +1 when profit factor over the
+ *                                    last 10 logged sessions ≥ 1.5
+ *                                    (requires ≥ 10 entries AND ≥ 30
+ *                                    total trades across them)
+ */
+export function detectAfterSessionEnd(record: SessionLogEntry): void {
+  const stats = useSessionStatsStore.getState();
+
+  // consecutive_green_sessions is max-mode — the store already
+  // increments / zeroes the counter based on the >=3-trades gate.
+  // Skip the call when the counter is 0 to avoid a noop progress
+  // update (max(0, current) is a no-op anyway, but cheap to guard).
+  if (stats.consecutiveGreenSessions > 0) {
+    updateChallengeProgress('consecutive_green_sessions', stats.consecutiveGreenSessions);
+  }
+
+  if (record.trades >= 3) {
+    if (record.green) {
+      updateChallengeProgress('green_session', 1);
+      updateChallengeProgress('green_sessions_10', 1);
+    }
+    if (record.allTpSl) {
+      updateChallengeProgress('tp_sl_full_session', 1);
+    }
+  }
+
+  if (record.trades >= 1 && record.trades <= 6) {
+    updateChallengeProgress('session_under_6_trades', 1);
+  }
+
+  // pf15_last10: profit factor across the last 10 logged sessions.
+  // sessionLog already includes the just-ended record (endSession
+  // appended it before returning), so slicing the tail is correct.
+  const lastTen = stats.sessionLog.slice(-10);
+  if (lastTen.length >= 10) {
+    const totalTrades = lastTen.reduce((s, x) => s + x.trades, 0);
+    if (totalTrades >= 30) {
+      const grossProfit = lastTen
+        .filter((x) => x.pnl > 0)
+        .reduce((s, x) => s + x.pnl, 0);
+      const grossLoss = Math.abs(
+        lastTen.filter((x) => x.pnl < 0).reduce((s, x) => s + x.pnl, 0),
+      );
+      // Profit factor convention: zero gross loss + positive gross
+      // profit ⇒ infinite PF (i.e. clearly meets a 1.5 threshold).
+      // Zero of both ⇒ PF = 0 (no edge to credit).
+      const pf =
+        grossLoss > 0
+          ? grossProfit / grossLoss
+          : grossProfit > 0
+            ? Infinity
+            : 0;
+      if (pf >= 1.5) updateChallengeProgress('pf15_last10', 1);
+    }
+  }
 }

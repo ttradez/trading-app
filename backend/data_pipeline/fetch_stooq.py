@@ -26,20 +26,8 @@ END   = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 # yfinance ticker -> our internal symbol
 # Overrides entries in STOOQ_MAP that use Stooq-specific symbols
 YF_OVERRIDE = {
-    "^SPX":  ("^GSPC", "SPX"),
-    "^NDX":  ("^NDX",  "NDX"),
-    "^DJI":  ("^DJI",  "DJI"),
-    "^DAX":  ("^GDAXI","DAX"),
-    "^FTSE": ("^FTSE", "FTSE"),
-    "^N225": ("^N225", "N225"),
     "ES.F":  ("ES=F",  "ES"),
     "NQ.F":  ("NQ=F",  "NQ"),
-    "YM.F":  ("YM=F",  "YM"),
-    "CL.F":  ("CL=F",  "CL"),
-    "GC.F":  ("GC=F",  "GC"),
-    "SI.F":  ("SI=F",  "SI"),
-    "NG.F":  ("NG=F",  "NG"),
-    "ZB.F":  ("ZB=F",  "ZB"),
 }
 
 

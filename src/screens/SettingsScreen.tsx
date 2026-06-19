@@ -18,7 +18,6 @@ import { useStreakStore } from '../store/streakStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useJournalStore } from '../store/journalStore';
 import { useTradeJournalStore } from '../store/tradeJournalStore';
-import { useDailySetupStore } from '../store/dailySetupStore';
 import { useWatchlistStore } from '../store/watchlistStore';
 import { useSymbolFavoritesStore } from '../store/symbolFavoritesStore';
 import { useBadgeStore } from '../store/badgeStore';
@@ -28,11 +27,12 @@ import { useRecapList } from '../store/recapStore';
 import WeeklyRecapModal from '../components/WeeklyRecapModal';
 import { WeeklyRecap } from '../utils/weeklyRecap';
 import { useNotificationsStore, NotificationTime } from '../store/notificationsStore';
+import { PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL } from '../config/legalDocs';
 import {
   ensureNotificationPermission, formatNotificationTime,
   scheduleDailyMissionReminder, scheduleWeeklyRecapReminder,
   cancelNotification, openSystemSettings,
-  cancelAllPocketTradeNotifications,
+  cancelAllPipNotifications,
 } from '../lib/notifications';
 import DateTimePicker, {
   DateTimePickerEvent,
@@ -58,7 +58,7 @@ const SWITCH_OFF  = '#333333';
 
 const APP = require('../../app.json');
 const APP_VERSION: string = APP?.expo?.version ?? '1.0.0';
-const APP_NAME: string = APP?.expo?.name ?? 'Pocket Trade';
+const APP_NAME: string = APP?.expo?.name ?? 'Pip';
 const SUPPORT_EMAIL = 'ben@sitesbyben.ca';
 
 type MCIName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
@@ -132,6 +132,8 @@ export default function SettingsScreen({ navigation }: any) {
   const setContractSize   = useSettingsStore((s) => s.setDefaultContractSize);
   const preTradeChecklist    = useSettingsStore((s) => s.preTradeChecklistEnabled);
   const setPreTradeChecklist = useSettingsStore((s) => s.setPreTradeChecklistEnabled);
+  const tradeResultCard      = useSettingsStore((s) => s.tradeResultCardEnabled);
+  const setTradeResultCard   = useSettingsStore((s) => s.setTradeResultCardEnabled);
 
   const journalEntries = useJournalStore((s) => s.entries);
 
@@ -332,7 +334,7 @@ export default function SettingsScreen({ navigation }: any) {
     const csv = [header, ...rows].join('\n');
     try {
       await Share.share({
-        title: 'Pocket Trade — trade history',
+        title: 'Pip — trade history',
         message: csv,
       });
     } catch {
@@ -367,7 +369,7 @@ export default function SettingsScreen({ navigation }: any) {
 
   const signOutUser = () => {
     Alert.alert(
-      'Sign out of Pocket Trade?',
+      'Sign out of Pip?',
       'You can sign back in any time. Your account data is saved.',
       [
         { text: 'Cancel', style: 'cancel' },
@@ -421,7 +423,6 @@ export default function SettingsScreen({ navigation }: any) {
                     useSettingsStore.getState().reset();
                     useJournalStore.getState().reset();
                     useTradeJournalStore.getState().reset();
-                    useDailySetupStore.getState().reset();
                     useWatchlistStore.getState().reset();
                     useSymbolFavoritesStore.getState().reset();
                     useBadgeStore.getState().reset();
@@ -431,7 +432,7 @@ export default function SettingsScreen({ navigation }: any) {
                     // Cancel any OS-side scheduled notifications too —
                     // resetting the store alone wouldn't clear what's
                     // already queued with iOS.
-                    void cancelAllPocketTradeNotifications();
+                    void cancelAllPipNotifications();
                     navigation.reset({
                       index: 0,
                       routes: [{ name: 'OnboardingSplash' }],
@@ -451,7 +452,7 @@ export default function SettingsScreen({ navigation }: any) {
 
       {/* Header — back button only; the title now sits left-aligned
           at the top of the scroll content so it matches every other
-          screen (Setup Library, Insights, Journal etc.) per §3.8. */}
+          screen (Insights, Journal etc.) per §3.8. */}
       <View style={styles.header}>
         <Pressable
           onPress={() => navigation.goBack()}
@@ -562,6 +563,22 @@ export default function SettingsScreen({ navigation }: any) {
             <Switch
               value={preTradeChecklist}
               onValueChange={setPreTradeChecklist}
+              trackColor={{ false: SWITCH_OFF, true: GOLD }}
+              thumbColor={WHITE}
+              ios_backgroundColor={SWITCH_OFF}
+            />
+          </View>
+          <Separator />
+          <View style={styles.row}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowLabel}>Trade-result card</Text>
+              <Text style={styles.rowSublabel}>
+                Show the P&L summary card after each close
+              </Text>
+            </View>
+            <Switch
+              value={tradeResultCard}
+              onValueChange={setTradeResultCard}
               trackColor={{ false: SWITCH_OFF, true: GOLD }}
               thumbColor={WHITE}
               ios_backgroundColor={SWITCH_OFF}
@@ -750,12 +767,20 @@ export default function SettingsScreen({ navigation }: any) {
           <Separator />
           <Row
             label="Terms of Service"
-            onPress={() => console.log('[settings] Tap: Terms of Service (TODO: wire link)')}
+            onPress={() => {
+              Linking.openURL(TERMS_OF_SERVICE_URL).catch(() => {
+                Alert.alert('Could not open link', 'Check your internet connection and try again.');
+              });
+            }}
           />
           <Separator />
           <Row
             label="Privacy Policy"
-            onPress={() => console.log('[settings] Tap: Privacy Policy (TODO: wire link)')}
+            onPress={() => {
+              Linking.openURL(PRIVACY_POLICY_URL).catch(() => {
+                Alert.alert('Could not open link', 'Check your internet connection and try again.');
+              });
+            }}
           />
         </View>
       </ScrollView>
@@ -774,10 +799,6 @@ export default function SettingsScreen({ navigation }: any) {
             screen: 'Journal',
             params: { openEntryId: tradeId },
           });
-        }}
-        onOpenLesson={(setupId) => {
-          setOpenRecap(null);
-          navigation.navigate('SetupDetail', { setupId });
         }}
         onStartSession={() => {
           setOpenRecap(null);

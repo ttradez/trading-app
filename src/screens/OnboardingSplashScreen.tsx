@@ -1,5 +1,7 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Image, Animated, StyleSheet, StatusBar } from 'react-native';
+import { View, Animated, StyleSheet, StatusBar } from 'react-native';
+
+import Logo from '../components/brand/Logo';
 
 /**
  * Onboarding screen 1 — logo splash.
@@ -11,7 +13,7 @@ import { View, Image, Animated, StyleSheet, StatusBar } from 'react-native';
  * logo, short enough to feel like a quick flash rather than a wait.
  */
 
-const ONBOARDING_BG = '#000000';   // Pocket Trade brand — pure black (locked 2026-05-12)
+const ONBOARDING_BG = '#000000';   // Pip brand — pure black (locked 2026-05-12)
 const SPLASH_DURATION_MS = 900;
 const FADE_IN_MS = 300;
 
@@ -42,11 +44,7 @@ export default function OnboardingSplashScreen({ navigation }: Props) {
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={ONBOARDING_BG} />
       <Animated.View style={{ opacity }}>
-        <Image
-          source={require('../../assets/logo.png')}
-          style={styles.logo}
-          resizeMode="contain"
-        />
+        <Logo width={240} />
       </Animated.View>
     </View>
   );
@@ -59,5 +57,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  logo: { width: 240, height: 240 },
 });

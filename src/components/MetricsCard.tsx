@@ -10,6 +10,7 @@ import ProfitFactorGlyph from './icons/metrics/ProfitFactorGlyph';
 import AvgRRGlyph from './icons/metrics/AvgRRGlyph';
 import ConsistencyGlyph from './icons/metrics/ConsistencyGlyph';
 import NumericText from './NumericText';
+import { useAnimatedNumber } from '../hooks/useAnimatedNumber';
 
 /**
  * Key metrics row (DESIGN_AUDIT §3.1). ONE card with FOUR cells
@@ -21,10 +22,12 @@ import NumericText from './NumericText';
  * "—" displayed when the underlying metric is below its documented
  * sample floor (see `tradeMetrics.ts`). Never reads as a defeatist
  * 0% on day one.
+ *
+ * Each numeric value count-ups from 0 → the target on mount via
+ * `useAnimatedNumber`. The "—" insufficient-data state skips the
+ * animation and renders the dash directly.
  */
 
-// Secondary card — L1 in the layered surface system. Reads as a
-// supporting tile under the Account hero (L2).
 const CARD_BG     = '#0A0A0A';
 const CARD_BORDER = '#1F1F1F';
 const HAIRLINE    = '#1F1F1F';
@@ -37,51 +40,90 @@ export default function MetricsCard() {
     const pf = profitFactor(entries);
     const rr = avgRR(entries);
     const cn = consistency(entries);
-    return {
-      winRate:      wr === null ? '—' : `${Math.round(wr)}%`,
-      profitFactor: pf === null ? '—' : pf === 'inf' ? '∞' : pf.toFixed(2),
-      avgRR:        rr === null ? '—' : `${rr >= 0 ? '' : '−'}${Math.abs(rr).toFixed(2)}`,
-      consistency:  cn === null ? '—' : `${Math.round(cn)}%`,
-    };
+    return { wr, pf, rr, cn };
   }, [entries]);
 
   return (
     <View style={styles.card}>
-      <Cell
+      <PercentCell
         glyph={<WinRateGlyph />}
-        value={stats.winRate}
+        value={stats.wr}
         label="WIN RATE"
       />
       <View style={styles.divider} />
-      <Cell
+      <ProfitFactorCell
         glyph={<ProfitFactorGlyph />}
-        value={stats.profitFactor}
+        value={stats.pf}
         label="PROFIT FACTOR"
       />
       <View style={styles.divider} />
-      <Cell
+      <DecimalCell
         glyph={<AvgRRGlyph />}
-        value={stats.avgRR}
+        value={stats.rr}
         label="AVG R:R"
       />
       <View style={styles.divider} />
-      <Cell
+      <PercentCell
         glyph={<ConsistencyGlyph />}
-        value={stats.consistency}
+        value={stats.cn}
         label="CONSISTENCY"
       />
     </View>
   );
 }
 
-function Cell({
+/** Percent metric. `null` → "—"; otherwise count-up to value, append %. */
+function PercentCell({
   glyph, value, label,
-}: { glyph: React.ReactNode; value: string; label: string }) {
+}: { glyph: React.ReactNode; value: number | null; label: string }) {
+  const animated = useAnimatedNumber(value ?? 0);
+  const display = value === null ? '—' : `${Math.round(animated)}%`;
+  return <Cell glyph={glyph} display={display} label={label} />;
+}
+
+/** Avg R:R metric. `null` → "—"; otherwise count-up with 2 decimals,
+ *  preserving the sign (negative uses U+2212 minus to match the old UI). */
+function DecimalCell({
+  glyph, value, label,
+}: { glyph: React.ReactNode; value: number | null; label: string }) {
+  const animated = useAnimatedNumber(value ?? 0);
+  let display: string;
+  if (value === null) {
+    display = '—';
+  } else {
+    const sign = animated < 0 ? '−' : '';
+    display = `${sign}${Math.abs(animated).toFixed(2)}`;
+  }
+  return <Cell glyph={glyph} display={display} label={label} />;
+}
+
+/** Profit factor metric. Tri-state — `null` ("—"), `'inf'` ("∞"), or
+ *  number (count-up with 2 decimals). The infinity branch skips the
+ *  animation since there's no numeric target to interpolate. */
+function ProfitFactorCell({
+  glyph, value, label,
+}: {
+  glyph: React.ReactNode;
+  value: number | 'inf' | null;
+  label: string;
+}) {
+  const numericTarget = typeof value === 'number' ? value : 0;
+  const animated = useAnimatedNumber(numericTarget);
+  let display: string;
+  if (value === null) display = '—';
+  else if (value === 'inf') display = '∞';
+  else display = animated.toFixed(2);
+  return <Cell glyph={glyph} display={display} label={label} />;
+}
+
+function Cell({
+  glyph, display, label,
+}: { glyph: React.ReactNode; display: string; label: string }) {
   return (
     <View style={styles.cell}>
       <View style={styles.glyphWrap}>{glyph}</View>
       <NumericText bold style={styles.value} allowFontScaling={false} numberOfLines={1}>
-        {value}
+        {display}
       </NumericText>
       <Text style={styles.label} numberOfLines={1}>{label}</Text>
     </View>
@@ -113,7 +155,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // h1 value — uses the locked typography scale (22pt bold).
   value: {
     marginTop: 10,
     color: '#FFFFFF',
@@ -122,7 +163,6 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
     fontVariant: ['tabular-nums'],
   },
-  // Eyebrow — 11pt uppercase, white@60%.
   label: {
     marginTop: 4,
     color: 'rgba(255,255,255,0.6)',
