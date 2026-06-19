@@ -1,37 +1,20 @@
 /**
  * Babel configuration for Pip (Expo + React Native).
  *
- * Extends Expo's default preset and ADDS a single production-only
- * transform that strips console.log / console.warn / console.debug
- * calls from the bundle. console.error is preserved so error
- * reporting (Crashlytics, Sentry) still captures developer-emitted
- * error events.
+ * Minimal: just the Expo preset. The earlier version of this file
+ * added a production-only `transform-remove-console` plugin to
+ * strip console.* from production bundles, but that broke the EAS
+ * iOS bundle phase (suspected Babel cache vs env interaction).
  *
- * The plugin is well-vetted (used by React Native CLI's own
- * remove-console rule) but it must be installed as a devDependency
- * BEFORE the next production build:
- *
- *   npm install --save-dev babel-plugin-transform-remove-console
- *
- * Until installed, the plugin reference below is a no-op in
- * development (development.plugins is empty) and a build error in
- * production (which is the desired loud signal — install the
- * package then re-run `eas build --profile production`).
+ * Console.* calls are left in the v1 bundle — not a store-rejection
+ * issue, just minor verbosity in the device console. Re-introduce
+ * the strip in v1.1 after the launch is stable, paired with
+ * `api.cache.using(() => process.env.NODE_ENV)` so env switching
+ * actually invalidates the cache.
  */
 module.exports = function (api) {
   api.cache(true);
   return {
     presets: ['babel-preset-expo'],
-    env: {
-      production: {
-        plugins: [
-          // Strip console.log / console.warn / console.debug / console.info
-          // from the production bundle. Keeps console.error for crash
-          // reporters. ~45 stray console.log calls in src/ go away on
-          // the production build with zero individual edits.
-          ['transform-remove-console', { exclude: ['error'] }],
-        ],
-      },
-    },
   };
 };
