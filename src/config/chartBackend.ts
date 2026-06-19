@@ -1,7 +1,3 @@
-// DEV ONLY: cloudflared quick-tunnel URL for the chart's data backend.
-// This changes every time cloudflared restarts. Update it here and
-// rebuild when you start a new tunnel.
-// TODO: replace with a stable URL (ngrok static domain or named
-// cloudflared tunnel) so we stop rebuilding on every tunnel restart.
+// Production backend — Railway deployment
 export const CHART_BACKEND_URL =
-  'https://falling-cologne-studied-price.trycloudflare.com';
+    'https://trading-app-production-1423.up.railway.app';
