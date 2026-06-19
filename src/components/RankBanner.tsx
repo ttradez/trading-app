@@ -138,10 +138,14 @@ export default function RankBanner({
   const bannerSizeStyle: ViewStyle =
     width != null ? { width, aspectRatio: 3 } : { width: '100%', aspectRatio: 3 };
 
-  const labelText = RANK_NAME[rank];
-  const labelColor = RANK_TAG_TEXT_COLOR[rank];
-  const labelFontSize = fontSizeForRank(rank);
-  const labelYOffset = RANK_LABEL_Y_OFFSET[rank];
+  // Label-overlay vars kept for v1.1 typography pass — see commented
+  // block in the JSX below. Underscore-prefixed to satisfy lint while
+  // unused.
+  const _labelText = RANK_NAME[rank];
+  const _labelColor = RANK_TAG_TEXT_COLOR[rank];
+  const _labelFontSize = fontSizeForRank(rank);
+  const _labelYOffset = RANK_LABEL_Y_OFFSET[rank];
+  void _labelText; void _labelColor; void _labelFontSize; void _labelYOffset;
 
   const banner = (
     <View
@@ -162,10 +166,11 @@ export default function RankBanner({
           filter (no SVG primitives needed). */}
       {locked && <View style={styles.lockedScrim} pointerEvents="none" />}
 
-      {/* Centered name overlay — constrained to ~46% of the banner
-          width so long names ("UNPROFITABLE") shrink via
-          adjustsFontSizeToFit instead of bleeding onto the
-          decorative borders. */}
+      {/* Rank-name text overlay was removed for v1.0 — the user
+          preferred the banners to read as pure heraldic emblems
+          without the engraved name plate. Vars labelText / labelColor
+          / labelFontSize / labelYOffset are kept in scope above for
+          when we re-introduce a refined typography pass in v1.1.
       <View style={styles.labelWrap} pointerEvents="none">
         <View
           style={[
@@ -185,6 +190,7 @@ export default function RankBanner({
           </Text>
         </View>
       </View>
+      */}
 
       {/* Sub-tier pips — three small dots pinned to the bottom edge
           of the plate. Hidden when subTier is null/undefined (e.g.

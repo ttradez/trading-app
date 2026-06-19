@@ -117,6 +117,11 @@ function formatDuration(openedMs: number, closedMs: number): string {
 // ── Screen ─────────────────────────────────────────────────────────────────
 
 export default function SettingsScreen({ navigation }: any) {
+  // Auth state — drives whether the bottom action row shows "Sign Out"
+  // (when signed in) or "Sign In" (when signed out). Reads `uid` from
+  // the auth store: empty/null => not signed in.
+  const authUid = useAuthStore((s) => s.uid);
+  const isSignedIn = !!authUid;
   const displayName    = useOnboardingStore((s) => s.displayName);
   const handle         = useOnboardingStore((s) => s.handle);
   const archetype      = useOnboardingStore((s) => s.archetype);
@@ -728,9 +733,18 @@ export default function SettingsScreen({ navigation }: any) {
           />
           <Separator />
           <Row
-            label="Sign Out"
-            onPress={signOutUser}
-            leftIcon="log-out-outline"
+            label={isSignedIn ? 'Sign Out' : 'Sign In'}
+            onPress={isSignedIn ? signOutUser : () => {
+              // Route to the auth screen. Same flow CelebrationModal
+              // and the post-onboarding rank-reveal use, so the user
+              // lands on the existing email/Apple/Google picker
+              // without us re-implementing it here.
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'OnboardingAuth' }],
+              });
+            }}
+            leftIcon={isSignedIn ? 'log-out-outline' : 'log-in-outline'}
           />
           <Separator />
           <Row
