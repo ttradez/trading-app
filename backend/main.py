@@ -1370,6 +1370,28 @@ def start_session(req: StartSessionRequest):
         conn.close()
         raise HTTPException(status_code=404, detail="No candle data found")
 
+    # Self-heal the FK constraint: on a brand-new sign-in the client's
+    # fire-and-forget upsertUser POST can still be in flight when the
+    # user taps "Start session", which would otherwise fail with
+    # `FOREIGN KEY constraint failed` on the trading_sessions insert
+    # below. Idempotent upsert here so the very first session-create
+    # always succeeds even if the user row doesn't exist yet.
+    # username has UNIQUE — fall back to a uid-derived value so two
+    # users with no displayName don't collide on the fallback. A later
+    # /users POST from the client will overwrite with the real name.
+    safe_username = req.username if req.username else f"user_{req.uid[:12]}"
+    conn.execute(
+        """
+        INSERT INTO users (uid, username, email) VALUES (?, ?, '')
+        ON CONFLICT(uid) DO NOTHING
+        """,
+        (req.uid, safe_username),
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO accounts (uid) VALUES (?)",
+        (req.uid,),
+    )
+
     session_id = str(uuid.uuid4())
     conn.execute(
         """
